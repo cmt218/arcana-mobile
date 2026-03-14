@@ -1,9 +1,0 @@
-package org.cadence.mobile
-
-class Greeting {
-    private val platform = getPlatform()
-
-    fun greet(): String {
-        return "Hello, ${platform.name}!"
-    }
-}
