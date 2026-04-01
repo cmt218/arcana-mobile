@@ -1,6 +1,9 @@
 package org.cadence.mobile
 
 import androidx.compose.animation.core.LinearEasing
+import org.cadence.mobile.theme.Background
+import org.cadence.mobile.theme.Gold
+import org.cadence.mobile.theme.ShimmerHighlight
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
