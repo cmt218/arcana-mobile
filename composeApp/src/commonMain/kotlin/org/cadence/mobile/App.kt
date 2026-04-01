@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,10 +29,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import org.cadence.mobile.classes.ClassesUiState
+import org.cadence.mobile.classes.ClassesViewModel
+import org.cadence.mobile.data.ClassDto
 
 internal val Background = Color(0xFF0A0A0A)
 internal val Gold = Color(0xFFBFA16A)
@@ -50,7 +58,9 @@ fun App() {
 }
 
 @Composable
-private fun MainScreen() {
+private fun MainScreen(viewModel: ClassesViewModel = viewModel { ClassesViewModel() }) {
+    val uiState by viewModel.uiState.collectAsState()
+
     Column(
         modifier = Modifier.fillMaxSize().background(Background)
     ) {
@@ -58,7 +68,7 @@ private fun MainScreen() {
         Spacer(Modifier.height(32.dp))
         FeaturedSection()
         Spacer(Modifier.height(32.dp))
-        StudioRow()
+        ClassRow(uiState)
         Spacer(Modifier.height(32.dp))
         UpcomingSection()
     }
@@ -110,49 +120,66 @@ private fun FeaturedSection() {
 }
 
 @Composable
-private fun StudioRow() {
+private fun ClassRow(uiState: ClassesUiState) {
     Column {
         Text(
-            text = "YOUR STUDIOS",
+            text = "CLASSES TODAY",
             style = TextStyle(color = Muted, fontSize = 11.sp, letterSpacing = 3.sp),
             modifier = Modifier.padding(horizontal = 24.dp)
         )
         Spacer(Modifier.height(16.dp))
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(4) { index ->
-                StudioCard(
-                    name = listOf("FORM", "RISE", "APEX", "SŌUL")[index],
-                    type = listOf("Pilates", "Boxing", "Strength", "Yoga")[index],
-                    spotsLeft = listOf(3, 1, 5, 2)[index]
-                )
+        when (uiState) {
+            is ClassesUiState.Loading -> {
+                Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Gold, modifier = Modifier.size(24.dp))
+                }
+            }
+            is ClassesUiState.Error -> {
+                Box(modifier = Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                    Text(text = uiState.message, style = TextStyle(color = Muted, fontSize = 13.sp))
+                }
+            }
+            is ClassesUiState.Success -> {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(uiState.classes) { cls ->
+                        ClassCard(cls)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StudioCard(name: String, type: String, spotsLeft: Int) {
+private fun ClassCard(cls: ClassDto) {
+    val timeLabel = cls.startTime.take(16).takeLast(5) // "HH:mm" from "YYYY-MM-DDTHH:mm"
     Column(
         modifier = Modifier
-            .size(width = 140.dp, height = 180.dp)
+            .size(width = 160.dp, height = 180.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Surface)
             .padding(16.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = name,
-            style = TextStyle(color = Gold, fontSize = 20.sp, fontWeight = FontWeight.Light, letterSpacing = 4.sp)
-        )
         Column {
-            Text(text = type, style = TextStyle(color = Color.White, fontSize = 13.sp))
+            Text(
+                text = cls.studio.uppercase(),
+                style = TextStyle(color = Gold, fontSize = 16.sp, fontWeight = FontWeight.Light, letterSpacing = 3.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(text = timeLabel, style = TextStyle(color = Muted, fontSize = 11.sp))
+        }
+        Column {
+            Text(text = cls.name, style = TextStyle(color = Color.White, fontSize = 13.sp))
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "$spotsLeft spots left",
-                style = TextStyle(color = if (spotsLeft <= 2) Color(0xFFE07070) else Muted, fontSize = 11.sp)
+                text = "${cls.availableSpots} spots left",
+                style = TextStyle(color = if (cls.availableSpots <= 2) Color(0xFFE07070) else Muted, fontSize = 11.sp)
             )
         }
     }

@@ -5,3 +5,7 @@ interface Platform {
 }
 
 expect fun getPlatform(): Platform
+
+expect fun getBaseUrl(): String
+
+expect fun logWarning(tag: String, message: String)
