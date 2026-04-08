@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.cadence.mobile.data.ClassDto
 import org.cadence.mobile.logWarning
-import org.cadence.mobile.networking.fetchClasses
+import org.cadence.mobile.networking.CadenceApiClient
 
 sealed interface ClassesUiState {
     data object Loading : ClassesUiState
@@ -16,7 +16,9 @@ sealed interface ClassesUiState {
     data class Error(val message: String) : ClassesUiState
 }
 
-class ClassesViewModel : ViewModel() {
+class ClassesViewModel(
+    private val api: CadenceApiClient,
+) : ViewModel() {
     private val _uiState = MutableStateFlow<ClassesUiState>(ClassesUiState.Loading)
     val uiState: StateFlow<ClassesUiState> = _uiState
 
@@ -28,7 +30,7 @@ class ClassesViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = ClassesUiState.Loading
             try {
-                _uiState.value = ClassesUiState.Success(fetchClasses())
+                _uiState.value = ClassesUiState.Success(api.fetchClasses())
             } catch (e: ResponseException) {
                 val code = e.response.status.value
                 logWarning("ClassesViewModel", e.message ?: "HTTP error $code")

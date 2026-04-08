@@ -29,9 +29,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import org.cadence.mobile.classes.ClassesUiState
 import org.cadence.mobile.classes.ClassesViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import org.cadence.mobile.data.ClassDto
 import org.cadence.mobile.theme.Background
 import org.cadence.mobile.theme.Gold
@@ -41,7 +41,7 @@ import org.cadence.mobile.theme.Surface
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    viewModel: ClassesViewModel = viewModel { ClassesViewModel() }
+    viewModel: ClassesViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
