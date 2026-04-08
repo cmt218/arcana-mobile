@@ -1,0 +1,39 @@
+package org.arcana.mobile.navigation
+
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import org.arcana.mobile.theme.Background
+import org.arcana.mobile.theme.Gold
+import org.arcana.mobile.theme.Muted
+import org.arcana.mobile.theme.Surface
+
+@Composable
+fun AppNavigationBar(
+    selectedTab: AppTab,
+    onTabSelected: (AppTab) -> Unit,
+) {
+    NavigationBar(
+        containerColor = Surface,
+        contentColor = Gold,
+    ) {
+        AppTab.entries.forEach { tab ->
+            NavigationBarItem(
+                selected = tab == selectedTab,
+                onClick = { onTabSelected(tab) },
+                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                label = { Text(tab.label) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Gold,
+                    selectedTextColor = Gold,
+                    unselectedIconColor = Muted,
+                    unselectedTextColor = Muted,
+                    indicatorColor = Background,
+                ),
+            )
+        }
+    }
+}

@@ -1,4 +1,4 @@
-# Cadence
+# Arcana
 
 One membership. The best studios in your city. No compromises.
 

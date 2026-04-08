@@ -62,11 +62,11 @@ kotlin {
 }
 
 android {
-    namespace = "org.cadence.mobile"
+    namespace = "org.arcana.mobile"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "org.cadence.mobile"
+        applicationId = "org.arcana.mobile"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
