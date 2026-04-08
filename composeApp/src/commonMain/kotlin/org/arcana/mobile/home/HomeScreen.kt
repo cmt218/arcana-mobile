@@ -68,7 +68,7 @@ private fun TopBar() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "ARCANA",
+            text = "arcana",
             style = TextStyle(
                 color = Gold,
                 fontSize = 18.sp,

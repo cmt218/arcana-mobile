@@ -69,7 +69,7 @@ fun AuthScreen(
             modifier = Modifier.padding(horizontal = 32.dp),
         ) {
             Text(
-                text = "ARCANA",
+                text = "arcana",
                 style = TextStyle(
                     color = Gold,
                     fontSize = 28.sp,
