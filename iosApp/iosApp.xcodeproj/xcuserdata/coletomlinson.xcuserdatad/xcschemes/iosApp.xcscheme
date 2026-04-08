@@ -14,7 +14,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "460B3E1CB11CE937C3EFA0E6"
-               BuildableName = "Cadence.app"
+               BuildableName = "Arcana.app"
                BlueprintName = "iosApp"
                ReferencedContainer = "container:iosApp.xcodeproj">
             </BuildableReference>
@@ -43,7 +43,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "460B3E1CB11CE937C3EFA0E6"
-            BuildableName = "Cadence.app"
+            BuildableName = "Arcana.app"
             BlueprintName = "iosApp"
             ReferencedContainer = "container:iosApp.xcodeproj">
          </BuildableReference>

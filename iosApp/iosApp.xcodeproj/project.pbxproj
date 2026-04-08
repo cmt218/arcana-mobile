@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		E0A86998899E82508BED917F /* Cadence.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cadence.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E0A86998899E82508BED917F /* Arcana.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Arcana.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -59,7 +59,7 @@
 		4B0C7CC26C4A9EAB8B8C043C /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				E0A86998899E82508BED917F /* Cadence.app */,
+				E0A86998899E82508BED917F /* Arcana.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,7 +87,7 @@
 			packageProductDependencies = (
 			);
 			productName = iosApp;
-			productReference = E0A86998899E82508BED917F /* Cadence.app */;
+			productReference = E0A86998899E82508BED917F /* Arcana.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
