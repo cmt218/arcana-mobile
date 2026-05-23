@@ -1,32 +1,438 @@
 package org.arcana.mobile.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import org.arcana.mobile.networking.ArcanaApiClient
-import org.arcana.mobile.theme.Background
-import org.arcana.mobile.theme.Muted
+import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Danger
+import org.arcana.mobile.theme.Ink
+import org.arcana.mobile.theme.Lime
+import org.arcana.mobile.theme.Mist
+import org.arcana.mobile.theme.Mist2
+import org.arcana.mobile.theme.Moss
+import org.arcana.mobile.theme.MossDeep
+import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Stone
+import org.arcana.mobile.theme.StoneAlpha18
+import org.arcana.mobile.theme.StoneAlpha55
+import org.arcana.mobile.ui.AccentText
+import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.Display
+import org.arcana.mobile.ui.DotField
+import org.arcana.mobile.ui.IconCircle
+import org.arcana.mobile.ui.Overline
+import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.ui.safeContentPadding
+import org.arcana.mobile.ui.safeHorizontalPadding
+import org.jetbrains.compose.resources.DrawableResource
 import org.koin.compose.koinInject
 
+private data class StudioEntry(
+    val name: String,
+    val city: String,
+    val distance: String,
+    val tag: String,
+    val classes: String,
+)
+
+private val SELECTED_STUDIOS = listOf(
+    StudioEntry("FORM", "Tribeca", "0.4 mi", "Reformer & mat", "32 / wk"),
+    StudioEntry("RISE", "Venice", "1.1 mi", "Boxing & conditioning", "28 / wk"),
+    StudioEntry("APEX", "Marylebone", "2.6 mi", "Strength & lift", "24 / wk"),
+)
+
+private data class AccountItem(
+    val icon: DrawableResource,
+    val label: String,
+    val right: String,
+    val rightColor: Color,
+    val onClick: (() -> Unit)? = null,
+)
+
 @Composable
-fun ProfileScreen(modifier: Modifier = Modifier) {
+fun ProfileScreen(
+    onManageStudios: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val apiClient = koinInject<ArcanaApiClient>()
 
-    Column(
-        modifier = modifier.fillMaxSize().background(Background),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("Profile coming soon.", style = TextStyle(color = Muted))
-        TextButton(onClick = { apiClient.logout() }) {
-            Text("Logout", style = TextStyle(color = Muted))
+    val accountItems = listOf(
+        AccountItem(ArcanaIcons.Bell, "Notifications", "ON · 06:00", Ash),
+        AccountItem(ArcanaIcons.Card, "Membership", "$540 / MO", Ash),
+        AccountItem(ArcanaIcons.Swap, "Swap a studio", "AVAILABLE", Moss, onManageStudios),
+        AccountItem(ArcanaIcons.Support, "Concierge", "LIVE · 24/7", Ash),
+    )
+
+    // The body Stone fills everything; an Ink strip sits behind the top of
+    // the screen so the full-bleed hero AND any iOS overscroll above it both
+    // read as ink. The LazyColumn itself has a transparent background, so
+    // wherever items don't reach (empty trailing space, or below the last
+    // item) the Stone box bleeds through cleanly.
+    Box(modifier = modifier.fillMaxSize().background(Stone)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.55f)
+                .background(Ink),
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 16.dp),
+        ) {
+        // Profile hero — full-bleed ink that extends behind the status bar.
+        item { ProfileHero() }
+
+        // YOUR STUDIOS header
+        stoneItem {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 28.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Overline(text = "Your studios · 3 / 3", color = Moss)
+                TextLink(label = "Manage", onClick = onManageStudios, underline = false)
+            }
+        }
+        stoneItem { Spacer(Modifier.height(16.dp)) }
+        items(items = SELECTED_STUDIOS) { studio ->
+            StoneWrap {
+                StudioRow(
+                    studio,
+                    idx = SELECTED_STUDIOS.indexOf(studio) + 1,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                )
+            }
+        }
+        stoneItem {
+            BodyText(
+                text = "One swap allowed each cycle. Next swap unlocks 31 May.",
+                size = 12,
+                color = Ash,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp),
+            )
+        }
+
+        // ACCOUNT section
+        stoneItem {
+            SectionRule(
+                label = "Account",
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp, bottom = 8.dp),
+            )
+        }
+        items(items = accountItems) { item ->
+            StoneWrap {
+                AccountRow(item, modifier = Modifier.padding(horizontal = 24.dp))
+            }
+        }
+
+        // SIGN OUT
+        stoneItem {
+            Row(
+                modifier = Modifier
+                    .padding(start = 24.dp, end = 24.dp, top = 32.dp)
+                    .fillMaxWidth()
+                    .drawTopRule()
+                    .clickable { apiClient.logout() }
+                    .padding(vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StrokeIcon(ArcanaIcons.Logout, size = 16.dp, tint = Danger)
+                Overline(text = "Sign out", size = 12, color = Danger)
+            }
+        }
+
+        // Manifesto footer
+        stoneItem {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AccentText(text = "Earned, never given.", size = 18, color = Ash)
+                Overline(text = "Arcana · v2.4.0", size = 10, color = Ash2)
+            }
+        }
         }
     }
+}
+
+/**
+ * Wraps a LazyColumn item in a Stone-backed Box that also respects horizontal
+ * display cutouts. Keeps the page's body content reading as Stone while the
+ * full-bleed hero (and any iOS top-overscroll) reads as Ink, courtesy of the
+ * Ink strip painted behind the LazyColumn in [ProfileScreen].
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.stoneItem(
+    content: @Composable BoxScope.() -> Unit,
+) = item {
+    StoneWrap(content)
+}
+
+@Composable
+private fun StoneWrap(content: @Composable BoxScope.() -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Stone)
+            .safeHorizontalPadding(),
+        content = content,
+    )
+}
+
+@Composable
+private fun ProfileHero() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Ink),
+    ) {
+        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.08f, spacing = 16)
+        Column(
+            modifier = Modifier
+                .safeContentPadding()
+                .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
+        ) {
+            // Top bar within hero
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Overline(text = "Member · No. 0001", size = 10, color = Lime)
+                IconCircle(
+                    icon = ArcanaIcons.Settings,
+                    diameter = 36,
+                    iconSize = 16,
+                    borderColor = StoneAlpha18,
+                    contentColor = Stone,
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(contentAlignment = Alignment.BottomEnd) {
+                    Box(
+                        modifier = Modifier
+                            .size(116.dp)
+                            .clip(CircleShape)
+                            .background(MossDeep)
+                            .border(2.dp, Lime, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "FD",
+                            style = TextStyle(
+                                fontFamily = Arcana.fonts.display,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 46.sp,
+                                letterSpacing = (-0.02).em,
+                                color = Lime,
+                            ),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 4.dp, bottom = 4.dp)
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(Ink)
+                            .padding(4.dp)
+                            .clip(CircleShape)
+                            .background(Lime)
+                    )
+                }
+                Display(text = "Felicia Dodge", size = 36, color = Stone)
+                Overline(text = "Since May 2026", size = 10, color = StoneAlpha55)
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Stats row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .drawTopRule(StoneAlpha18)
+                    .drawBottomRule(StoneAlpha18),
+            ) {
+                StatCell("142", "Sessions", Modifier.weight(1f))
+                Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
+                StatCell("07", "Week streak", Modifier.weight(1f))
+                Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
+                StatCell("23", "Cap · May", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = value,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.display,
+                fontWeight = FontWeight.Bold,
+                fontSize = 36.sp,
+                letterSpacing = (-0.02).em,
+                color = Lime,
+            ),
+        )
+        Overline(text = label, size = 10, color = StoneAlpha55)
+    }
+}
+
+@Composable
+private fun StudioRow(s: StudioEntry, idx: Int, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Paper)
+            .border(1.dp, Mist, RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Moss),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "0$idx",
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.display,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    letterSpacing = 0.06.em,
+                    color = Lime,
+                ),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = s.name,
+                    style = TextStyle(
+                        fontFamily = Arcana.fonts.display,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        letterSpacing = (-0.01).em,
+                        color = Ink,
+                    ),
+                )
+                Overline(text = s.city, size = 10, color = Ash)
+            }
+            Spacer(Modifier.height(4.dp))
+            BodyText(text = "${s.tag} · ${s.classes}", size = 12, color = Ash)
+        }
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Overline(text = s.distance, size = 10, color = Moss)
+            StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash)
+        }
+    }
+}
+
+@Composable
+private fun AccountRow(item: AccountItem, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (item.onClick != null) Modifier.clickable(onClick = item.onClick) else Modifier)
+            .drawBottomRule()
+            .padding(vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Mist2),
+            contentAlignment = Alignment.Center,
+        ) {
+            StrokeIcon(item.icon, size = 18.dp, tint = Ink)
+        }
+        BodyText(text = item.label, size = 16, color = Ink, modifier = Modifier.weight(1f))
+        Overline(text = item.right, size = 10, color = item.rightColor)
+        StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
+    }
+}
+
+// Hairline rules drawn at the row edges.
+private fun Modifier.drawTopRule(color: Color = Mist): Modifier = this.drawBehind {
+    drawLine(
+        color = color,
+        start = Offset(0f, 0f),
+        end = Offset(size.width, 0f),
+        strokeWidth = 1.dp.toPx(),
+    )
+}
+
+private fun Modifier.drawBottomRule(color: Color = Mist): Modifier = this.drawBehind {
+    drawLine(
+        color = color,
+        start = Offset(0f, size.height),
+        end = Offset(size.width, size.height),
+        strokeWidth = 1.dp.toPx(),
+    )
 }

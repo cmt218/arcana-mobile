@@ -35,3 +35,10 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Xcode per-user state
+**/xcuserdata/
+*.xcuserstate
+
+# macOS file-system metadata
+.DS_Store

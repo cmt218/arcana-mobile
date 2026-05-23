@@ -42,6 +42,8 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. Al
 
 **Networking:** Ktor 3.x with `kotlinx-serialization`. `networking/ArcanaApiClient.kt` contains the `HttpClient` and all endpoint methods. Data classes live in `data/` and are annotated with `@Serializable`. ViewModels live in feature packages (e.g. `classes/ClassesViewModel.kt`) and expose `StateFlow<UiState>` sealed interfaces with `Loading`, `Success`, and `Error` states.
 
+**Date/time:** `kotlinx-datetime` in commonMain. Use `Clock.System.todayIn(TimeZone.currentSystemDefault())` for today, `Clock.System.now().toLocalDateTime(tz)` for current local time. `DayOfWeek` and `Month` are enums with `.name` returning uppercase strings (take(3) for the design's three-letter abbreviations).
+
 **Android dev networking:** The debug source set (`src/debug/`) contains a `network_security_config.xml` that permits cleartext to `localhost` and `10.0.2.2`. This is debug-only and cannot ship in release builds.
 
 **iOS entry point flow:** `iosApp/ContentView.swift` → `MainViewControllerKt.MainViewController()` (Kotlin) → Compose UI.
@@ -51,5 +53,63 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. Al
 - Compose Multiplatform: 1.10.0
 - Koin: 4.2.0
 - Ktor: 3.1.2
+- kotlinx-datetime: 0.7.1
 - Android min/target SDK: 24/36
 - Package: `org.arcana.mobile`
+
+## Design system
+
+The brand-aligned theming lives in `commonMain/kotlin/org/arcana/mobile/theme/` and the reusable UI primitives in `commonMain/kotlin/org/arcana/mobile/ui/`. **Screens should never hand-roll `TextStyle`s, hex colors, or raw icon paths** — compose them from these primitives. The brand color hexes and the typography hierarchy are sourced from the brand identity doc and the typography doc respectively (see the parent `arcana/CLAUDE.md` for live links).
+
+**`theme/AppColors.kt`** — five primaries are the brand doc's source of truth: `Lime #B6C24F`, `Moss #3C5D1A`, `Stone #F5F2ED`, `Wood #3B2415`, `BurntNectar #F65713`. Derived variants (`LimeBright/Deep`, `MossDeep/Light`, `Stone2`, `Paper`) are HSL-style shifts of those primaries — recompute them, don't hand-edit, if a primary changes. `Ink/Graphite/Charcoal/Ash/Ash2/Mist/Mist2` are the warm neutrals. `StoneAlpha*` are translucent helpers for dark surfaces.
+
+**`theme/Typography.kt`** — three font families, sourced from `composeResources/font/`:
+- `LeagueSpartan` — display headlines, H2, CTAs (ALL CAPS)
+- `DmSans` — body, overlines, captions, nav
+- `CormorantGaramond` (italic) — sparing emotional accents, one line per screen max
+
+**Do not add a monospace family.** The typography doc has exactly three; there is no `JetBrains Mono` / `MonoText`. For metadata stamps use `Overline` (DM Sans Bold caps with breathable tracking); for sentence-case microcopy use `Caption` (DM Sans Medium).
+
+**`theme/ArcanaTheme.kt`** — single root wrapper. Resolves the font families once and provides them via `Arcana.fonts.{display,body,accent}`. Also installs the Material3 `lightColorScheme` keyed to the Stone palette and sets `LocalContentColor` to `Ink`. Wrap the app once in `App.kt`; downstream composables consume from `Arcana.fonts.*`.
+
+**`theme/WordmarkLogo.kt`** — the dot-matrix "arcana" wordmark. The PNG (`composeResources/drawable/wordmark.png`) is cropped tight to the text bbox (aspect ratio `4.88:1`) so it renders flush left/right in any layout — no offsets or alignment hacks needed. Pass `tint = Moss` (or any color) to recolor every dot via `ColorFilter.tint`; leave null to use the asset's native stone + lime dots (the splash does this).
+
+## Shared UI library — `ui/` package
+
+The `ui/` package is the mobile design system. New screens compose from these; new shared affordances belong here.
+
+- **`Text.kt`** — `Display`, `Heading2`, `Heading3`, `Overline`, `BodyText`, `AccentText`, `Caption`. Each takes a `size: Int` (sp) and `color: Color`. `Display`, `Heading2`, and `Overline` uppercase their input automatically.
+- **`Icons.kt`** — `ArcanaIcons` exposes `DrawableResource` handles to the icon set in `composeResources/drawable/icon_*.xml`. `StrokeIcon(icon, size, tint)` renders one via Material3's `Icon` with `ColorFilter` tinting. **To add a new icon:** drop a 24×24 `<vector>` XML in `composeResources/drawable/` (stroke baked at 1.8, `fillColor="#00000000"`, `strokeLineCap/Join="round"`) and add a one-liner to `ArcanaIcons`. Works on Android and iOS unchanged.
+- **`Dots.kt`** — `Pulse`, `DottedDivider`, `SectionRule`, `DotField`. The dot is the brand's repeating gesture; reach for these instead of inventing bespoke decoration.
+- **`Buttons.kt`** — `PrimaryCta` (Moss pill with Lime arrow well), `TextLink` (underlined display-type link with trailing icon), `IconCircle` (the recurring round affordance — pass `background` for filled or `borderColor` for outlined).
+- **`Inputs.kt`** — `ArcanaTextField` (hairline-underline input; Mist → Moss on focus). Built on `BasicTextField`, not Material's filled/outlined; resist the urge to swap.
+- **`TabBar.kt`** — the bottom nav. `ArcanaTab` enum is the source of truth for the three primary destinations (`Home`, `Schedule`, `Profile`); the Profile tab renders as the member's avatar. `ArcanaTabBar` handles its own `safeBottomBarPadding()` internally — callers in `App.kt` do not pass a safe-area modifier.
+- **`Insets.kt`** — `Modifier.safeContentPadding()` (top + horizontal), `Modifier.safeBottomBarPadding()` (bottom + horizontal), `Modifier.safeHorizontalPadding()` (horizontal only). **Always prefer these to `statusBarsPadding()` / `navigationBarsPadding()`** so display cutouts (camera punch-outs in landscape) are respected. They wrap `WindowInsets.safeDrawing.only(...)` and work the same on Android and iOS.
+
+## Surface conventions
+
+The app is **Stone-primary (light)** with two intentional dark counterweights: the splash sits on **Wood** (the only screen that does), and the Profile hero sits on **Ink**. Burnt Nectar appears only as the splash's ambient glow; do not introduce it elsewhere.
+
+**Full-bleed dark hero pattern** — when a screen needs a dark hero at the top with a Stone body below (currently Profile), use this structure:
+
+```kotlin
+Box(modifier = Modifier.fillMaxSize().background(Stone)) {
+    // Ink strip behind the hero — covers ~55% so iOS top-overscroll reads as ink.
+    Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).background(Ink))
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item { Hero() }            // its own Ink background, sits over the strip
+        // post-hero items wear Stone backgrounds (see Profile's `StoneWrap` helper)
+    }
+}
+```
+
+This avoids the iOS overscroll-flash trap (transparent LazyColumn lets the Ink strip show through during top overscroll without leaving Ink visible below the last item). `ArcanaTabBar` separately fills its full slot with Stone, so nothing behind the Scaffold can bleed through under the visible tab row.
+
+## Spacing & sizing
+
+Pad in **4dp increments** (`4 / 8 / 12 / 16 / 20 / 24 / 28 / 32 / 40 / 48`). Text sizes in **2sp increments** (`10 / 12 / 14 / 16 / 18 / 20 / 22 / 26 / 28 / 36 / 44 / 52 / 56`). The few intentional exceptions — `1.dp` hairlines, the `116.dp` avatar diameter — should stay rare and obvious.
+
+## Open items
+
+- **Navigation framework.** Tab state lives in `App.kt`'s `MainScaffold` and `studioSelectionVisible` is a `Boolean` flag toggled by Profile. This will not scale to class details / reservation confirmation / deep links. The plan is to adopt **`org.jetbrains.androidx.navigation:navigation-compose`** (the JetBrains CMP port of Jetpack Navigation Compose) in its own PR — define a typed nav graph, replace the boolean overlay with a destination, and standardize back-stack handling. Defer any new navigation-shaped work until that lands.
+- **Live data wiring.** Home / Schedule / Profile currently render placeholder content (mock reservations, mock studios, hardcoded member name). `ArcanaApiClient` + `ClassesViewModel` are wired and ready; replace the screen-local mock data structures with real `StateFlow<UiState>` consumption when the corresponding endpoints land.

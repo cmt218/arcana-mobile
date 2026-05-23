@@ -1,23 +1,20 @@
 package org.arcana.mobile.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,18 +24,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import org.arcana.mobile.theme.Background
-import org.arcana.mobile.theme.Gold
-import org.arcana.mobile.theme.Muted
+import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Danger
+import org.arcana.mobile.theme.Ink
+import org.arcana.mobile.theme.Lime
+import org.arcana.mobile.theme.Moss
+import org.arcana.mobile.theme.Stone
+import org.arcana.mobile.theme.WordmarkLogo
+import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.ArcanaTextField
+import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.Display
+import org.arcana.mobile.ui.Overline
+import org.arcana.mobile.ui.PrimaryCta
+import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.ui.safeContentPadding
 
+/**
+ * Gateway — sign-in / create-account. Both modes share one Stone shell;
+ * only the copy and CTA differ. Layout is grouped (wordmark / header / form / cta)
+ * with Arrangement.spacedBy + a weight-pushed footer so it breathes on any
+ * screen size rather than relying on hand-tuned spacers.
+ */
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
@@ -48,145 +59,164 @@ fun AuthScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val uiState by viewModel.uiState.collectAsState()
+    val loading = uiState is AuthUiState.Loading
 
-    LaunchedEffect(isLoginMode) {
-        viewModel.resetState()
-    }
+    LaunchedEffect(isLoginMode) { viewModel.resetState() }
 
     val onSubmit = {
         if (isLoginMode) viewModel.login(email, password)
         else viewModel.register(email, password)
     }
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Background),
-        contentAlignment = Alignment.Center,
+            .background(Stone)
+            .safeContentPadding()
+            .imePadding()
+            .padding(horizontal = 28.dp),
     ) {
+        // Scrollable content takes available space; footer pinned at the bottom.
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 32.dp),
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(40.dp),
         ) {
-            Text(
-                text = "arcana",
-                style = TextStyle(
-                    color = Gold,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Light,
-                    letterSpacing = 10.sp,
-                ),
+            Spacer(Modifier.height(8.dp))
+            WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+            HeaderBlock(isLoginMode)
+            FormBlock(
+                isLoginMode = isLoginMode,
+                email = email, onEmailChange = { email = it },
+                password = password, onPasswordChange = { password = it },
+                error = (uiState as? AuthUiState.Error)?.message,
+                onSubmit = onSubmit,
             )
-
-            Spacer(Modifier.height(48.dp))
-
-            Text(
-                text = if (isLoginMode) "Sign in" else "Create account",
-                style = TextStyle(
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Light,
-                ),
+            CtaBlock(
+                isLoginMode = isLoginMode,
+                loading = loading,
+                onSubmit = onSubmit,
             )
+        }
 
-            Spacer(Modifier.height(32.dp))
+        Footer(
+            isLoginMode = isLoginMode,
+            onToggle = { isLoginMode = !isLoginMode },
+            modifier = Modifier.padding(top = 16.dp, bottom = 24.dp),
+        )
+    }
+}
 
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Email", color = Muted) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next,
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = Muted,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Gold,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
+@Composable
+private fun HeaderBlock(isLoginMode: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Overline(text = if (isLoginMode) "Sign in" else "Create account", color = Moss)
+        Display(
+            text = if (isLoginMode) "Welcome\nback." else "Welcome.",
+            size = 52,
+            color = Ink,
+        )
+    }
+}
 
-            Spacer(Modifier.height(16.dp))
+@Composable
+private fun FormBlock(
+    isLoginMode: Boolean,
+    email: String,
+    onEmailChange: (String) -> Unit,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    error: String?,
+    onSubmit: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        ArcanaTextField(
+            label = "Email",
+            value = email,
+            onValueChange = onEmailChange,
+            placeholder = "you@domain.co",
+            keyboardType = KeyboardType.Email,
+            imeAction = ImeAction.Next,
+        )
+        ArcanaTextField(
+            label = "Password",
+            value = password,
+            onValueChange = onPasswordChange,
+            placeholder = if (isLoginMode) "Your password" else "At least 8 characters",
+            secure = true,
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done,
+            onImeAction = onSubmit,
+        )
+        if (error != null) {
+            BodyText(text = error, size = 14, color = Danger)
+        }
+    }
+}
 
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password", color = Muted) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { onSubmit() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = Muted,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Gold,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            if (uiState is AuthUiState.Error) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = (uiState as AuthUiState.Error).message,
-                    style = TextStyle(
-                        color = Color(0xFFE07070),
-                        fontSize = 13.sp,
-                    ),
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = { onSubmit() },
-                enabled = uiState !is AuthUiState.Loading,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Gold,
-                    disabledContainerColor = Gold.copy(alpha = 0.5f),
-                ),
+@Composable
+private fun CtaBlock(
+    isLoginMode: Boolean,
+    loading: Boolean,
+    onSubmit: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (loading) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(56.dp)
+                    .clip(CircleShape)
+                    .background(Moss),
+                contentAlignment = Alignment.Center,
             ) {
-                if (uiState is AuthUiState.Loading) {
-                    CircularProgressIndicator(
-                        color = Background,
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text(
-                        text = if (isLoginMode) "Sign In" else "Create Account",
-                        style = TextStyle(
-                            color = Background,
-                            letterSpacing = 2.sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    )
-                }
+                CircularProgressIndicator(
+                    color = Lime,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp),
+                )
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            TextButton(onClick = { isLoginMode = !isLoginMode }) {
-                Text(
-                    text = if (isLoginMode) "New here? Create an account"
-                    else "Already have an account? Sign in",
-                    style = TextStyle(
-                        color = Muted,
-                        fontSize = 13.sp,
-                    ),
+        } else {
+            PrimaryCta(
+                label = if (isLoginMode) "Sign in" else "Create account",
+                onClick = onSubmit,
+            )
+        }
+        if (!isLoginMode) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                BodyText(
+                    text = "Continuing accepts the Member Agreement.",
+                    size = 12,
+                    color = Ash,
                 )
             }
         }
     }
 }
+
+@Composable
+private fun Footer(
+    isLoginMode: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Overline(
+            text = if (isLoginMode) "New here?" else "Already a member?",
+            size = 10,
+            color = Ash,
+        )
+        TextLink(
+            label = if (isLoginMode) "Sign up" else "Sign in",
+            onClick = onToggle,
+            color = Moss,
+            icon = if (isLoginMode) ArcanaIcons.ArrowUpRight else ArcanaIcons.ArrowRight,
+        )
+    }
+}
+
