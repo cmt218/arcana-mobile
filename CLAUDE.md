@@ -54,6 +54,7 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. Al
 - Koin: 4.2.0
 - Ktor: 3.1.2
 - kotlinx-datetime: 0.7.1
+- Navigation Compose: 2.9.2 (JetBrains CMP port — pinned to a version matched to the CMP release in the CMP CHANGELOG; do not bump independently of `composeMultiplatform`)
 - Android min/target SDK: 24/36
 - Package: `org.arcana.mobile`
 
@@ -109,7 +110,16 @@ This avoids the iOS overscroll-flash trap (transparent LazyColumn lets the Ink s
 
 Pad in **4dp increments** (`4 / 8 / 12 / 16 / 20 / 24 / 28 / 32 / 40 / 48`). Text sizes in **2sp increments** (`10 / 12 / 14 / 16 / 18 / 20 / 22 / 26 / 28 / 36 / 44 / 52 / 56`). The few intentional exceptions — `1.dp` hairlines, the `116.dp` avatar diameter — should stay rare and obvious.
 
+## Navigation
+
+`App.kt` hosts a `NavHost` keyed off `navigation/ArcanaDestinations.kt` — a sealed `ArcanaDestination` with `@Serializable` data objects per destination (no string routes). The bottom bar's active tab is derived from `currentBackStackEntryAsState` via `hasRoute<T>()`; it hides on non-tab destinations (currently just `StudioSelection`) so a stray tab tap mid-flow can't silently pop the in-progress entry off the stack.
+
+Tab navigation uses the standard `popUpTo(start) { saveState = true }` / `launchSingleTop` / `restoreState` block so each tab keeps its own back stack + scroll position.
+
+Transitions are pinned at the `NavHost` level (150ms fade, all four slots) for cross-platform consistency — iOS's default slide reads wrong between sibling tabs. Override per-`composable` if a destination needs its own transition.
+
+**Dependency pinning.** `org.jetbrains.androidx.navigation:navigation-compose` is the JetBrains CMP port, not Jetpack Navigation. Its version must match the `composeMultiplatform` release — find the matched version in the CMP CHANGELOG, not in Jetpack/Android docs. Bumping CMP almost always means bumping nav-compose; bumping nav-compose alone risks pulling a conflicting Compose runtime transitive.
+
 ## Open items
 
-- **Navigation framework.** Tab state lives in `App.kt`'s `MainScaffold` and `studioSelectionVisible` is a `Boolean` flag toggled by Profile. This will not scale to class details / reservation confirmation / deep links. The plan is to adopt **`org.jetbrains.androidx.navigation:navigation-compose`** (the JetBrains CMP port of Jetpack Navigation Compose) in its own PR — define a typed nav graph, replace the boolean overlay with a destination, and standardize back-stack handling. Defer any new navigation-shaped work until that lands.
 - **Live data wiring.** Home / Schedule / Profile currently render placeholder content (mock reservations, mock studios, hardcoded member name). `ArcanaApiClient` + `ClassesViewModel` are wired and ready; replace the screen-local mock data structures with real `StateFlow<UiState>` consumption when the corresponding endpoints land.
