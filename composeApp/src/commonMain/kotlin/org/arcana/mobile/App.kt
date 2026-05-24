@@ -1,8 +1,9 @@
 package org.arcana.mobile
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -18,10 +19,18 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.delay
 import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.home.HomeScreen
+import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.ProfileScreen
 import org.arcana.mobile.schedule.ScheduleScreen
@@ -76,34 +85,66 @@ fun App() {
 
 @Composable
 private fun MainScaffold() {
-    var selectedTab by remember { mutableStateOf(ArcanaTab.Home) }
-    var studioSelectionVisible by remember { mutableStateOf(false) }
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            containerColor = Stone,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
+    val selectedTab: ArcanaTab? = when {
+        currentDestination?.hasRoute<ArcanaDestination.Home>() == true -> ArcanaTab.Home
+        currentDestination?.hasRoute<ArcanaDestination.Schedule>() == true -> ArcanaTab.Schedule
+        currentDestination?.hasRoute<ArcanaDestination.Profile>() == true -> ArcanaTab.Profile
+        else -> null
+    }
+
+    Scaffold(
+        containerColor = Stone,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            if (selectedTab != null) {
                 ArcanaTabBar(
                     active = selectedTab,
-                    onSelect = { selectedTab = it },
+                    onSelect = { tab -> navController.navigateToTab(tab) },
                     avatarInitials = "FD",
                 )
-            },
-        ) { innerPadding ->
-            val content = Modifier.padding(innerPadding)
-            when (selectedTab) {
-                ArcanaTab.Home -> HomeScreen(modifier = content)
-                ArcanaTab.Schedule -> ScheduleScreen(modifier = content)
-                ArcanaTab.Profile -> ProfileScreen(
-                    onManageStudios = { studioSelectionVisible = true },
-                    modifier = content,
+            }
+        },
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = ArcanaDestination.Home,
+            modifier = Modifier.padding(innerPadding),
+            // Cross-platform-consistent fade. Tabs are siblings (no left/right
+            // semantics), and iOS's default slide reads wrong when navigating
+            // "backwards" between tabs. Override per-composable if a particular
+            // destination needs a different transition (e.g. a modal flow).
+            enterTransition = { fadeIn(tween(150)) },
+            exitTransition = { fadeOut(tween(150)) },
+            popEnterTransition = { fadeIn(tween(150)) },
+            popExitTransition = { fadeOut(tween(150)) },
+        ) {
+            composable<ArcanaDestination.Home> { HomeScreen() }
+            composable<ArcanaDestination.Schedule> { ScheduleScreen() }
+            composable<ArcanaDestination.Profile> {
+                ProfileScreen(
+                    onManageStudios = { navController.navigate(ArcanaDestination.StudioSelection) },
                 )
             }
+            composable<ArcanaDestination.StudioSelection> {
+                StudioSelectionScreen(onClose = { navController.popBackStack() })
+            }
         }
+    }
+}
 
-        if (studioSelectionVisible) {
-            StudioSelectionScreen(onClose = { studioSelectionVisible = false })
-        }
+private fun NavController.navigateToTab(tab: ArcanaTab) {
+    val dest: ArcanaDestination = when (tab) {
+        ArcanaTab.Home -> ArcanaDestination.Home
+        ArcanaTab.Schedule -> ArcanaDestination.Schedule
+        ArcanaTab.Profile -> ArcanaDestination.Profile
+    }
+    navigate(dest) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }
