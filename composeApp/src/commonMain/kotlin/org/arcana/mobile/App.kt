@@ -1,5 +1,6 @@
 package org.arcana.mobile
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -67,18 +68,29 @@ fun App() {
         }
 
         LaunchedEffect(Unit) {
-            delay(2800)
+            delay(SPLASH_MIN_DISPLAY_MS)
             splashVisible = false
         }
 
-        when {
-            splashVisible -> SplashScreen()
-            isAuthenticated -> CompositionLocalProvider(
-                LocalViewModelStoreOwner provides sessionStoreOwner
-            ) {
-                MainScaffold()
+        // Render the post-splash destination underneath so the splash's 300 ms
+        // fade-out reveals the next screen rather than a blank surface.
+        if (!splashVisible) {
+            if (isAuthenticated) {
+                CompositionLocalProvider(
+                    LocalViewModelStoreOwner provides sessionStoreOwner
+                ) {
+                    MainScaffold()
+                }
+            } else {
+                AuthScreen(viewModel = authVm)
             }
-            else -> AuthScreen(viewModel = authVm)
+        }
+        AnimatedVisibility(
+            visible = splashVisible,
+            enter = fadeIn(tween(0)),
+            exit = fadeOut(tween(300)),
+        ) {
+            SplashScreen()
         }
     }
 }

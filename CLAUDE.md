@@ -89,7 +89,9 @@ The `ui/` package is the mobile design system. New screens compose from these; n
 
 ## Surface conventions
 
-The app is **Stone-primary (light)** with two intentional dark counterweights: the splash sits on **Wood** (the only screen that does), and the Profile hero sits on **Ink**. Burnt Nectar appears only as the splash's ambient glow; do not introduce it elsewhere.
+The app is **Stone-primary (light)** with two intentional dark counterweights: the splash sits on **MossDeep `#2A4214`** (the only screen that does), and the Profile hero sits on **Ink**. Burnt Nectar is reserved as a sparing accent — do not introduce it as a primary surface.
+
+**Splash** (`SplashScreen.kt` + `ui/DancingWordmark.kt`): full-screen Compose Canvas rendering a grid of stone-colored dots that flicker, settle into the Arcana wordmark from `ui/WordmarkGridData.kt` (embedded const, no I/O), then breath-pulse. Sits on MossDeep with a radial vignette fading to Ink at the corners. Timing is derived from `DANCE_DURATION_MS` + `DANCE_SETTLE_STAGGER_MS`; the splash min-display constant in `SplashScreen.kt` adds a 200 ms tail so the breath pulse lands before the 300 ms exit fade in `App.kt`. The canonical reference grid JSON is in `composeResources/files/wordmark-grid.json`; if it ever changes, regenerate the const in `WordmarkGridData.kt` from the file.
 
 **Full-bleed dark hero pattern** — when a screen needs a dark hero at the top with a Stone body below (currently Profile), use this structure:
 
