@@ -30,6 +30,8 @@ class ArcanaApiClient(private val tokenStorage: TokenStorage) {
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
 
+    private fun v1(path: String) = "${getBaseUrl()}/api/v1/$path"
+
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -49,7 +51,7 @@ class ArcanaApiClient(private val tokenStorage: TokenStorage) {
                             return@refreshTokens null
                         }
                     try {
-                        val tokens = client.post("${getBaseUrl()}/api/auth/token/refresh/") {
+                        val tokens = client.post(v1("auth/token/refresh/")) {
                             contentType(ContentType.Application.Json)
                             setBody(RefreshRequest(refresh))
                             markAsRefreshTokenRequest()
@@ -72,7 +74,7 @@ class ArcanaApiClient(private val tokenStorage: TokenStorage) {
     }
 
     suspend fun login(email: String, password: String) {
-        val tokens = client.post("${getBaseUrl()}/api/auth/token/") {
+        val tokens = client.post(v1("auth/token/")) {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(email, password))
         }.body<TokenResponse>()
@@ -82,7 +84,7 @@ class ArcanaApiClient(private val tokenStorage: TokenStorage) {
     }
 
     suspend fun register(email: String, password: String) {
-        val tokens = client.post("${getBaseUrl()}/api/auth/register/") {
+        val tokens = client.post(v1("auth/register/")) {
             contentType(ContentType.Application.Json)
             setBody(RegisterRequest(email, password))
         }.body<TokenResponse>()
@@ -92,7 +94,7 @@ class ArcanaApiClient(private val tokenStorage: TokenStorage) {
     }
 
     suspend fun fetchClasses(): List<ClassDto> {
-        return client.get("${getBaseUrl()}/api/classes/").body()
+        return client.get(v1("classes/")).body()
     }
 
     fun logout() {
