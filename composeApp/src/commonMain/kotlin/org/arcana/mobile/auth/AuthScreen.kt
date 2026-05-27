@@ -8,12 +8,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -71,6 +70,10 @@ fun AuthScreen(
     var password by remember { mutableStateOf("") }
     val uiState by viewModel.uiState.collectAsState()
     val loading = uiState is AuthUiState.Loading
+    // Lets us advance focus from the first field to the second when the IME
+    // Next action fires. Compose iOS doesn't auto-traverse focus on Next the
+    // way Android does, so this has to be wired explicitly.
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(isLoginMode) { viewModel.resetState() }
 
@@ -79,43 +82,46 @@ fun AuthScreen(
         else viewModel.register(email, password)
     }
 
+    // Single non-scrolling column. The footer is pushed to the bottom by a
+    // weight-1 Spacer rather than by wrapping the form in a scrollable
+    // weight(1f) child. No `imePadding` either — that's deliberate: with
+    // imePadding the whole column shrinks when the keyboard rises, dragging
+    // the footer up to ride the top edge of the keyboard. Without it, the
+    // keyboard simply renders over the bottom of the static layout, which is
+    // where the footer lives, so the sign-up link + Developer Settings are
+    // naturally hidden behind the keyboard while the form fields stay put.
+    // Assumes the screen is tall enough for wordmark + header + 2 fields +
+    // CTA to fit above the keyboard, which is true on every supported phone.
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Stone)
             .safeContentPadding()
-            .imePadding()
             .padding(horizontal = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(40.dp),
     ) {
-        // Scrollable content takes available space; footer pinned at the bottom.
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(40.dp),
-        ) {
-            Spacer(Modifier.height(8.dp))
-            WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
-            HeaderBlock(isLoginMode)
-            FormBlock(
-                isLoginMode = isLoginMode,
-                email = email, onEmailChange = { email = it },
-                password = password, onPasswordChange = { password = it },
-                error = (uiState as? AuthUiState.Error)?.message,
-                onSubmit = onSubmit,
-            )
-            CtaBlock(
-                isLoginMode = isLoginMode,
-                loading = loading,
-                onSubmit = onSubmit,
-            )
-        }
-
+        Spacer(Modifier.height(8.dp))
+        WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+        HeaderBlock(isLoginMode)
+        FormBlock(
+            isLoginMode = isLoginMode,
+            email = email, onEmailChange = { email = it },
+            password = password, onPasswordChange = { password = it },
+            error = (uiState as? AuthUiState.Error)?.message,
+            onSubmit = onSubmit,
+            onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
+        )
+        CtaBlock(
+            isLoginMode = isLoginMode,
+            loading = loading,
+            onSubmit = onSubmit,
+        )
+        Spacer(Modifier.weight(1f))
         Footer(
             isLoginMode = isLoginMode,
             onToggle = { isLoginMode = !isLoginMode },
             onDeveloperSettings = { showDeveloperSettings = true },
-            modifier = Modifier.padding(top = 16.dp, bottom = 24.dp),
+            modifier = Modifier.padding(bottom = 24.dp),
         )
     }
 }
@@ -141,6 +147,7 @@ private fun FormBlock(
     onPasswordChange: (String) -> Unit,
     error: String?,
     onSubmit: () -> Unit,
+    onEmailNext: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         ArcanaTextField(
@@ -150,6 +157,7 @@ private fun FormBlock(
             placeholder = "you@domain.co",
             keyboardType = KeyboardType.Email,
             imeAction = ImeAction.Next,
+            onImeAction = onEmailNext,
         )
         ArcanaTextField(
             label = "Password",
