@@ -25,14 +25,18 @@ import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
 import org.arcana.mobile.data.RegisterRequest
 import org.arcana.mobile.data.TokenResponse
-import org.arcana.mobile.getBaseUrl
 
-class ArcanaApiClient(private val tokenStorage: TokenStorage) {
+class ArcanaApiClient(
+    private val tokenStorage: TokenStorage,
+    private val baseUrlProvider: BaseUrlProvider,
+) {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
 
-    private fun v1(path: String) = "${getBaseUrl()}/api/v1/$path"
+    // Re-read the URL per-request so Developer Settings edits apply to the
+    // very next outbound call without recreating the HttpClient.
+    private fun v1(path: String) = "${baseUrlProvider.get()}/api/v1/$path"
 
     private val client = HttpClient {
         install(ContentNegotiation) {

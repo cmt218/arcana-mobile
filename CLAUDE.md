@@ -122,6 +122,28 @@ Transitions are pinned at the `NavHost` level (150ms fade, all four slots) for c
 
 **Dependency pinning.** `org.jetbrains.androidx.navigation:navigation-compose` is the JetBrains CMP port, not Jetpack Navigation. Its version must match the `composeMultiplatform` release — find the matched version in the CMP CHANGELOG, not in Jetpack/Android docs. Bumping CMP almost always means bumping nav-compose; bumping nav-compose alone risks pulling a conflicting Compose runtime transitive.
 
+## Temporary debug treatment
+
+These are pre-launch dev affordances that must be removed (or hardened) before public release. Each is tagged inline with a comment pointing back here for findability.
+
+**1. Runtime API base URL override + Developer Settings screen.**
+- Files: `networking/BaseUrlProvider.kt`, `settings/DeveloperSettingsScreen.kt`, `settings/DeveloperSettingsViewModel.kt`, the entry-point link in `auth/AuthScreen.kt`'s footer.
+- Why it exists: pre-launch we run the server on Cole's Mac and expose it to physical devices via a Cloudflare *quick* tunnel. Quick-tunnel URLs change on every `cloudflared` restart, so rebuilding the app each time would be miserable. The override is editable at runtime via the Developer Settings overlay (reachable from the auth screen footer — so testers locked out of login because the default doesn't reach the server can fix it without first authenticating). The override persists in `SecureStorage` (Keychain on iOS, EncryptedSharedPreferences on Android).
+- Default fallback: platform-specific. Android `http://10.0.2.2:8000` (emulator loopback); iOS `http://localhost:8000` (simulator). Physical devices always need the override — the default just keeps emulator/simulator dev frictionless.
+
+**2. Server-side `*.trycloudflare.com` allowlist.**
+- File: `arcana-server/arcana/settings/dev.py` — `ALLOWED_HOSTS` includes `.trycloudflare.com` (wildcard) and a placeholder `api.arcana.fit`. Also sets `SECURE_PROXY_SSL_HEADER` because Cloudflare terminates TLS at the edge.
+- Why it exists: paired with #1. Without the allowlist Django 400s every request through the tunnel (unknown Host header).
+
+**Cutover checklist when prod ships (probably alongside Phase 4 / Stripe or Phase 5 / booking):**
+
+- [ ] Flip the platform `defaultBaseUrl()` actuals to point at the prod hostname (currently `https://api.arcana.fit`). Test that a fresh install on a physical device works with no override set.
+- [ ] Decide on the future of the Developer Settings screen: either remove the auth-screen link entirely, gate the entire feature on a debug build flavor, or keep it as a "support" affordance for troubleshooting. The screen itself is self-contained — removing the AuthScreen entry point is sufficient to hide it from users.
+- [ ] Remove the `BaseUrlProvider` if the runtime override is no longer needed (also drop the `defaultUrl` constructor param and revert `ArcanaApiClient` to a static base URL).
+- [ ] In `arcana-server`, tighten `dev.py`'s `ALLOWED_HOSTS` (remove the `.trycloudflare.com` wildcard) once prod uses `prod.py` and tunnels aren't used for active dev.
+- [ ] Make sure any in-flight Developer Settings overrides on testers' devices are reset, or accept that they're sticky and document the reset path.
+
 ## Open items
 
-- **Live data wiring.** Home / Schedule / Profile currently render placeholder content (mock reservations, mock studios, hardcoded member name). `ArcanaApiClient` + `ClassesViewModel` are wired and ready; replace the screen-local mock data structures with real `StateFlow<UiState>` consumption when the corresponding endpoints land.
+- **Live data wiring.** Home + Profile still render placeholder content (mock reservations, mock studios, hardcoded member name). Schedule is now real-data-backed. Wire the others as their endpoints land.
+- **Pull-to-refresh + resume-refresh on Schedule.** Today the Schedule fetch happens once on `ScheduleViewModel.init` and again only on a fresh login. Add a pull-to-refresh gesture and an auto-refresh when the app returns from background if last fetch > N min ago.

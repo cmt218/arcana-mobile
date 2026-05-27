@@ -43,6 +43,7 @@ import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
+import org.arcana.mobile.settings.DeveloperSettingsScreen
 
 /**
  * Gateway — sign-in / create-account. Both modes share one Stone shell;
@@ -55,6 +56,16 @@ fun AuthScreen(
     viewModel: AuthViewModel,
     modifier: Modifier = Modifier,
 ) {
+    // Developer Settings is reachable from here as a full-screen overlay so
+    // testers stuck at login (because the default API URL doesn't work for
+    // them) can swap the base URL without first authenticating. Same screen
+    // is also reachable post-login from Profile.
+    var showDeveloperSettings by remember { mutableStateOf(false) }
+    if (showDeveloperSettings) {
+        DeveloperSettingsScreen(onClose = { showDeveloperSettings = false })
+        return
+    }
+
     var isLoginMode by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -103,6 +114,7 @@ fun AuthScreen(
         Footer(
             isLoginMode = isLoginMode,
             onToggle = { isLoginMode = !isLoginMode },
+            onDeveloperSettings = { showDeveloperSettings = true },
             modifier = Modifier.padding(top = 16.dp, bottom = 24.dp),
         )
     }
@@ -199,6 +211,7 @@ private fun CtaBlock(
 private fun Footer(
     isLoginMode: Boolean,
     onToggle: () -> Unit,
+    onDeveloperSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -216,6 +229,16 @@ private fun Footer(
             onClick = onToggle,
             color = Moss,
             icon = if (isLoginMode) ArcanaIcons.ArrowUpRight else ArcanaIcons.ArrowRight,
+        )
+        Spacer(Modifier.height(8.dp))
+        // Pre-launch only: lets testers swap the API base URL before login,
+        // for environments where the default URL isn't reachable.
+        TextLink(
+            label = "Developer settings",
+            onClick = onDeveloperSettings,
+            color = Ash,
+            underline = false,
+            icon = ArcanaIcons.Settings,
         )
     }
 }

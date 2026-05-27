@@ -9,7 +9,9 @@ class AndroidPlatform : Platform {
 
 actual fun getPlatform(): Platform = AndroidPlatform()
 
-actual fun getBaseUrl(): String = "http://10.0.2.2:8000"
+// 10.0.2.2 is the emulator's loopback to the host machine. Physical Android
+// devices need a tunnel URL set via Developer Settings.
+actual fun defaultBaseUrl(): String = "http://10.0.2.2:8000"
 
 actual fun logWarning(tag: String, message: String) {
     Log.w(tag, message)
