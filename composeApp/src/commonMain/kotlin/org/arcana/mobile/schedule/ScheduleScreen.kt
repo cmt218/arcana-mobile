@@ -105,6 +105,29 @@ private fun parseHexColor(hex: String): Color? {
 private fun studioColorFor(primaryColor: String): Color =
     parseHexColor(primaryColor) ?: FALLBACK_STUDIO_COLOR
 
+// ── Capacity tier -------------------------------------------------------------
+
+private enum class CapacityTier(val label: String) {
+    Full("FULL"),
+    AlmostFull("ALMOST FULL"),
+    FillingUp("FILLING UP"),
+    Available("AVAILABLE"),
+}
+
+private fun ScheduleSessionDto.capacityTier(): CapacityTier {
+    val available = arcanaSpotsAvailable
+    return when {
+        // <= 0 mirrors the defensive guard on `isFull` in ClassRow so over-
+        // booked sessions (negative available) consistently render as Full
+        // across label, color, and CTA.
+        available <= 0 -> CapacityTier.Full
+        available <= 2 -> CapacityTier.AlmostFull
+        arcanaSpotsOffered > 0 &&
+            available.toFloat() / arcanaSpotsOffered <= 0.4f -> CapacityTier.FillingUp
+        else -> CapacityTier.Available
+    }
+}
+
 // ── Time-of-day grouping ------------------------------------------------------
 
 private enum class TimeBand(val label: String) {
@@ -123,6 +146,7 @@ private fun LocalTime.timeBand(): TimeBand = when {
 fun ScheduleScreen(
     modifier: Modifier = Modifier,
     viewModel: ScheduleViewModel = koinViewModel(),
+    onOpenClassDetail: (Int) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -135,7 +159,7 @@ fun ScheduleScreen(
         when (val s = state) {
             is ScheduleUiState.Loading -> LoadingPlaceholder()
             is ScheduleUiState.Error -> ErrorBlock(message = s.message, onRetry = viewModel::reload)
-            is ScheduleUiState.Success -> SuccessContent(state = s, viewModel = viewModel)
+            is ScheduleUiState.Success -> SuccessContent(state = s, viewModel = viewModel, onOpenClassDetail = onOpenClassDetail)
         }
     }
 }
@@ -186,7 +210,11 @@ private fun ErrorBlock(message: String, onRetry: () -> Unit) {
  * with a `LazyColumn` inside a `verticalScroll` `Column`.
  */
 @Composable
-private fun SuccessContent(state: ScheduleUiState.Success, viewModel: ScheduleViewModel) {
+private fun SuccessContent(
+    state: ScheduleUiState.Success,
+    viewModel: ScheduleViewModel,
+    onOpenClassDetail: (Int) -> Unit,
+) {
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember { Clock.System.todayIn(tz) }
     var selectedDate by remember { mutableStateOf(today) }
@@ -304,7 +332,10 @@ private fun SuccessContent(state: ScheduleUiState.Success, viewModel: ScheduleVi
                     key = { session -> "row-${session.id}" },
                 ) { session ->
                     Box(modifier = Modifier.padding(horizontal = 24.dp)) {
-                        ClassRow(session, tz)
+                        ClassRow(
+                            session, tz,
+                            onClick = { onOpenClassDetail(session.id) },
+                        )
                     }
                 }
             }
@@ -407,7 +438,11 @@ private fun FilterChip(
 // ── Class row -----------------------------------------------------------------
 
 @Composable
-private fun ClassRow(session: ScheduleSessionDto, tz: TimeZone) {
+private fun ClassRow(
+    session: ScheduleSessionDto,
+    tz: TimeZone,
+    onClick: () -> Unit = {},
+) {
     val time = Instant.parse(session.startAt).toLocalDateTime(tz).time
     val studio = session.location.studio
     val sc = studioColorFor(studio.primaryColor)
@@ -423,6 +458,7 @@ private fun ClassRow(session: ScheduleSessionDto, tz: TimeZone) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -496,14 +532,16 @@ private fun ClassRow(session: ScheduleSessionDto, tz: TimeZone) {
                             )
                     )
                 }
+                val tier = session.capacityTier()
                 Overline(
-                    text = when {
-                        isFull -> "FULL"
-                        isScarce -> "$available LEFT"
-                        else -> "$available / $offered OPEN"
-                    },
+                    text = tier.label,
                     size = 10,
-                    color = if (isScarce) Warning else Ash,
+                    color = when (tier) {
+                        CapacityTier.Full -> Ash2
+                        CapacityTier.AlmostFull -> Warning
+                        CapacityTier.FillingUp -> MossLight
+                        CapacityTier.Available -> Ash
+                    },
                 )
             }
         }

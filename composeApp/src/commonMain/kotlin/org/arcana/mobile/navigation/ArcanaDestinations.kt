@@ -8,4 +8,7 @@ sealed interface ArcanaDestination {
     @Serializable data object Profile : ArcanaDestination
 
     @Serializable data object StudioSelection : ArcanaDestination
+
+    // Detail nav arg — pass the integer ClassSession id from Schedule.
+    @Serializable data class ClassDetail(val id: Int) : ArcanaDestination
 }

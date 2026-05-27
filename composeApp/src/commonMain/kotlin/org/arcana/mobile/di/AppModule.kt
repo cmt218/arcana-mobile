@@ -6,6 +6,7 @@ import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.defaultBaseUrl
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.networking.BaseUrlProvider
+import org.arcana.mobile.schedule.ClassDetailViewModel
 import org.arcana.mobile.schedule.ScheduleViewModel
 import org.arcana.mobile.settings.DeveloperSettingsViewModel
 import org.koin.core.module.dsl.viewModel
@@ -21,4 +22,5 @@ val appModule = module {
     viewModel { AuthViewModel(get()) }
     viewModel { ScheduleViewModel(get()) }
     viewModel { DeveloperSettingsViewModel(get()) }
+    viewModel { (sessionId: Int) -> ClassDetailViewModel(get(), sessionId) }
 }

@@ -27,6 +27,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import kotlinx.coroutines.delay
 import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
@@ -34,6 +35,7 @@ import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.ProfileScreen
+import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
@@ -135,7 +137,13 @@ private fun MainScaffold() {
             popExitTransition = { fadeOut(tween(150)) },
         ) {
             composable<ArcanaDestination.Home> { HomeScreen() }
-            composable<ArcanaDestination.Schedule> { ScheduleScreen() }
+            composable<ArcanaDestination.Schedule> {
+                ScheduleScreen(
+                    onOpenClassDetail = { id ->
+                        navController.navigate(ArcanaDestination.ClassDetail(id))
+                    },
+                )
+            }
             composable<ArcanaDestination.Profile> {
                 ProfileScreen(
                     onManageStudios = { navController.navigate(ArcanaDestination.StudioSelection) },
@@ -143,6 +151,13 @@ private fun MainScaffold() {
             }
             composable<ArcanaDestination.StudioSelection> {
                 StudioSelectionScreen(onClose = { navController.popBackStack() })
+            }
+            composable<ArcanaDestination.ClassDetail> { backStackEntry ->
+                val args = backStackEntry.toRoute<ArcanaDestination.ClassDetail>()
+                ClassDetailScreen(
+                    sessionId = args.id,
+                    onClose = { navController.popBackStack() },
+                )
             }
         }
     }

@@ -130,6 +130,15 @@ class ArcanaApiClient(
         }.body()
     }
 
+    /**
+     * `GET /api/v1/classes/<id>/` — single-class drill-down with sync-on-read.
+     * Server refreshes from the platform if its cached row is > 30s old. May
+     * take 300-900ms on a stale read; the UI should show a loading state.
+     */
+    suspend fun fetchClassDetail(id: Int): ScheduleSessionDto {
+        return client.get(v1("classes/$id/")).body()
+    }
+
     fun logout() {
         tokenStorage.clear()
         _isAuthenticated.value = false

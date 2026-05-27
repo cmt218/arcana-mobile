@@ -2,6 +2,7 @@ package org.arcana.mobile.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Response shape for `GET /api/v1/classes/`. Mirrors the server contract at
@@ -37,6 +38,8 @@ data class TemplateBriefDto(
     val modality: String,
     @SerialName("hero_image_url") val heroImageUrl: String,
     @SerialName("spot_selection_mode") val spotSelectionMode: String,
+    val description: String = "",
+    @SerialName("layout_metadata") val layoutMetadata: JsonObject = JsonObject(emptyMap()),
 )
 
 @Serializable
@@ -52,6 +55,9 @@ data class LocationBriefDto(
     val name: String,
     val timezone: String,
     val studio: StudioBriefDto,
+    val address: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
 )
 
 @Serializable
