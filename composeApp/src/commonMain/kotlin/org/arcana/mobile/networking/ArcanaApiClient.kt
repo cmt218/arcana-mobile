@@ -7,6 +7,7 @@ import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -15,10 +16,11 @@ import io.ktor.http.encodedPath
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
 import org.arcana.mobile.auth.TokenStorage
-import org.arcana.mobile.data.ClassDto
 import org.arcana.mobile.data.LoginRequest
+import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
 import org.arcana.mobile.data.RegisterRequest
@@ -93,8 +95,35 @@ class ArcanaApiClient(private val tokenStorage: TokenStorage) {
         _isAuthenticated.value = true
     }
 
-    suspend fun fetchClasses(): List<ClassDto> {
-        return client.get(v1("classes/")).body()
+    /**
+     * `GET /api/v1/classes/` — DB-backed schedule browse (Phase 3).
+     *
+     * @param from inclusive start date (local NY date — server interprets in
+     *             `America/New_York`)
+     * @param to inclusive end date; must be >= [from] and ≤ 14 days from it
+     * @param studioSlugs optional studio-slug whitelist; matches any in the list
+     * @param locationIds optional location-id whitelist; matches any in the list
+     * @param modality optional case-insensitive modality match
+     * @param availableOnly when true, hides sessions with no remaining spots
+     */
+    suspend fun fetchSchedule(
+        from: LocalDate,
+        to: LocalDate,
+        studioSlugs: List<String>? = null,
+        locationIds: List<Int>? = null,
+        modality: String? = null,
+        availableOnly: Boolean = false,
+    ): List<ScheduleSessionDto> {
+        return client.get(v1("classes/")) {
+            parameter("from", from.toString())
+            parameter("to", to.toString())
+            studioSlugs?.takeIf { it.isNotEmpty() }
+                ?.let { parameter("studio_slug", it.joinToString(",")) }
+            locationIds?.takeIf { it.isNotEmpty() }
+                ?.let { parameter("location_id", it.joinToString(",")) }
+            modality?.let { parameter("modality", it) }
+            if (availableOnly) parameter("available_only", "true")
+        }.body()
     }
 
     fun logout() {

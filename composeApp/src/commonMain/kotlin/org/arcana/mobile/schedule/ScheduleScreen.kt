@@ -2,10 +2,12 @@ package org.arcana.mobile.schedule
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,30 +18,36 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.time.Clock
-import kotlinx.datetime.DateTimeUnit
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
+import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -58,62 +66,17 @@ import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
-import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.safeContentPadding
+import org.koin.compose.viewmodel.koinViewModel
 
-// ── Mock class data — server-driven later.
-private data class ClassItem(
-    val time: String,
-    val dur: String,
-    val name: String,
-    val studio: String,
-    val instructor: String,
-    val spots: Int,
-    val total: Int,
-    val booked: Boolean = false,
-    val full: Boolean = false,
-    val scarce: Boolean = false,
-)
+// ── Constants -----------------------------------------------------------------
 
-private data class Period(val name: String, val items: List<ClassItem>)
+private val FALLBACK_STUDIO_COLOR = Moss
 
-private val TODAY_CLASSES = listOf(
-    Period("MORNING", listOf(
-        ClassItem("06:15", "60", "Reformer · Foundations", "FORM", "Reyna Alvarez", 4, 14),
-        ClassItem("07:00", "50", "Reformer Flow", "FORM", "Reyna Alvarez", 2, 14, booked = true),
-        ClassItem("08:30", "45", "Boxing · Technique", "RISE", "Marcus Tate", 6, 12),
-        ClassItem("09:30", "60", "Strength · Lower", "APEX", "Jules Kwon", 8, 10),
-    )),
-    Period("AFTERNOON", listOf(
-        ClassItem("12:30", "45", "Power Boxing", "RISE", "Marcus Tate", 0, 12, booked = true, full = true),
-        ClassItem("13:30", "50", "Mat · Restorative", "FORM", "Helena Park", 11, 16),
-    )),
-    Period("EVENING", listOf(
-        ClassItem("17:30", "60", "Strength · Push", "APEX", "Jules Kwon", 1, 10, scarce = true),
-        ClassItem("19:00", "45", "Conditioning · Sweat", "RISE", "Marcus Tate", 9, 12),
-    )),
-)
+/** Sessions with <= 2 remaining spots are visually marked as "scarce". */
+private const val SCARCE_THRESHOLD = 2
 
-private fun studioColor(studio: String): Color = when (studio) {
-    "FORM" -> Moss
-    "RISE" -> Lime
-    "APEX" -> MossLight
-    else -> Moss
-}
-
-// ── Date helpers — kotlinx-datetime in commonMain works on Android + iOS.
-private data class ScheduleDay(val date: LocalDate, val label: String, val count: Int)
-
-private fun buildSchedule(today: LocalDate, count: Int = 14): List<ScheduleDay> =
-    List(count) { i ->
-        val d = today.plus(i, DateTimeUnit.DAY)
-        ScheduleDay(
-            date = d,
-            label = when (i) { 0 -> "TODAY"; 1 -> "TMR"; else -> "" },
-            // Stand-in class count — until the schedule endpoint exists.
-            count = 3 + (d.dayOfWeek.ordinal % 5),
-        )
-    }
+// ── Display helpers -----------------------------------------------------------
 
 private fun titleCase(name: String): String =
     name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
@@ -121,97 +84,258 @@ private fun titleCase(name: String): String =
 private fun Month.abbr(): String = name.take(3)
 private fun LocalDate.weekdayAbbr(): String = dayOfWeek.name.take(3)
 
-@Composable
-fun ScheduleScreen(modifier: Modifier = Modifier) {
-    val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
-    val days = remember(today) { buildSchedule(today) }
-    val totalClasses = TODAY_CLASSES.sumOf { it.items.size }
+/** "06:15" from a LocalTime — commonMain-safe (no String.format dependency). */
+private fun LocalTime.hhmm(): String =
+    "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
 
-    Column(
+/** Parse `#RRGGBB` (server payload format) → Compose Color. Returns null on
+ *  empty/invalid input so the caller can fall back. */
+private fun parseHexColor(hex: String): Color? {
+    if (hex.length != 7 || !hex.startsWith("#")) return null
+    return try {
+        val r = hex.substring(1, 3).toInt(16)
+        val g = hex.substring(3, 5).toInt(16)
+        val b = hex.substring(5, 7).toInt(16)
+        Color(r, g, b)
+    } catch (_: NumberFormatException) {
+        null
+    }
+}
+
+private fun studioColorFor(primaryColor: String): Color =
+    parseHexColor(primaryColor) ?: FALLBACK_STUDIO_COLOR
+
+// ── Time-of-day grouping ------------------------------------------------------
+
+private enum class TimeBand(val label: String) {
+    MORNING("MORNING"), AFTERNOON("AFTERNOON"), EVENING("EVENING")
+}
+
+private fun LocalTime.timeBand(): TimeBand = when {
+    hour < 12 -> TimeBand.MORNING
+    hour < 17 -> TimeBand.AFTERNOON
+    else -> TimeBand.EVENING
+}
+
+// ── Screen --------------------------------------------------------------------
+
+@Composable
+fun ScheduleScreen(
+    modifier: Modifier = Modifier,
+    viewModel: ScheduleViewModel = koinViewModel(),
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(Stone)
-            .safeContentPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp),
+            .safeContentPadding(),
     ) {
-        // Header — month only; the rest is inferable from the day rail.
-        Display(
-            text = "${titleCase(today.month.name)}.",
-            size = 56,
-            color = Ink,
-            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
-        )
-
-        // Day rail
-        Spacer(Modifier.height(24.dp))
-        Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            days.forEachIndexed { i, day -> DayChip(day, active = i == 0) }
-        }
-
-        // Selected day banner
-        Spacer(Modifier.height(20.dp))
-        Row(
-            modifier = Modifier.padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Heading2(text = titleCase(today.dayOfWeek.name), size = 22, color = Ink)
-            Overline(
-                text = "${today.day} ${today.month.abbr()} · $totalClasses classes",
-                size = 12,
-                color = Ash,
-            )
-        }
-
-        // Filter chips
-        Spacer(Modifier.height(16.dp))
-        Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(label = "ALL", active = true)
-            FilterChip(label = "FORM", dotColor = studioColor("FORM"))
-            FilterChip(label = "RISE", dotColor = studioColor("RISE"))
-            FilterChip(label = "APEX", dotColor = studioColor("APEX"))
-            FilterChip(label = "AVAILABLE")
-        }
-
-        // Classes by period
-        Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
-            TODAY_CLASSES.forEachIndexed { i, period ->
-                if (i > 0) Spacer(Modifier.height(24.dp))
-                SectionRule(label = period.name)
-                Spacer(Modifier.height(8.dp))
-                period.items.forEach { ClassRow(it) }
-            }
+        when (val s = state) {
+            is ScheduleUiState.Loading -> LoadingPlaceholder()
+            is ScheduleUiState.Error -> ErrorBlock(message = s.message, onRetry = viewModel::reload)
+            is ScheduleUiState.Success -> SuccessContent(state = s, viewModel = viewModel)
         }
     }
 }
 
 @Composable
-private fun DayChip(day: ScheduleDay, active: Boolean) {
+private fun LoadingPlaceholder() {
+    val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
+    Column {
+        Display(
+            text = "${titleCase(today.month.name)}.",
+            size = 56, color = Ink,
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
+        )
+        Spacer(Modifier.height(24.dp))
+        Row(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Overline(text = "LOADING SCHEDULE…", size = 12, color = Ash)
+        }
+    }
+}
+
+@Composable
+private fun ErrorBlock(message: String, onRetry: () -> Unit) {
+    Column(modifier = Modifier.padding(24.dp)) {
+        Heading2(text = "Couldn't load schedule", size = 22, color = Ink)
+        Spacer(Modifier.height(8.dp))
+        BodyText(text = message, size = 14, color = Ash)
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Ink)
+                .clickable(onClick = onRetry)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Overline(text = "RETRY", size = 12, color = Stone)
+        }
+    }
+}
+
+/**
+ * Success-state render: single LazyColumn so off-screen rows aren't composed
+ * (only the visible window pays compose cost; rows recycle on scroll).
+ * Class rows are keyed on `session.id` so that switching the selected day
+ * doesn't churn nodes when sessions overlap between days (rare but cheap).
+ *
+ * Horizontal scrollers (day rail, filter chips) live inside `item {}` blocks
+ * — that's idiomatic Compose and avoids the nested-scroll conflict you'd hit
+ * with a `LazyColumn` inside a `verticalScroll` `Column`.
+ */
+@Composable
+private fun SuccessContent(state: ScheduleUiState.Success, viewModel: ScheduleViewModel) {
+    val tz = remember { TimeZone.currentSystemDefault() }
+    val today = remember { Clock.System.todayIn(tz) }
+    var selectedDate by remember { mutableStateOf(today) }
+
+    val sessionsForSelected = state.sessionsByDay[selectedDate].orEmpty()
+    // Recompute the time-of-day bucketing only when the selected day's
+    // session list actually changes (otherwise every recomposition reparses).
+    val byBand: Map<TimeBand, List<ScheduleSessionDto>> = remember(sessionsForSelected) {
+        sessionsForSelected.groupBy {
+            Instant.parse(it.startAt).toLocalDateTime(tz).time.timeBand()
+        }
+    }
+    val activeBands = remember(byBand) {
+        TimeBand.values().filter { byBand[it]?.isNotEmpty() == true }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
+        item("title") {
+            Display(
+                text = "${titleCase(today.month.name)}.",
+                size = 56, color = Ink,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
+            )
+        }
+
+        item("day-rail") {
+            Spacer(Modifier.height(24.dp))
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.days.forEachIndexed { i, date ->
+                    val count = state.sessionsByDay[date]?.size ?: 0
+                    DayChip(
+                        date = date,
+                        label = when (i) { 0 -> "TODAY"; 1 -> "TMR"; else -> "" },
+                        count = count,
+                        active = date == selectedDate,
+                        onClick = { selectedDate = date },
+                    )
+                }
+            }
+        }
+
+        item("day-banner") {
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Heading2(text = titleCase(selectedDate.dayOfWeek.name), size = 22, color = Ink)
+                Overline(
+                    text = "${selectedDate.day} ${selectedDate.month.abbr()} · ${sessionsForSelected.size} classes",
+                    size = 12, color = Ash,
+                )
+            }
+        }
+
+        item("filter-chips") {
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    label = "ALL",
+                    active = state.filters.studioSlugs.isEmpty(),
+                    onClick = { viewModel.clearStudios() },
+                )
+                state.knownStudios.forEach { studio ->
+                    FilterChip(
+                        label = studio.name.uppercase(),
+                        active = studio.slug in state.filters.studioSlugs,
+                        dotColor = studioColorFor(studio.primaryColor),
+                        onClick = { viewModel.toggleStudio(studio.slug) },
+                    )
+                }
+                FilterChip(
+                    label = "AVAILABLE",
+                    active = state.filters.availableOnly,
+                    onClick = { viewModel.toggleAvailableOnly() },
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        if (sessionsForSelected.isEmpty()) {
+            item("empty") {
+                Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
+                    BodyText(
+                        text = "No classes match your filters for this day.",
+                        size = 14, color = Ash,
+                    )
+                }
+            }
+        } else {
+            activeBands.forEachIndexed { bandIdx, band ->
+                item("band-header-$band") {
+                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                        if (bandIdx > 0) Spacer(Modifier.height(24.dp))
+                        SectionRule(label = band.label)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+                items(
+                    items = byBand[band].orEmpty(),
+                    key = { session -> "row-${session.id}" },
+                ) { session ->
+                    Box(modifier = Modifier.padding(horizontal = 24.dp)) {
+                        ClassRow(session, tz)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Day chip ------------------------------------------------------------------
+
+@Composable
+private fun DayChip(
+    date: LocalDate,
+    label: String,
+    count: Int,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .size(width = 56.dp, height = 76.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(if (active) Moss else Paper)
             .border(1.dp, if (active) Moss else Mist, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
             .padding(top = 8.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = day.label.ifEmpty { day.date.weekdayAbbr() },
-            maxLines = 1,
-            softWrap = false,
+            text = label.ifEmpty { date.weekdayAbbr() },
+            maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.body,
                 fontWeight = FontWeight.Bold,
@@ -221,9 +345,8 @@ private fun DayChip(day: ScheduleDay, active: Boolean) {
             ),
         )
         Text(
-            text = day.date.day.toString(),
-            maxLines = 1,
-            softWrap = false,
+            text = date.day.toString(),
+            maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.Bold,
@@ -233,7 +356,7 @@ private fun DayChip(day: ScheduleDay, active: Boolean) {
             ),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(minOf(day.count, 5)) {
+            repeat(minOf(count, 5)) {
                 Box(
                     Modifier
                         .size(4.dp)
@@ -245,13 +368,21 @@ private fun DayChip(day: ScheduleDay, active: Boolean) {
     }
 }
 
+// ── Filter chip ---------------------------------------------------------------
+
 @Composable
-private fun FilterChip(label: String, active: Boolean = false, dotColor: Color? = null) {
+private fun FilterChip(
+    label: String,
+    active: Boolean = false,
+    dotColor: Color? = null,
+    onClick: () -> Unit = {},
+) {
     Row(
         modifier = Modifier
             .clip(CircleShape)
             .background(if (active) Ink else Color.Transparent)
             .border(1.dp, if (active) Ink else Mist, CircleShape)
+            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -261,8 +392,7 @@ private fun FilterChip(label: String, active: Boolean = false, dotColor: Color? 
         }
         Text(
             text = label,
-            maxLines = 1,
-            softWrap = false,
+            maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
@@ -274,10 +404,22 @@ private fun FilterChip(label: String, active: Boolean = false, dotColor: Color? 
     }
 }
 
+// ── Class row -----------------------------------------------------------------
+
 @Composable
-private fun ClassRow(c: ClassItem) {
-    val sc = studioColor(c.studio)
-    val fill = ((c.total - c.spots).toFloat() / c.total).coerceIn(0f, 1f)
+private fun ClassRow(session: ScheduleSessionDto, tz: TimeZone) {
+    val time = Instant.parse(session.startAt).toLocalDateTime(tz).time
+    val studio = session.location.studio
+    val sc = studioColorFor(studio.primaryColor)
+    val available = session.arcanaSpotsAvailable
+    val offered = session.arcanaSpotsOffered
+    val isFull = available <= 0
+    val isScarce = !isFull && available <= SCARCE_THRESHOLD
+    val fill = if (offered > 0) {
+        ((offered - available).toFloat() / offered).coerceIn(0f, 1f)
+    } else 0f
+    val instructorName = session.instructors.firstOrNull()?.name ?: ""
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -285,12 +427,11 @@ private fun ClassRow(c: ClassItem) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Time column — widthIn so the time never wraps.
+        // Time column
         Column(modifier = Modifier.widthIn(min = 64.dp).wrapContentWidth(Alignment.Start)) {
             Text(
-                text = c.time,
-                maxLines = 1,
-                softWrap = false,
+                text = time.hhmm(),
+                maxLines = 1, softWrap = false,
                 style = TextStyle(
                     fontFamily = Arcana.fonts.display,
                     fontWeight = FontWeight.Bold,
@@ -300,7 +441,7 @@ private fun ClassRow(c: ClassItem) {
                 ),
             )
             Spacer(Modifier.height(4.dp))
-            Overline(text = "${c.dur}min", size = 10, color = Ash)
+            Overline(text = "${session.durationMinutes}min", size = 10, color = Ash)
         }
         // Studio color bar
         Box(
@@ -308,7 +449,7 @@ private fun ClassRow(c: ClassItem) {
                 .width(4.dp)
                 .height(64.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(if (c.full) sc.copy(alpha = 0.35f) else sc)
+                .background(if (isFull) sc.copy(alpha = 0.35f) else sc)
         )
         // Class info
         Column(modifier = Modifier.weight(1f)) {
@@ -316,19 +457,17 @@ private fun ClassRow(c: ClassItem) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Overline(
-                    text = c.studio,
-                    size = 10,
-                    color = if (c.studio == "RISE") MossLight else sc,
-                )
-                Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                Overline(text = c.instructor, size = 10, color = Ash)
+                Overline(text = studio.name.uppercase(), size = 10, color = sc)
+                if (instructorName.isNotEmpty()) {
+                    Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
+                    Overline(text = instructorName, size = 10, color = Ash)
+                }
             }
             Spacer(Modifier.height(4.dp))
             BodyText(
-                text = c.name,
+                text = session.template.name,
                 size = 16,
-                color = if (c.full) Ash else Ink,
+                color = if (isFull) Ash else Ink,
                 weight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -350,8 +489,8 @@ private fun ClassRow(c: ClassItem) {
                             .height(4.dp)
                             .background(
                                 when {
-                                    c.scarce -> Warning
-                                    c.full -> Ash2
+                                    isScarce -> Warning
+                                    isFull -> Ash2
                                     else -> MossLight
                                 }
                             )
@@ -359,25 +498,19 @@ private fun ClassRow(c: ClassItem) {
                 }
                 Overline(
                     text = when {
-                        c.full -> "FULL · WAITLIST"
-                        c.scarce -> "${c.spots} LEFT"
-                        else -> "${c.spots} / ${c.total} OPEN"
+                        isFull -> "FULL"
+                        isScarce -> "$available LEFT"
+                        else -> "$available / $offered OPEN"
                     },
                     size = 10,
-                    color = if (c.scarce) Warning else Ash,
+                    color = if (isScarce) Warning else Ash,
                 )
             }
         }
-        // CTA
-        when {
-            c.booked -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                StrokeIcon(ArcanaIcons.Check, size = 24.dp, tint = Moss)
-                Overline(text = "Booked", size = 10, color = Moss)
-            }
-            c.full -> Box(
+        // CTA — Phase-3 has no booking flow yet; the arrow is a placeholder
+        // that becomes a real navigation target in Phase 5.
+        if (isFull) {
+            Box(
                 Modifier
                     .size(36.dp)
                     .clip(CircleShape)
@@ -394,12 +527,11 @@ private fun ClassRow(c: ClassItem) {
                     ),
                 )
             }
-            else -> IconCircle(
+        } else {
+            IconCircle(
                 icon = ArcanaIcons.ArrowRight,
-                diameter = 36,
-                iconSize = 16,
-                background = Ink,
-                contentColor = Stone,
+                diameter = 36, iconSize = 16,
+                background = Ink, contentColor = Stone,
             )
         }
     }
