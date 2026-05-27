@@ -13,10 +13,8 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
-import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
+import androidx.compose.ui.graphics.PointMode
+import androidx.compose.ui.graphics.StrokeCap
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -44,10 +42,15 @@ const val DANCE_SETTLE_STAGGER_MS: Int = 1300
  * animation, and lit cells (those that fall on the wordmark per
  * `wordmark-grid.json`) keep a faint 2.8 s breath pulse afterwards.
  *
- * Renders into a single Compose Canvas using a pre-rasterized [ImageBitmap]
- * dot sprite — the same approach the HTML reference uses with drawImage +
- * globalAlpha. ~20 k cells/frame at 30 fps during the dance; falls to ~629
- * lit cells once settled because we skip cells with alpha ≤ 0.01.
+ * Renders with **bucketed `drawPoints`**: each cell's per-frame opacity is
+ * quantized into one of [ALPHA_BUCKETS] alpha bins, and each non-empty bin is
+ * drawn with a single `drawPoints(PointMode.Points, cap = Round)` call — round-
+ * capped points of `strokeWidth = cellSize * dotScale` are visually identical
+ * to the AA circle sprite the previous implementation used. This collapses
+ * ~20 k draw calls per frame (the wordmark's pitch × full-viewport dot rain
+ * fills the screen) into ~16, which is essential on iOS where Compose's
+ * Skia→Metal backend doesn't batch per-call alpha paints the way Android's
+ * HWUI does. After settle, only ~629 lit cells survive the `op > 0.01` cull.
  */
 @Composable
 fun DancingWordmark(
@@ -79,9 +82,13 @@ fun DancingWordmark(
         val state = remember(g, viewportW, viewportH, wordmarkWidthFraction, settleStaggerMs) {
             buildDanceState(g, viewportW, viewportH, wordmarkWidthFraction, settleStaggerMs)
         }
-        val sprite = remember(state.cellSize, lit, dotScale) {
-            buildDotSprite(state.cellSize * dotScale, lit)
+        val buffers = remember(state) { buildRenderBuffers(state) }
+        // Pre-allocated per-bucket Color instances — Color.copy(alpha = ...)
+        // would allocate every frame for every non-empty bucket otherwise.
+        val bucketColors = remember(lit) {
+            Array(ALPHA_BUCKETS) { b -> lit.copy(alpha = (b + 0.5f) / ALPHA_BUCKETS) }
         }
+        val strokeWidth = state.cellSize * dotScale
 
         var timeMs by remember(state) { mutableLongStateOf(0L) }
         val animating = remember(state) { mutableStateOf(true) }
@@ -101,39 +108,56 @@ fun DancingWordmark(
 
         Canvas(modifier = Modifier.matchParentSize()) {
             val t = timeMs.toFloat()
-            val cs = state.cellSize
-            val half = cs / 2f
-            val drawSize = sprite.width.toFloat()
-            val drawOffset = -drawSize / 2f
+            val n = state.totalCells
+            val delays = state.delays
+            val litFlags = state.litFlags
+            val centers = buffers.centers
+            val buckets = buffers.buckets
+            val maxBucket = ALPHA_BUCKETS - 1
+
+            // Reset bucket lists (size = 0; underlying arrays are reused).
+            var b = 0
+            while (b < ALPHA_BUCKETS) {
+                buckets[b].clear()
+                b++
+            }
+
+            // Bin each above-threshold cell into its alpha bucket.
             var i = 0
-            var r = 0
-            while (r < state.totalRows) {
-                val cy = r * cs + half + drawOffset
-                var c = 0
-                while (c < state.totalCols) {
-                    val delay = state.delays[i]
-                    val localT = t - delay
-                    val isLit = state.litFlags[i].toInt() == 1
-                    val op = computeOpacity(
-                        localT = localT,
-                        isLit = isLit,
-                        cellIndex = i,
-                        durationMs = durationMs,
-                        unlitAlpha = unlitAlpha,
-                        unlitSettleAlpha = unlitSettleAlpha,
-                        pulse = pulse,
-                    )
-                    if (op > 0.01f) {
-                        drawImage(
-                            image = sprite,
-                            topLeft = Offset(c * cs + half + drawOffset, cy),
-                            alpha = op,
-                        )
-                    }
-                    c++
-                    i++
+            while (i < n) {
+                val localT = t - delays[i]
+                val isLit = litFlags[i].toInt() == 1
+                val op = computeOpacity(
+                    localT = localT,
+                    isLit = isLit,
+                    cellIndex = i,
+                    durationMs = durationMs,
+                    unlitAlpha = unlitAlpha,
+                    unlitSettleAlpha = unlitSettleAlpha,
+                    pulse = pulse,
+                )
+                if (op > 0.01f) {
+                    var idx = (op * ALPHA_BUCKETS).toInt()
+                    if (idx > maxBucket) idx = maxBucket
+                    buckets[idx].add(centers[i])
                 }
-                r++
+                i++
+            }
+
+            // One draw call per non-empty bucket. ~16 calls/frame max.
+            b = 0
+            while (b < ALPHA_BUCKETS) {
+                val list = buckets[b]
+                if (list.isNotEmpty()) {
+                    drawPoints(
+                        points = list,
+                        pointMode = PointMode.Points,
+                        color = bucketColors[b],
+                        strokeWidth = strokeWidth,
+                        cap = StrokeCap.Round,
+                    )
+                }
+                b++
             }
         }
     }
@@ -238,26 +262,37 @@ private fun pseudoRandom(seed: Double): Float {
     return (v - floor(v)).toFloat()
 }
 
-// ---------- Dot sprite ----------
+// ---------- Render buffers ----------
 
-private fun buildDotSprite(diameterPx: Float, color: Color): ImageBitmap {
-    // 2-px padding around the circle so the AA edge isn't clipped at the sprite border.
-    val pad = 2
-    val size = ceil(diameterPx).toInt() + pad * 2
-    val safeSize = max(4, size)
-    val bitmap = ImageBitmap(safeSize, safeSize)
-    val canvas = GraphicsCanvas(bitmap)
-    val paint = Paint().apply {
-        isAntiAlias = true
-        this.color = color
-        style = PaintingStyle.Fill
+/** Number of alpha quantization bins. 16 is dense enough that the banding is
+ * imperceptible (each bin is ~6% of the 0..1 alpha range, below the human
+ * just-noticeable difference for a small dim element on a dark background). */
+private const val ALPHA_BUCKETS: Int = 16
+
+private class RenderBuffers(
+    /** Pre-allocated cell-center offsets, indexed by `r * totalCols + c`. */
+    val centers: Array<Offset>,
+    /** Per-frame scratch lists, one per alpha bucket. Cleared and refilled
+     * each frame; backing arrays are reused. */
+    val buckets: Array<ArrayList<Offset>>,
+)
+
+private fun buildRenderBuffers(state: DanceState): RenderBuffers {
+    val n = state.totalCells
+    val cs = state.cellSize
+    val half = cs / 2f
+    val cols = state.totalCols
+    val centers = Array(n) { i ->
+        val r = i / cols
+        val c = i - r * cols
+        Offset(c * cs + half, r * cs + half)
     }
-    canvas.drawCircle(
-        center = Offset(safeSize / 2f, safeSize / 2f),
-        radius = diameterPx / 2f,
-        paint = paint,
-    )
-    return bitmap
+    // Sized so even-ish distribution doesn't trigger a resize; the dance
+    // phase concentrates cells in a few mid-alpha buckets, so initial capacity
+    // is generous.
+    val bucketCapacity = max(64, n / 4)
+    val buckets = Array(ALPHA_BUCKETS) { ArrayList<Offset>(bucketCapacity) }
+    return RenderBuffers(centers, buckets)
 }
 
 // ---------- JSON loading ----------
