@@ -145,5 +145,14 @@ These are pre-launch dev affordances that must be removed (or hardened) before p
 
 ## Open items
 
-- **Live data wiring.** Home + Profile still render placeholder content (mock reservations, mock studios, hardcoded member name). Schedule is now real-data-backed. Wire the others as their endpoints land.
+- **Live data wiring.** Home + Profile still render placeholder content (mock reservations, mock studios, hardcoded member name). Schedule + ClassDetail are real-data-backed. Wire the others as their endpoints land.
 - **Pull-to-refresh + resume-refresh on Schedule.** Today the Schedule fetch happens once on `ScheduleViewModel.init` and again only on a fresh login. Add a pull-to-refresh gesture and an auto-refresh when the app returns from background if last fetch > N min ago.
+- **Network image loader.** `ClassDetailScreen` currently renders a studio-color-tinted Box as the class hero placeholder because no Compose Multiplatform network-image library is configured. When adopting Coil-MP or Kamel, swap the placeholder for `AsyncImage` reading `session.template.heroImageUrl`.
+
+## Schedule + Detail screens
+
+`ScheduleScreen` is real-data-backed since Phase 3. `ScheduleViewModel.init` fetches the 14-day window once via `ArcanaApiClient.fetchSchedule(from, to, ...)`; subsequent day-chip taps re-bucket the cached result client-side, filter chips refilter (studio chips client-side, `available_only` triggers a refetch because that filter is server-side). The capacity overline on each row shows a four-tier coarse label (`AVAILABLE / FILLING UP / ALMOST FULL / FULL`) instead of a precise number — this hides cross-screen capacity inconsistencies that would otherwise appear because the Schedule list and the Detail screen update independently.
+
+`ClassDetailScreen` (Phase 3.5) is reached by tapping a class row on Schedule. `ClassDetailViewModel` takes the session id as a Koin parameter (`koinViewModel { parametersOf(id) }`) and fetches `GET /api/v1/classes/<id>/`. The server refreshes from the upstream platform if its cached row is > 30s old, so capacity numbers on the detail screen are always near-real-time — hence we DO show precise spot counts here. Cancelled sessions render a cancellation notice in place of the capacity block.
+
+The DTOs in `data/ScheduleDto.kt` are shared between list and detail responses; detail-only fields (`template.description`, `template.layout_metadata`, `location.address`/`latitude`/`longitude`) have default values so list responses still deserialize cleanly.
