@@ -3,14 +3,19 @@ package org.arcana.mobile.auth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,47 +87,66 @@ fun AuthScreen(
         else viewModel.register(email, password)
     }
 
-    // Single non-scrolling column. The footer is pushed to the bottom by a
-    // weight-1 Spacer rather than by wrapping the form in a scrollable
-    // weight(1f) child. No `imePadding` either — that's deliberate: with
-    // imePadding the whole column shrinks when the keyboard rises, dragging
-    // the footer up to ride the top edge of the keyboard. Without it, the
-    // keyboard simply renders over the bottom of the static layout, which is
-    // where the footer lives, so the sign-up link + Developer Settings are
-    // naturally hidden behind the keyboard while the form fields stay put.
-    // Assumes the screen is tall enough for wordmark + header + 2 fields +
-    // CTA to fit above the keyboard, which is true on every supported phone.
-    Column(
+    // Single scrollable column with footer included.
+    //
+    // The footer used to live OUTSIDE the scroll so the keyboard could cover
+    // it without dragging it up — but that meant the user couldn't reach the
+    // footer at all while the keyboard was up. This layout collapses to one
+    // scroll with the footer pinned to the bottom of the viewport via a
+    // `Spacer.weight(1f)`, which gives us the best of both:
+    //
+    //  - Keyboard down: footer reads at the bottom of the screen as before
+    //    (the inner column's `heightIn(min = maxHeight)` makes it fill the
+    //    viewport, so the weight spacer has slack to push the footer down).
+    //  - Keyboard up: `imePadding` shrinks the scroll viewport. The inner
+    //    column still claims the *original* viewport height as its minimum,
+    //    so the footer ends up just below the fold — reachable via scroll
+    //    instead of riding the top edge of the keyboard.
+    //
+    // BoxWithConstraints supplies `maxHeight` (the viewport pre-IME) so the
+    // weight-spacer trick works inside an otherwise-unbounded scroll.
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Stone)
             .safeContentPadding()
             .padding(horizontal = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(40.dp),
     ) {
-        Spacer(Modifier.height(8.dp))
-        WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
-        HeaderBlock(isLoginMode)
-        FormBlock(
-            isLoginMode = isLoginMode,
-            email = email, onEmailChange = { email = it },
-            password = password, onPasswordChange = { password = it },
-            error = (uiState as? AuthUiState.Error)?.message,
-            onSubmit = onSubmit,
-            onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
-        )
-        CtaBlock(
-            isLoginMode = isLoginMode,
-            loading = loading,
-            onSubmit = onSubmit,
-        )
-        Spacer(Modifier.weight(1f))
-        Footer(
-            isLoginMode = isLoginMode,
-            onToggle = { isLoginMode = !isLoginMode },
-            onDeveloperSettings = { showDeveloperSettings = true },
-            modifier = Modifier.padding(bottom = 24.dp),
-        )
+        val viewportMinHeight = maxHeight
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .imePadding(),
+        ) {
+            Column(
+                modifier = Modifier.heightIn(min = viewportMinHeight),
+                verticalArrangement = Arrangement.spacedBy(40.dp),
+            ) {
+                Spacer(Modifier.height(8.dp))
+                WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+                HeaderBlock(isLoginMode)
+                FormBlock(
+                    isLoginMode = isLoginMode,
+                    email = email, onEmailChange = { email = it },
+                    password = password, onPasswordChange = { password = it },
+                    error = (uiState as? AuthUiState.Error)?.message,
+                    onSubmit = onSubmit,
+                    onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
+                )
+                CtaBlock(
+                    isLoginMode = isLoginMode,
+                    loading = loading,
+                    onSubmit = onSubmit,
+                )
+                Spacer(Modifier.weight(1f))
+                Footer(
+                    isLoginMode = isLoginMode,
+                    onToggle = { isLoginMode = !isLoginMode },
+                    onDeveloperSettings = { showDeveloperSettings = true },
+                    modifier = Modifier.padding(bottom = 24.dp),
+                )
+            }
+        }
     }
 }
 
