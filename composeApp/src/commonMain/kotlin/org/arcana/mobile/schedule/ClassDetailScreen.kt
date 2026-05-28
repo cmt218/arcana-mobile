@@ -88,15 +88,34 @@ private fun studioColorFor(primaryColor: String): Color {
     }
 }
 
-// ── Capacity tier (mirrors ScheduleScreen, kept private here) -----------------
+// ── Capacity tier (mirrors ScheduleScreen, kept testable) ---------------------
 
-private enum class DetailCapacity { Open, Scarce, Full }
+internal enum class DetailCapacity { Open, Scarce, Full }
 
-private fun ScheduleSessionDto.detailCapacity(): DetailCapacity = when {
-    arcanaSpotsAvailable <= 0 -> DetailCapacity.Full
-    arcanaSpotsAvailable <= SCARCE_THRESHOLD -> DetailCapacity.Scarce
-    else -> DetailCapacity.Open
+/**
+ * Pure helper for the Detail availability block. When `publishesCapacity`
+ * is false we collapse Scarce into Open — for a studio that hides
+ * capacity, a "1 spot left" signal is unreliable because we don't know
+ * what fraction of the room is booked.
+ */
+internal fun computeDetailCapacity(
+    available: Int,
+    publishesCapacity: Boolean,
+): DetailCapacity {
+    if (!publishesCapacity) {
+        return if (available <= 0) DetailCapacity.Full else DetailCapacity.Open
+    }
+    return when {
+        available <= 0 -> DetailCapacity.Full
+        available <= SCARCE_THRESHOLD -> DetailCapacity.Scarce
+        else -> DetailCapacity.Open
+    }
 }
+
+private fun ScheduleSessionDto.detailCapacity(): DetailCapacity = computeDetailCapacity(
+    available = arcanaSpotsAvailable,
+    publishesCapacity = location.studio.publishesCapacity,
+)
 
 // ── Entry ---------------------------------------------------------------------
 
@@ -225,6 +244,7 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
                         offered = session.arcanaSpotsOffered,
                         available = session.arcanaSpotsAvailable,
                         capacity = capacity,
+                        publishesCapacity = studio.publishesCapacity,
                         studioColor = sc,
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
@@ -570,6 +590,7 @@ private fun AvailabilityBlock(
     offered: Int,
     available: Int,
     capacity: DetailCapacity,
+    publishesCapacity: Boolean,
     studioColor: Color,
     modifier: Modifier = Modifier,
 ) {
@@ -577,27 +598,49 @@ private fun AvailabilityBlock(
     Column(modifier = modifier) {
         SectionRule(label = "Availability", accent = true)
         Spacer(Modifier.height(14.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            val headline = if (available <= 0) "WAITLIST ONLY"
-            else "$available OF $offered SPOTS OPEN"
-            Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
-            Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
-        }
-        Spacer(Modifier.height(12.dp))
-        if (offered > 0) {
-            CapacityPips(offered = offered, taken = taken, capacity = capacity, studioColor = studioColor)
+        if (publishesCapacity) {
+            // Precise form: "N OF M SPOTS OPEN" + the segmented pip strip
+            // showing exact taken-vs-open.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                val headline = if (available <= 0) "WAITLIST ONLY"
+                else "$available OF $offered SPOTS OPEN"
+                Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
+                Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
+            }
             Spacer(Modifier.height(12.dp))
+            if (offered > 0) {
+                CapacityPips(
+                    offered = offered, taken = taken,
+                    capacity = capacity, studioColor = studioColor,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            val statusCopy = when (capacity) {
+                DetailCapacity.Open -> "Plenty of room — pick a mat when you arrive."
+                DetailCapacity.Scarce -> "Filling fast — reserve now to hold your spot."
+                DetailCapacity.Full -> "Add yourself to the waitlist — drops happen."
+            }
+            BodyText(text = statusCopy, size = 13, color = Ash)
+        } else {
+            // Hidden-capacity form: studio doesn't publish exact counts
+            // (e.g. ID Hot Yoga — their own first-party app hides them too).
+            // Render binary AVAILABLE / WAITLIST ONLY without pips or
+            // "N of M" — claiming numbers we don't actually have would be
+            // worse than the simpler signal.
+            val headline = if (available <= 0) "WAITLIST ONLY" else "AVAILABLE"
+            Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            val statusCopy = if (available <= 0) {
+                "Add yourself to the waitlist — drops happen."
+            } else {
+                "This studio doesn't publish spot counts — reserve to confirm your place."
+            }
+            BodyText(text = statusCopy, size = 13, color = Ash)
         }
-        val statusCopy = when (capacity) {
-            DetailCapacity.Open -> "Plenty of room — pick a mat when you arrive."
-            DetailCapacity.Scarce -> "Filling fast — reserve now to hold your spot."
-            DetailCapacity.Full -> "Add yourself to the waitlist — drops happen."
-        }
-        BodyText(text = statusCopy, size = 13, color = Ash)
     }
 }
 

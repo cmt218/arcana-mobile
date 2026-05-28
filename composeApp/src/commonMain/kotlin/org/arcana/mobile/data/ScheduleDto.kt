@@ -70,4 +70,11 @@ data class StudioBriefDto(
     /** Null when the studio has never had a successful sync. Mobile renders a
      *  "schedule may be out of date" banner if this is more than 4h stale. */
     @SerialName("last_successful_sync_at") val lastSuccessfulSyncAt: String? = null,
+    /** False for studios (e.g. ID Hot Yoga) that don't publish real class
+     *  capacity through their platform API — their own first-party app also
+     *  hides it. Schedule + Detail collapse to binary AVAILABLE / FULL when
+     *  this is false, instead of the four-tier label and "N of M spots open"
+     *  count. Default true so older server responses (and most studios) keep
+     *  the precise UI. */
+    @SerialName("publishes_capacity") val publishesCapacity: Boolean = true,
 )

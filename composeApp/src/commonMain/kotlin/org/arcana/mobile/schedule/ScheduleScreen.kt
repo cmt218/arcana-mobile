@@ -121,26 +121,47 @@ private fun studioColorFor(primaryColor: String): Color =
 
 // ── Capacity tier -------------------------------------------------------------
 
-private enum class CapacityTier(val label: String) {
+internal enum class CapacityTier(val label: String) {
     Full("FULL"),
     AlmostFull("ALMOST FULL"),
     FillingUp("FILLING UP"),
     Available("AVAILABLE"),
 }
 
-private fun ScheduleSessionDto.capacityTier(): CapacityTier {
-    val available = arcanaSpotsAvailable
+/**
+ * Pure helper for the Schedule row overline + Detail availability block.
+ * Extracted as a top-level function so the logic is unit-testable in
+ * `commonTest` without spinning up a full `ScheduleSessionDto` graph.
+ *
+ * When `publishesCapacity` is false the studio doesn't expose a real
+ * capacity number (e.g. ID Hot Yoga on Mindbody). We collapse to binary
+ * AVAILABLE / FULL — we can't show "FILLING UP" or "ALMOST FULL"
+ * truthfully because we don't know what fraction is booked.
+ */
+internal fun computeCapacityTier(
+    available: Int,
+    offered: Int,
+    publishesCapacity: Boolean,
+): CapacityTier {
+    if (!publishesCapacity) {
+        return if (available <= 0) CapacityTier.Full else CapacityTier.Available
+    }
     return when {
         // <= 0 mirrors the defensive guard on `isFull` in ClassRow so over-
         // booked sessions (negative available) consistently render as Full
         // across label, color, and CTA.
         available <= 0 -> CapacityTier.Full
         available <= 2 -> CapacityTier.AlmostFull
-        arcanaSpotsOffered > 0 &&
-            available.toFloat() / arcanaSpotsOffered <= 0.4f -> CapacityTier.FillingUp
+        offered > 0 && available.toFloat() / offered <= 0.4f -> CapacityTier.FillingUp
         else -> CapacityTier.Available
     }
 }
+
+private fun ScheduleSessionDto.capacityTier(): CapacityTier = computeCapacityTier(
+    available = arcanaSpotsAvailable,
+    offered = arcanaSpotsOffered,
+    publishesCapacity = location.studio.publishesCapacity,
+)
 
 // ── Time-of-day grouping ------------------------------------------------------
 
@@ -647,8 +668,13 @@ private fun ClassRow(
     val available = session.arcanaSpotsAvailable
     val offered = session.arcanaSpotsOffered
     val isFull = available <= 0
-    val isScarce = !isFull && available <= SCARCE_THRESHOLD
-    val fill = if (offered > 0) {
+    // Hidden-capacity studios (e.g. ID Hot Yoga) can't truthfully show a
+    // fill progress bar — we don't know how many spots are booked. Suppress
+    // the bar, the scarce shading, and any AlmostFull treatment for them;
+    // the AVAILABLE / FULL overline carries the full signal.
+    val showsCapacityVisuals = studio.publishesCapacity
+    val isScarce = showsCapacityVisuals && !isFull && available <= SCARCE_THRESHOLD
+    val fill = if (showsCapacityVisuals && offered > 0) {
         ((offered - available).toFloat() / offered).coerceIn(0f, 1f)
     } else 0f
     val instructorName = session.instructors.firstOrNull()?.name ?: ""
@@ -711,25 +737,32 @@ private fun ClassRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(
-                    Modifier
-                        .width(56.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Mist),
-                ) {
+                // Fill bar is rendered only when the studio publishes capacity.
+                // For hidden-capacity studios the bar would either always read
+                // as empty (booked=0 by inference) or imply a precision we
+                // don't actually have; the AVAILABLE / FULL overline alone
+                // carries the signal.
+                if (showsCapacityVisuals) {
                     Box(
                         Modifier
-                            .fillMaxWidth(fill)
+                            .width(56.dp)
                             .height(4.dp)
-                            .background(
-                                when {
-                                    isScarce -> Warning
-                                    isFull -> Ash2
-                                    else -> MossLight
-                                }
-                            )
-                    )
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Mist),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(fill)
+                                .height(4.dp)
+                                .background(
+                                    when {
+                                        isScarce -> Warning
+                                        isFull -> Ash2
+                                        else -> MossLight
+                                    }
+                                )
+                        )
+                    }
                 }
                 val tier = session.capacityTier()
                 Overline(
