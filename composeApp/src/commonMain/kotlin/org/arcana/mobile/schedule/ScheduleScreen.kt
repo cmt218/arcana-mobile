@@ -29,6 +29,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +77,15 @@ private val FALLBACK_STUDIO_COLOR = Moss
 
 /** Sessions with <= 2 remaining spots are visually marked as "scarce". */
 private const val SCARCE_THRESHOLD = 2
+
+/** ISO-string Saver for LocalDate so the selected day survives navigation
+ *  to a detail screen and back (and process death). The auto-saver in
+ *  rememberSaveable only handles primitives + Strings, so non-primitive
+ *  state types need an explicit Saver. */
+private val LocalDateSaver: Saver<LocalDate, String> = Saver(
+    save = { it.toString() },
+    restore = { LocalDate.parse(it) },
+)
 
 // ── Display helpers -----------------------------------------------------------
 
@@ -217,7 +228,12 @@ private fun SuccessContent(
 ) {
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember { Clock.System.todayIn(tz) }
-    var selectedDate by remember { mutableStateOf(today) }
+    // rememberSaveable (vs plain remember) so the selected day survives
+    // navigation into ClassDetail and back — NavController preserves the
+    // saved-state bundle for each entry on the back stack.
+    var selectedDate by rememberSaveable(stateSaver = LocalDateSaver) {
+        mutableStateOf(today)
+    }
 
     val sessionsForSelected = state.sessionsByDay[selectedDate].orEmpty()
     // Recompute the time-of-day bucketing only when the selected day's
@@ -236,8 +252,10 @@ private fun SuccessContent(
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item("title") {
+            // Track the *selected* day so the header flips when the user taps
+            // a day in a different month (e.g. May 27 → June 1 on the rail).
             Display(
-                text = "${titleCase(today.month.name)}.",
+                text = "${titleCase(selectedDate.month.name)}.",
                 size = 56, color = Ink,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
             )
