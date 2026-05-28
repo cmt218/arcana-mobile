@@ -14,16 +14,22 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.ArcanaApiClient
 
 /**
- * Filter state controlled by the chip rail. `studioSlugs.isEmpty()` means the
- * "ALL" chip is conceptually active.
+ * Filter state controlled by the chip rails.
+ *
+ * - `studioSlugs.isEmpty()` ⇒ the brand "ALL" chip is conceptually active.
+ * - `locationIds` is only meaningful when exactly one brand is soloed
+ *   (the two-tier filter from `design_handoff_schedule_v2`). Whenever the
+ *   brand selection changes, locations are cleared by [ScheduleViewModel].
  */
 data class ScheduleFilters(
     val studioSlugs: Set<String> = emptySet(),
+    val locationIds: Set<Int> = emptySet(),
     val availableOnly: Boolean = false,
 )
 
@@ -32,10 +38,19 @@ sealed interface ScheduleUiState {
     data class Success(
         /** Today through today + 13 days, oldest first. */
         val days: List<LocalDate>,
-        /** Map from each date in [days] to the sessions on that date. Empty list when no sessions. */
+        /** Map from each date in [days] to the sessions on that date AFTER filters. */
         val sessionsByDay: Map<LocalDate, List<ScheduleSessionDto>>,
+        /** Total session count per day BEFORE filters — drives the
+         *  "5 of 10 classes" subtitle in the day banner. */
+        val totalCountByDay: Map<LocalDate, Int>,
         /** Distinct studios appearing in the unfiltered 14-day fetch, for chip rendering. */
         val knownStudios: List<StudioChipData>,
+        /** Distinct location count across the entire unfiltered 14-day fetch.
+         *  Drives the "N STUDIOS · M SITES" header chip. */
+        val siteCount: Int,
+        /** Locations to surface in the tier-2 sub-row. Non-empty iff exactly
+         *  one brand is soloed; otherwise the screen hides the sub-row. */
+        val knownLocationsForBrand: List<LocationChipData>,
         val filters: ScheduleFilters,
     ) : ScheduleUiState
     data class Error(val message: String) : ScheduleUiState
@@ -47,6 +62,28 @@ data class StudioChipData(
     val name: String,
     val primaryColor: String,
 )
+
+/** Tier-2 location chip data — only surfaced for the soloed brand. */
+data class LocationChipData(
+    val id: Int,
+    /** The display label, e.g. "WILLIAMSBURG" — already uppercased and
+     *  brand-prefix-stripped. See [shortLabel] for the derivation. */
+    val shortLabel: String,
+)
+
+/**
+ * Display-friendly short location label, derived from `name`. The backend
+ * names locations like "YO BK Williamsburg"; we strip the studio prefix so
+ * chips and row metadata can read "WILLIAMSBURG" rather than repeating the
+ * brand. Shared helper so VM (chip generation) and screens (row + detail
+ * meta lines) all produce the same string.
+ */
+internal fun LocationBriefDto.shortLabel(): String {
+    val raw = name.removePrefix(studio.name).trim()
+        .removePrefix("·").trim()
+        .removePrefix("-").trim()
+    return (raw.ifEmpty { name }).uppercase()
+}
 
 class ScheduleViewModel(
     private val api: ArcanaApiClient,
@@ -97,19 +134,40 @@ class ScheduleViewModel(
         }
     }
 
-    /** Toggle a studio in/out of the chip filter. Re-renders client-side; no network. */
+    /** Toggle a studio in/out of the chip filter. Re-renders client-side; no network.
+     *  Always clears any tier-2 location selection — locations only make sense
+     *  when exactly one brand is soloed, and the user's brand-toggle has just
+     *  invalidated that assumption. */
     fun toggleStudio(slug: String) {
         val next = filters.studioSlugs.toMutableSet().apply {
             if (!add(slug)) remove(slug)
         }
-        filters = filters.copy(studioSlugs = next)
+        filters = filters.copy(studioSlugs = next, locationIds = emptySet())
         publish()
     }
 
-    /** Clear all studio selections (the "ALL" chip behavior). Re-renders client-side. */
+    /** Clear all studio + location selections (the "ALL" chip behavior). */
     fun clearStudios() {
-        if (filters.studioSlugs.isEmpty()) return
-        filters = filters.copy(studioSlugs = emptySet())
+        if (filters.studioSlugs.isEmpty() && filters.locationIds.isEmpty()) return
+        filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+        publish()
+    }
+
+    /** Toggle a location in/out of the tier-2 sub-filter. No-op unless exactly
+     *  one brand is soloed — the sub-row isn't on screen otherwise. */
+    fun toggleLocation(id: Int) {
+        if (filters.studioSlugs.size != 1) return
+        val next = filters.locationIds.toMutableSet().apply {
+            if (!add(id)) remove(id)
+        }
+        filters = filters.copy(locationIds = next)
+        publish()
+    }
+
+    /** Clear all location selections (the tier-2 "ALL" chip). */
+    fun clearLocations() {
+        if (filters.locationIds.isEmpty()) return
+        filters = filters.copy(locationIds = emptySet())
         publish()
     }
 
@@ -121,7 +179,13 @@ class ScheduleViewModel(
 
     /**
      * Build the Success state from the cached fetch + current filters.
-     * Studio chips filter client-side; availableOnly is already applied server-side.
+     *
+     * - Studio + location chips filter client-side from `unfilteredCache`.
+     * - `availableOnly` is already applied server-side at fetch time.
+     * - `totalCountByDay` is computed from the unfiltered cache so the day
+     *   banner can show "N of M classes" even when filters are active.
+     * - Tier-2 location chips are only populated when exactly one brand is
+     *   soloed — otherwise the screen hides the sub-row entirely.
      */
     private fun publish() {
         val tz = TimeZone.currentSystemDefault()
@@ -134,20 +198,42 @@ class ScheduleViewModel(
             .sortedBy { it.name }
             .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
 
-        val filtered = if (filters.studioSlugs.isEmpty()) {
+        // Tier-2 location chips: only when one brand is soloed.
+        val knownLocationsForBrand: List<LocationChipData> = if (filters.studioSlugs.size == 1) {
+            val soloed = filters.studioSlugs.single()
             unfilteredCache
+                .map { it.location }
+                .filter { it.studio.slug == soloed }
+                .distinctBy { it.id }
+                .sortedBy { it.name }
+                .map { LocationChipData(id = it.id, shortLabel = it.shortLabel()) }
         } else {
-            unfilteredCache.filter { it.location.studio.slug in filters.studioSlugs }
+            emptyList()
         }
 
+        val filtered = unfilteredCache.filter { s ->
+            (filters.studioSlugs.isEmpty() || s.location.studio.slug in filters.studioSlugs) &&
+                (filters.locationIds.isEmpty() || s.location.id in filters.locationIds)
+        }
+
+        // Pre-bucket both unfiltered and filtered sessions by day so the
+        // screen can read counts in O(1) for the banner.
+        val totalByDay: Map<LocalDate, Int> = days.associateWith { date ->
+            unfilteredCache.count { Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
+        }
         val byDay: Map<LocalDate, List<ScheduleSessionDto>> = days.associateWith { date ->
             filtered.filter { Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
         }
 
+        val siteCount = unfilteredCache.map { it.location.id }.toSet().size
+
         _uiState.value = ScheduleUiState.Success(
             days = days,
             sessionsByDay = byDay,
+            totalCountByDay = totalByDay,
             knownStudios = knownStudios,
+            siteCount = siteCount,
+            knownLocationsForBrand = knownLocationsForBrand,
             filters = filters,
         )
     }

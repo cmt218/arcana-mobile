@@ -49,6 +49,7 @@ import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
@@ -61,6 +62,7 @@ import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
+import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Display
@@ -68,6 +70,7 @@ import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -247,22 +250,52 @@ private fun SuccessContent(
         TimeBand.values().filter { byBand[it]?.isNotEmpty() == true }
     }
 
+    val totalForSelected = state.totalCountByDay[selectedDate] ?: sessionsForSelected.size
+    // The soloed brand drives the tier-2 sub-row's accent color (hairline + pin).
+    val soloedStudio = remember(state.filters.studioSlugs, state.knownStudios) {
+        if (state.filters.studioSlugs.size == 1) {
+            val slug = state.filters.studioSlugs.single()
+            state.knownStudios.firstOrNull { it.slug == slug }
+        } else null
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
+        // Top capsule — "SCHEDULE · 14 DAYS" plus a paper chip with the live
+        // studio/site counts from the unfiltered fetch.
+        item("header-capsule") {
+            HeaderCapsule(
+                studioCount = state.knownStudios.size,
+                siteCount = state.siteCount,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
+            )
+        }
+
         item("title") {
             // Track the *selected* day so the header flips when the user taps
             // a day in a different month (e.g. May 27 → June 1 on the rail).
             Display(
                 text = "${titleCase(selectedDate.month.name)}.",
                 size = 56, color = Ink,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
+            )
+        }
+
+        item("subline") {
+            val studioList = state.knownStudios.joinToString(" · ") { titleCase(it.name) }
+            Spacer(Modifier.height(8.dp))
+            BodyText(
+                text = if (studioList.isEmpty()) "Book ahead 14 days."
+                else "Book ahead 14 days · $studioList",
+                size = 14, color = Ash,
+                modifier = Modifier.padding(horizontal = 24.dp),
             )
         }
 
         item("day-rail") {
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
             Row(
                 modifier = Modifier
                     .horizontalScroll(rememberScrollState())
@@ -290,13 +323,23 @@ private fun SuccessContent(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Heading2(text = titleCase(selectedDate.dayOfWeek.name), size = 22, color = Ink)
+                // "5 of 10 classes" when filters narrow the day; just "10 classes"
+                // when nothing's filtered out. Totals come from the unfiltered cache
+                // so the second number doesn't tick down as the user toggles chips.
+                val countText = if (sessionsForSelected.size != totalForSelected) {
+                    "${sessionsForSelected.size} of $totalForSelected classes"
+                } else {
+                    "$totalForSelected classes"
+                }
                 Overline(
-                    text = "${selectedDate.day} ${selectedDate.month.abbr()} · ${sessionsForSelected.size} classes",
+                    text = "${selectedDate.day} ${selectedDate.month.abbr()} · $countText",
                     size = 12, color = Ash,
                 )
             }
         }
 
+        // Tier 1: brand chips. Each carries a leading studio-color dot + a
+        // small caret hinting it's drillable into the tier-2 sub-row.
         item("filter-chips") {
             Spacer(Modifier.height(16.dp))
             Row(
@@ -305,27 +348,45 @@ private fun SuccessContent(
                     .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(
+                BrandFilterChip(
                     label = "ALL",
                     active = state.filters.studioSlugs.isEmpty(),
                     onClick = { viewModel.clearStudios() },
                 )
                 state.knownStudios.forEach { studio ->
-                    FilterChip(
+                    BrandFilterChip(
                         label = studio.name.uppercase(),
                         active = studio.slug in state.filters.studioSlugs,
                         dotColor = studioColorFor(studio.primaryColor),
+                        showCaret = true,
                         onClick = { viewModel.toggleStudio(studio.slug) },
                     )
                 }
-                FilterChip(
+                BrandFilterChip(
                     label = "AVAILABLE",
                     active = state.filters.availableOnly,
                     onClick = { viewModel.toggleAvailableOnly() },
                 )
             }
-            Spacer(Modifier.height(16.dp))
         }
+
+        // Tier 2: location sub-row. Only renders when exactly one brand is
+        // soloed — outside that window the chip set is empty and the row
+        // collapses out of the LazyColumn entirely.
+        if (state.knownLocationsForBrand.isNotEmpty() && soloedStudio != null) {
+            item("location-subrow") {
+                Spacer(Modifier.height(10.dp))
+                LocationSubRow(
+                    brandColor = studioColorFor(soloedStudio.primaryColor),
+                    locations = state.knownLocationsForBrand,
+                    activeLocationIds = state.filters.locationIds,
+                    onClickAll = { viewModel.clearLocations() },
+                    onToggleLocation = { id -> viewModel.toggleLocation(id) },
+                )
+            }
+        }
+
+        item("filter-trailing-space") { Spacer(Modifier.height(16.dp)) }
 
         if (sessionsForSelected.isEmpty()) {
             item("empty") {
@@ -417,13 +478,49 @@ private fun DayChip(
     }
 }
 
-// ── Filter chip ---------------------------------------------------------------
+// ── Header capsule ------------------------------------------------------------
+
+/** Top header row: "SCHEDULE · 14 DAYS" on the left, a paper-filled
+ *  "(gear) N STUDIOS · M SITES" chip on the right. Pure decoration — the
+ *  chip isn't tappable in Phase 3.5 (no studios-management surface yet). */
+@Composable
+private fun HeaderCapsule(
+    studioCount: Int,
+    siteCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Overline(text = "SCHEDULE · 14 DAYS", size = 11, color = Ash)
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Paper)
+                .border(1.dp, Mist, CircleShape)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StrokeIcon(icon = ArcanaIcons.Settings, size = 14.dp, tint = Ash)
+            Overline(
+                text = "$studioCount STUDIOS · $siteCount SITES",
+                size = 10, color = Ash,
+            )
+        }
+    }
+}
+
+// ── Brand filter chip (tier 1) ------------------------------------------------
 
 @Composable
-private fun FilterChip(
+private fun BrandFilterChip(
     label: String,
     active: Boolean = false,
     dotColor: Color? = null,
+    showCaret: Boolean = false,
     onClick: () -> Unit = {},
 ) {
     Row(
@@ -446,6 +543,89 @@ private fun FilterChip(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
+                letterSpacing = 0.10.em,
+                color = if (active) Stone else Ink,
+            ),
+        )
+        if (showCaret) {
+            StrokeIcon(
+                icon = ArcanaIcons.ChevronDown,
+                size = 12.dp,
+                tint = if (active) Stone.copy(alpha = 0.75f) else Ash2,
+            )
+        }
+    }
+}
+
+// ── Location sub-row (tier 2) -------------------------------------------------
+
+/** Tier-2 location drill-down. Hairline + pin on the left chain it visually
+ *  back to the soloed brand chip above. Location chips are filled with the
+ *  brand color when active (not Ink) — continues the visual hierarchy from
+ *  brand-chip (ink) → location-chip (brand-tinted). */
+@Composable
+private fun LocationSubRow(
+    brandColor: Color,
+    locations: List<LocationChipData>,
+    activeLocationIds: Set<Int>,
+    onClickAll: () -> Unit,
+    onToggleLocation: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Hairline + pin lead-in — anchors the row to the soloed brand.
+        Box(
+            Modifier
+                .width(20.dp)
+                .height(1.dp)
+                .background(brandColor),
+        )
+        StrokeIcon(icon = ArcanaIcons.Pin, size = 14.dp, tint = brandColor)
+        LocationChip(
+            label = "ALL",
+            active = activeLocationIds.isEmpty(),
+            brandColor = brandColor,
+            onClick = onClickAll,
+        )
+        locations.forEach { loc ->
+            LocationChip(
+                label = loc.shortLabel,
+                active = loc.id in activeLocationIds,
+                brandColor = brandColor,
+                onClick = { onToggleLocation(loc.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocationChip(
+    label: String,
+    active: Boolean,
+    brandColor: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (active) brandColor else Color.Transparent)
+            .border(1.dp, if (active) brandColor else Mist, CircleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            maxLines = 1, softWrap = false,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.display,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
                 letterSpacing = 0.10.em,
                 color = if (active) Stone else Ink,
             ),
@@ -507,16 +687,17 @@ private fun ClassRow(
         )
         // Class info
         Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Overline(text = studio.name.uppercase(), size = 10, color = sc)
-                if (instructorName.isNotEmpty()) {
-                    Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                    Overline(text = instructorName, size = 10, color = Ash)
-                }
-            }
+            // Meta line: BRAND · LOCATION    ·    INSTRUCTOR
+            // Brand + location read as one studio-color unit; instructor is
+            // neutral ash. Location takes flex (ellipsises first); instructor
+            // also flexes so neither alone consumes the row. Brand stays
+            // intrinsic so we never lose studio identity.
+            MetaLine(
+                brand = studio.name.uppercase(),
+                location = session.location.shortLabel(),
+                instructor = instructorName.uppercase(),
+                studioColor = sc,
+            )
             Spacer(Modifier.height(4.dp))
             BodyText(
                 text = session.template.name,
@@ -588,6 +769,98 @@ private fun ClassRow(
                 icon = ArcanaIcons.ArrowRight,
                 diameter = 36, iconSize = 16,
                 background = Ink, contentColor = Stone,
+            )
+        }
+    }
+}
+
+// ── Row meta line -------------------------------------------------------------
+
+/**
+ * Single-line metadata stamp: `BRAND · LOCATION    ·    INSTRUCTOR`.
+ *
+ * Visual subtleties from the design handoff:
+ * - Brand is fully saturated studio color, weight 700.
+ * - The dot between brand and location is the same color at 55% alpha — visually
+ *   linking the two as one unit.
+ * - Location is the same color at 78% alpha but weight 500 (slightly demoted).
+ * - The dot between location and instructor is a heavier Ash2 — a *visual
+ *   separator* between the studio unit and the neutral instructor stamp.
+ * - Instructor sits in Ash, weight 500.
+ *
+ * Overflow: location and instructor both flex with ellipsis, so neither single
+ * field can squeeze the other off-screen. Brand is intrinsic — it never
+ * truncates, because brand identity matters more than a few extra characters
+ * of location text.
+ */
+@Composable
+private fun MetaLine(
+    brand: String,
+    location: String,
+    instructor: String,
+    studioColor: Color,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        // BRAND — intrinsic width, never truncated.
+        Text(
+            text = brand,
+            maxLines = 1, softWrap = false,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.body,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 0.20.em,
+                color = studioColor,
+            ),
+        )
+        if (location.isNotEmpty()) {
+            // brand→location separator: same color, alpha 0.55
+            Box(
+                Modifier
+                    .size(3.dp)
+                    .clip(CircleShape)
+                    .background(studioColor.copy(alpha = 0.55f)),
+            )
+            // LOCATION — flexes + ellipsises before instructor.
+            Text(
+                text = location,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.body,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 10.sp,
+                    letterSpacing = 0.20.em,
+                    color = studioColor.copy(alpha = 0.78f),
+                ),
+            )
+        }
+        if (instructor.isNotEmpty()) {
+            // location→instructor separator: heavier Ash2 — a visual break.
+            Box(
+                Modifier
+                    .size(4.dp)
+                    .clip(CircleShape)
+                    .background(Ash2),
+            )
+            Text(
+                text = instructor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.body,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 10.sp,
+                    letterSpacing = 0.20.em,
+                    color = Ash,
+                ),
             )
         }
     }

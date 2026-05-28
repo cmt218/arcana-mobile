@@ -1,6 +1,8 @@
 package org.arcana.mobile.schedule
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.time.Instant
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -39,10 +45,14 @@ import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
+import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
+import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.MossLight
+import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.ArcanaIcons
@@ -52,16 +62,20 @@ import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.safeBottomBarPadding
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+
+// ── Constants -----------------------------------------------------------------
+
+private const val SCARCE_THRESHOLD = 2
 
 // Copy of Month.abbr() from ScheduleScreen — small intentional duplication
 // to keep both files self-contained without promoting the helper to internal.
 private fun Month.abbr(): String = name.take(3)
 
-// Copy of studioColorFor from ScheduleScreen — small intentional duplication
-// to keep both files self-contained without promoting the helper to internal.
+// Copy of studioColorFor from ScheduleScreen — small intentional duplication.
 private fun studioColorFor(primaryColor: String): Color {
     if (primaryColor.length != 7 || !primaryColor.startsWith("#")) return Moss
     return try {
@@ -74,6 +88,18 @@ private fun studioColorFor(primaryColor: String): Color {
     }
 }
 
+// ── Capacity tier (mirrors ScheduleScreen, kept private here) -----------------
+
+private enum class DetailCapacity { Open, Scarce, Full }
+
+private fun ScheduleSessionDto.detailCapacity(): DetailCapacity = when {
+    arcanaSpotsAvailable <= 0 -> DetailCapacity.Full
+    arcanaSpotsAvailable <= SCARCE_THRESHOLD -> DetailCapacity.Scarce
+    else -> DetailCapacity.Open
+}
+
+// ── Entry ---------------------------------------------------------------------
+
 @Composable
 fun ClassDetailScreen(
     sessionId: Int,
@@ -83,9 +109,10 @@ fun ClassDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    Box(
-        modifier = modifier.fillMaxSize().background(Stone).safeContentPadding(),
-    ) {
+    // Outer Box on Stone — children handle their own safe-area padding so the
+    // sticky CTA can sit flush with the bottom safe inset while the list scrolls
+    // edge-to-edge underneath it.
+    Box(modifier = modifier.fillMaxSize().background(Stone)) {
         when (val s = state) {
             ClassDetailUiState.Loading -> LoadingBlock(onClose)
             is ClassDetailUiState.Error -> ErrorBlock(message = s.message, onClose = onClose, onRetry = viewModel::reload)
@@ -94,24 +121,12 @@ fun ClassDetailScreen(
     }
 }
 
-@Composable
-private fun CloseHeader(onClose: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.clickable(onClick = onClose).padding(4.dp)) {
-            StrokeIcon(icon = ArcanaIcons.Close, size = 20.dp, tint = Ink)
-        }
-    }
-}
+// ── Loading / Error -----------------------------------------------------------
 
 @Composable
 private fun LoadingBlock(onClose: () -> Unit) {
-    Column {
-        CloseHeader(onClose)
+    Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
+        TopBar(onClose = onClose, onShare = {}, onBookmark = {})
         Row(modifier = Modifier.padding(horizontal = 24.dp)) {
             Overline(text = "LOADING…", size = 12, color = Ash)
         }
@@ -120,8 +135,8 @@ private fun LoadingBlock(onClose: () -> Unit) {
 
 @Composable
 private fun ErrorBlock(message: String, onClose: () -> Unit, onRetry: () -> Unit) {
-    Column {
-        CloseHeader(onClose)
+    Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
+        TopBar(onClose = onClose, onShare = {}, onBookmark = {})
         Column(modifier = Modifier.padding(24.dp)) {
             Heading2(text = "Couldn't load class", size = 22, color = Ink)
             Spacer(Modifier.height(8.dp))
@@ -140,117 +155,656 @@ private fun ErrorBlock(message: String, onClose: () -> Unit, onRetry: () -> Unit
     }
 }
 
+// ── Success layout ------------------------------------------------------------
+
 @Composable
 private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
     val tz = remember { TimeZone.currentSystemDefault() }
     val startLocal = remember(session.startAt) { Instant.parse(session.startAt).toLocalDateTime(tz) }
-    val isCancelled = session.status == "cancelled_by_studio"
     val studio = session.location.studio
     val sc = studioColorFor(studio.primaryColor)
-    val instructorLine = session.instructors.joinToString(" · ") { it.name }
+    val isCancelled = session.status == "cancelled_by_studio"
+    val capacity = session.detailCapacity()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 32.dp),
+    // Scrollable list under a sticky CTA. The LazyColumn pads its bottom by
+    // ~140dp so the last content can scroll out from behind the CTA without
+    // ever being permanently obscured.
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().safeContentPadding(),
+            contentPadding = PaddingValues(bottom = 140.dp),
+        ) {
+            item("topbar") {
+                TopBar(onClose = onClose, onShare = {}, onBookmark = {})
+            }
+            item("hero") {
+                HeroCard(
+                    studioName = studio.name,
+                    locationShort = session.location.shortLabel(),
+                    modality = session.template.modality,
+                    title = session.template.name,
+                    studioColor = sc,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+            }
+            item("summary") {
+                Spacer(Modifier.height(16.dp))
+                SummaryStrip(
+                    startLocal = startLocal,
+                    durationMinutes = session.durationMinutes,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+            item("instructor") {
+                val instructor = session.instructors.firstOrNull()
+                if (instructor != null) {
+                    Spacer(Modifier.height(20.dp))
+                    InstructorRow(
+                        name = instructor.name,
+                        studioColor = sc,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+            }
+            if (isCancelled) {
+                item("cancelled") {
+                    Spacer(Modifier.height(24.dp))
+                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                        SectionRule(label = "Cancelled")
+                        Spacer(Modifier.height(8.dp))
+                        BodyText(
+                            text = "This class has been cancelled by the studio.",
+                            size = 14, color = Warning,
+                        )
+                    }
+                }
+            } else {
+                item("availability") {
+                    Spacer(Modifier.height(24.dp))
+                    AvailabilityBlock(
+                        offered = session.arcanaSpotsOffered,
+                        available = session.arcanaSpotsAvailable,
+                        capacity = capacity,
+                        studioColor = sc,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+            }
+            if (session.template.description.isNotBlank()) {
+                item("about") {
+                    Spacer(Modifier.height(24.dp))
+                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                        SectionRule(label = "About this class")
+                        Spacer(Modifier.height(12.dp))
+                        BodyText(text = session.template.description, size = 14, color = Ink)
+                    }
+                }
+            }
+            item("location-card") {
+                Spacer(Modifier.height(24.dp))
+                LocationCard(
+                    studioName = studio.name,
+                    locationName = session.location.name,
+                    address = session.location.address,
+                    studioColor = sc,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+        }
+        // Sticky reserve CTA — pinned to bottom safe inset. Capped fade above
+        // it so scrolling list content feathers out instead of butting hard
+        // against the pill.
+        if (!isCancelled) {
+            StickyReserveCta(
+                capacity = capacity,
+                available = session.arcanaSpotsAvailable,
+                startLocal = startLocal,
+                onClick = { /* Phase 5 — booking flow */ },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+// ── Top bar -------------------------------------------------------------------
+
+@Composable
+private fun TopBar(onClose: () -> Unit, onShare: () -> Unit, onBookmark: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        item("close-header") { CloseHeader(onClose) }
-        item("hero") {
-            // Placeholder for the class hero image. Compose Multiplatform doesn't
-            // yet have a network-image loader configured (no Coil-MP / Kamel dep).
-            // For now we render a studio-tinted Box; when an image library lands,
-            // swap to AsyncImage on session.template.heroImageUrl.
+        CircleIconButton(icon = ArcanaIcons.Close, onClick = onClose)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircleIconButton(icon = ArcanaIcons.Bookmark, onClick = onBookmark)
+            CircleIconButton(icon = ArcanaIcons.Share, onClick = onShare)
+        }
+    }
+}
+
+@Composable
+private fun CircleIconButton(
+    icon: org.jetbrains.compose.resources.DrawableResource,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(Paper)
+            .border(1.dp, Mist, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        StrokeIcon(icon = icon, size = 18.dp, tint = Ink)
+    }
+}
+
+// ── Hero card -----------------------------------------------------------------
+
+/**
+ * Studio-tinted plate. Replaces the empty greenish band from before-class-detail.
+ * Subtle vertical gradient in the brand color (15% → 8%), a 1px brand@20% border,
+ * a 14dp radius, and a soft dot field rotated -3° anchored to the top-right
+ * corner of the card. Foreground content is a brand+location chip, the modality
+ * overline, and the class title (max 2 lines).
+ */
+@Composable
+private fun HeroCard(
+    studioName: String,
+    locationShort: String,
+    modality: String,
+    title: String,
+    studioColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        studioColor.copy(alpha = 0.15f),
+                        studioColor.copy(alpha = 0.08f),
+                    ),
+                ),
+            )
+            .border(1.dp, studioColor.copy(alpha = 0.20f), RoundedCornerShape(14.dp)),
+    ) {
+        // Decorative dot field — top-right, rotated -3°, diagonal fade.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(width = 220.dp, height = 160.dp)
+                .rotate(-3f),
+        ) {
+            HeroDotField(color = studioColor)
+        }
+        Column(
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 20.dp),
+        ) {
+            // Brand + location chip — paper bg, brand-color text + border.
+            BrandLocationChip(
+                studioName = studioName,
+                locationShort = locationShort,
+                studioColor = studioColor,
+            )
+            Spacer(Modifier.height(14.dp))
+            if (modality.isNotBlank()) {
+                Overline(text = modality, size = 10, color = Ash)
+                Spacer(Modifier.height(8.dp))
+            }
+            Display(
+                text = title,
+                size = 42,
+                color = Ink,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrandLocationChip(
+    studioName: String,
+    locationShort: String,
+    studioColor: Color,
+) {
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(Paper)
+            .border(1.dp, studioColor.copy(alpha = 0.35f), CircleShape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(studioColor))
+        Text(
+            text = studioName.uppercase(),
+            maxLines = 1, softWrap = false,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.body,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 0.22.em,
+                color = studioColor,
+            ),
+        )
+        if (locationShort.isNotEmpty()) {
+            Box(Modifier.size(3.dp).clip(CircleShape).background(studioColor.copy(alpha = 0.55f)))
+            Text(
+                text = locationShort,
+                maxLines = 1, softWrap = false,
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.body,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.20.em,
+                    color = studioColor.copy(alpha = 0.78f),
+                ),
+            )
+        }
+    }
+}
+
+/** The hero card's decorative dot field. Same dot vocabulary as the brand
+ *  wordmark; alpha fades diagonally from top-right (lit) to bottom-left
+ *  (transparent) so it reads as a corner accent, not a tiled background. */
+@Composable
+private fun HeroDotField(color: Color) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val step = 9.dp.toPx()
+        val radius = 1.2.dp.toPx()
+        val w = size.width
+        val h = size.height
+        var y = step / 2f
+        while (y < h) {
+            var x = step / 2f
+            while (x < w) {
+                // Diagonal falloff: brighter toward (w, 0), darker toward (0, h).
+                val nx = x / w
+                val ny = 1f - (y / h)
+                val a = ((nx + ny) * 0.5f).coerceIn(0f, 1f)
+                drawCircle(
+                    color = color.copy(alpha = 0.45f * a),
+                    radius = radius,
+                    center = Offset(x, y),
+                )
+                x += step
+            }
+            y += step
+        }
+    }
+}
+
+// ── Summary strip -------------------------------------------------------------
+
+/** Three-column hairline-divided stat row: WHEN / TIME / DURATION. Heat was
+ *  dropped because the backend doesn't yet expose a temperature field — see
+ *  the design-brief follow-up notes. */
+@Composable
+private fun SummaryStrip(
+    startLocal: LocalDateTime,
+    durationMinutes: Int,
+    modifier: Modifier = Modifier,
+) {
+    val day = startLocal.dayOfWeek.name.take(3)
+    val dateLine = "${startLocal.date.day} ${startLocal.date.month.abbr()}"
+    val hour12 = ((startLocal.hour + 11) % 12) + 1
+    val ampm = if (startLocal.hour < 12) "AM" else "PM"
+    val time = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')}"
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            SummaryCell(label = "WHEN", value = day, unit = dateLine, modifier = Modifier.weight(1f))
+            VerticalHairline()
+            SummaryCell(label = "TIME", value = time, unit = ampm, modifier = Modifier.weight(1f))
+            VerticalHairline()
+            SummaryCell(label = "DURATION", value = durationMinutes.toString(), unit = "MIN", modifier = Modifier.weight(1f))
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+    }
+}
+
+@Composable
+private fun SummaryCell(
+    label: String,
+    value: String,
+    unit: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Overline(text = label, size = 9, color = Ash)
+        Spacer(Modifier.height(8.dp))
+        Display(text = value, size = 22, color = Ink)
+        Spacer(Modifier.height(4.dp))
+        Overline(text = unit, size = 9, color = Ash2)
+    }
+}
+
+@Composable
+private fun VerticalHairline() {
+    Box(Modifier.width(1.dp).height(56.dp).background(Mist))
+}
+
+// ── Instructor row ------------------------------------------------------------
+
+/** Single-instructor row with avatar circle (initials), "TAUGHT BY / NAME"
+ *  block, and trailing chevron implying tap-into-profile (Phase 5). Lineage
+ *  and years are intentionally omitted — those fields don't exist on
+ *  [org.arcana.mobile.data.InstructorBriefDto] today. */
+@Composable
+private fun InstructorRow(
+    name: String,
+    studioColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = { /* Phase 5 — instructor profile */ }),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(Mist2)
+                .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = initialsOf(name),
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.display,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    letterSpacing = 0.04.em,
+                    color = studioColor,
+                ),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Overline(text = "TAUGHT BY", size = 10, color = Ash)
+            Spacer(Modifier.height(4.dp))
+            Display(text = name, size = 18, color = Ink)
+        }
+        StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 18.dp, tint = Ash2)
+    }
+}
+
+private fun initialsOf(name: String): String {
+    val parts = name.trim().split(' ').filter { it.isNotBlank() }
+    if (parts.isEmpty()) return "?"
+    val first = parts.first().firstOrNull()?.uppercaseChar() ?: '?'
+    val last = parts.drop(1).lastOrNull()?.firstOrNull()?.uppercaseChar()
+    return if (last != null) "$first$last" else first.toString()
+}
+
+// ── Availability block --------------------------------------------------------
+
+/**
+ * "N OF M SPOTS OPEN" headline + segmented pip row + status copy. Each pip
+ * represents one spot — reads as a counter, not just a progress bar. Pip
+ * color encodes state: open → moss, scarce → warning, full → ash. Open pips
+ * (the trailing ones) are always Mist@70.
+ */
+@Composable
+private fun AvailabilityBlock(
+    offered: Int,
+    available: Int,
+    capacity: DetailCapacity,
+    studioColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val taken = (offered - available).coerceAtLeast(0)
+    Column(modifier = modifier) {
+        SectionRule(label = "Availability", accent = true)
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            val headline = if (available <= 0) "WAITLIST ONLY"
+            else "$available OF $offered SPOTS OPEN"
+            Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
+            Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
+        }
+        Spacer(Modifier.height(12.dp))
+        if (offered > 0) {
+            CapacityPips(offered = offered, taken = taken, capacity = capacity, studioColor = studioColor)
+            Spacer(Modifier.height(12.dp))
+        }
+        val statusCopy = when (capacity) {
+            DetailCapacity.Open -> "Plenty of room — pick a mat when you arrive."
+            DetailCapacity.Scarce -> "Filling fast — reserve now to hold your spot."
+            DetailCapacity.Full -> "Add yourself to the waitlist — drops happen."
+        }
+        BodyText(text = statusCopy, size = 13, color = Ash)
+    }
+}
+
+@Composable
+private fun CapacityPips(
+    offered: Int,
+    taken: Int,
+    capacity: DetailCapacity,
+    studioColor: Color,
+) {
+    val takenColor = when (capacity) {
+        DetailCapacity.Open -> MossLight
+        DetailCapacity.Scarce -> Warning
+        DetailCapacity.Full -> Ash2
+    }
+    // Suppress unused-parameter warning while keeping the API future-proof —
+    // when brand-tinted pips land in a later iteration, the studioColor will
+    // be the source.
+    @Suppress("UNUSED_VARIABLE") val tint = studioColor
+    val openColor = Mist.copy(alpha = 0.70f)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        repeat(offered) { i ->
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .background(sc.copy(alpha = 0.25f)),
+                    .weight(1f)
+                    .height(10.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (i < taken) takenColor else openColor),
             )
         }
-        item("studio-chip") {
-            Row(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+    }
+}
+
+// ── Location card -------------------------------------------------------------
+
+@Composable
+private fun LocationCard(
+    studioName: String,
+    locationName: String,
+    address: String,
+    studioColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        SectionRule(label = "Location")
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Paper)
+                .border(1.dp, Mist, RoundedCornerShape(14.dp))
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(studioColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(sc))
-                Overline(text = studio.name.uppercase(), size = 11, color = sc)
+                StrokeIcon(icon = ArcanaIcons.Pin, size = 20.dp, tint = studioColor)
             }
-        }
-        item("class-name") {
-            Display(
-                text = session.template.name,
-                size = 36, color = Ink,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-            )
-        }
-        item("meta-strip") {
-            val modality = session.template.modality
-            val dateText = "${startLocal.date.day} ${startLocal.date.month.abbr()}".uppercase()
-            Row(
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (modality.isNotBlank()) {
-                    Overline(text = modality.uppercase(), size = 12, color = Ink)
-                    Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                }
-                Overline(
-                    text = "${startLocal.hour.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')}",
-                    size = 12, color = Ink,
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                val displayName = if (locationName.isNotBlank()) locationName else studioName
+                BodyText(
+                    text = displayName, size = 14, color = Ink, weight = FontWeight.SemiBold,
                 )
-                Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                Overline(text = "${session.durationMinutes}MIN", size = 12, color = Ash)
-                Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                Overline(text = dateText, size = 12, color = Ash)
-                if (instructorLine.isNotEmpty()) {
-                    Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                    Overline(text = instructorLine.uppercase(), size = 12, color = Ash)
+                if (address.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    BodyText(text = address, size = 12, color = Ash)
                 }
             }
-        }
-        if (isCancelled) {
-            item("cancelled-notice") {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    SectionRule(label = "Cancelled")
-                    Spacer(Modifier.height(8.dp))
-                    BodyText(
-                        text = "This class has been cancelled by the studio.",
-                        size = 14, color = Warning,
-                    )
-                }
-            }
-        } else {
-            item("capacity") {
-                Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) {
-                    SectionRule(label = "Availability")
-                    Spacer(Modifier.height(8.dp))
-                    BodyText(
-                        text = if (session.arcanaSpotsAvailable == 0) "FULL"
-                            else "${session.arcanaSpotsAvailable} / ${session.arcanaSpotsOffered} spots open",
-                        size = 16, color = Ink, weight = FontWeight.Medium,
-                    )
-                }
-            }
-        }
-        if (session.template.description.isNotBlank()) {
-            item("description") {
-                Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) {
-                    SectionRule(label = "About this class")
-                    Spacer(Modifier.height(8.dp))
-                    BodyText(text = session.template.description, size = 14, color = Ink)
-                }
-            }
-        }
-        item("location") {
-            Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) {
-                SectionRule(label = "Location")
-                Spacer(Modifier.height(8.dp))
-                BodyText(text = session.location.name, size = 16, color = Ink, weight = FontWeight.Medium)
-                if (session.location.address.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    BodyText(text = session.location.address, size = 14, color = Ash)
-                }
+            Spacer(Modifier.width(12.dp))
+            // DIRECTIONS link — Phase 5 will hand this off to a maps deep link.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "DIRECTIONS",
+                    style = TextStyle(
+                        fontFamily = Arcana.fonts.display,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.10.em,
+                        color = studioColor,
+                    ),
+                )
+                StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 14.dp, tint = studioColor)
             }
         }
     }
 }
+
+// ── Sticky CTA ----------------------------------------------------------------
+
+/**
+ * Pinned-to-bottom reserve pill with a transparent→stone gradient above it so
+ * the scrolling list content feathers out instead of butting against the pill.
+ * State-driven colors:
+ * - Open   → moss pill, lime arrow well
+ * - Scarce → warning pill, lime arrow well
+ * - Full   → graphite pill, stone clock well (waitlist semantics)
+ *
+ * Sits above the home-indicator safe inset via [safeBottomBarPadding].
+ */
+@Composable
+private fun StickyReserveCta(
+    capacity: DetailCapacity,
+    available: Int,
+    startLocal: LocalDateTime,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pillColor = when (capacity) {
+        DetailCapacity.Open -> Moss
+        DetailCapacity.Scarce -> Warning
+        DetailCapacity.Full -> Graphite
+    }
+    val arrowWellColor = if (capacity == DetailCapacity.Full) Stone else Lime
+    val arrowIcon = if (capacity == DetailCapacity.Full) ArcanaIcons.Clock else ArcanaIcons.ArrowRight
+    val primaryLabel = when (capacity) {
+        DetailCapacity.Open -> "RESERVE THIS SPOT"
+        DetailCapacity.Scarce -> "RESERVE — ONLY $available LEFT"
+        DetailCapacity.Full -> "JOIN THE WAITLIST"
+    }
+    val hour12 = ((startLocal.hour + 11) % 12) + 1
+    val ampm = if (startLocal.hour < 12) "AM" else "PM"
+    val timeStamp = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')} $ampm"
+    val dayStamp = "${startLocal.dayOfWeek.name.take(3)} ${startLocal.date.day} ${startLocal.date.month.abbr()}"
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // 40dp transparent→stone fade so list content scrolls under the CTA
+        // and feathers out before the pill begins.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Stone),
+                    ),
+                ),
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(Stone)
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(pillColor)
+                    .clickable(onClick = onClick)
+                    .padding(start = 20.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = primaryLabel,
+                        maxLines = 1,
+                        style = TextStyle(
+                            fontFamily = Arcana.fonts.display,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            letterSpacing = 0.10.em,
+                            color = Stone,
+                        ),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "$timeStamp · $dayStamp",
+                        maxLines = 1,
+                        style = TextStyle(
+                            fontFamily = Arcana.fonts.body,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 9.sp,
+                            letterSpacing = 0.10.em,
+                            color = Stone.copy(alpha = 0.67f),
+                        ),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(arrowWellColor),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    StrokeIcon(icon = arrowIcon, size = 18.dp, tint = Ink)
+                }
+            }
+        }
+        // Home-indicator inset — paint Stone beneath so the system gesture
+        // bar reads as part of the CTA surface, not a glitch.
+        Box(Modifier.fillMaxWidth().background(Stone).safeBottomBarPadding())
+    }
+}
+
+// `LocationBriefDto.shortLabel()` lives in ScheduleViewModel.kt (internal).
+

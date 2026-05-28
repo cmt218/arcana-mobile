@@ -12,6 +12,7 @@ import arcana.composeapp.generated.resources.Res
 import arcana.composeapp.generated.resources.icon_arrow_right
 import arcana.composeapp.generated.resources.icon_arrow_up_right
 import arcana.composeapp.generated.resources.icon_bell
+import arcana.composeapp.generated.resources.icon_bookmark
 import arcana.composeapp.generated.resources.icon_calendar
 import arcana.composeapp.generated.resources.icon_card
 import arcana.composeapp.generated.resources.icon_check
@@ -24,6 +25,7 @@ import arcana.composeapp.generated.resources.icon_logout
 import arcana.composeapp.generated.resources.icon_pin
 import arcana.composeapp.generated.resources.icon_refresh
 import arcana.composeapp.generated.resources.icon_settings
+import arcana.composeapp.generated.resources.icon_share
 import arcana.composeapp.generated.resources.icon_support
 import arcana.composeapp.generated.resources.icon_swap
 import arcana.composeapp.generated.resources.icon_user
@@ -56,6 +58,8 @@ object ArcanaIcons {
     val Refresh: DrawableResource get() = Res.drawable.icon_refresh
     val Logout: DrawableResource get() = Res.drawable.icon_logout
     val Settings: DrawableResource get() = Res.drawable.icon_settings
+    val Share: DrawableResource get() = Res.drawable.icon_share
+    val Bookmark: DrawableResource get() = Res.drawable.icon_bookmark
     val Support: DrawableResource get() = Res.drawable.icon_support
     val Swap: DrawableResource get() = Res.drawable.icon_swap
 }
