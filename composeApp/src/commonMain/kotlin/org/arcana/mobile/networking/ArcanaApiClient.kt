@@ -10,21 +10,27 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodedPath
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
 import org.arcana.mobile.auth.TokenStorage
+import org.arcana.mobile.data.CompleteSignupRequest
+import org.arcana.mobile.data.CompleteSignupResponse
 import org.arcana.mobile.data.LoginRequest
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
 import org.arcana.mobile.data.RegisterRequest
 import org.arcana.mobile.data.TokenResponse
+import org.arcana.mobile.signup.CompleteSignupResult
 
 class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
@@ -97,6 +103,34 @@ class ArcanaApiClient(
         tokenStorage.accessToken = tokens.access
         tokenStorage.refreshToken = tokens.refresh
         _isAuthenticated.value = true
+    }
+
+    suspend fun completeSignup(
+        token: String,
+        password: String,
+        displayName: String,
+    ): CompleteSignupResult {
+        return try {
+            val response = client.post(v1("auth/complete-signup")) {
+                contentType(ContentType.Application.Json)
+                setBody(CompleteSignupRequest(token, password, displayName))
+            }
+            when (response.status) {
+                HttpStatusCode.OK -> {
+                    val payload = response.body<CompleteSignupResponse>()
+                    tokenStorage.accessToken = payload.access
+                    tokenStorage.refreshToken = payload.refresh
+                    _isAuthenticated.value = true
+                    CompleteSignupResult.Success(payload)
+                }
+                HttpStatusCode.Gone -> CompleteSignupResult.TokenExpiredOrConsumed
+                else -> CompleteSignupResult.Other(response.status.value, response.bodyAsText())
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            CompleteSignupResult.NetworkError(e)
+        }
     }
 
     /**

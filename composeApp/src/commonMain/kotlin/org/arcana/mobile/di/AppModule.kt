@@ -8,6 +8,7 @@ import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.networking.BaseUrlProvider
 import org.arcana.mobile.schedule.ClassDetailViewModel
 import org.arcana.mobile.schedule.ScheduleViewModel
+import org.arcana.mobile.signup.CompleteSignupApi
 import org.arcana.mobile.settings.DeveloperSettingsViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -19,6 +20,7 @@ val appModule = module {
     // localhost on iOS). Physical devices override via Developer Settings.
     single { BaseUrlProvider(get(), defaultBaseUrl()) }
     single { ArcanaApiClient(get(), get()) }
+    single { CompleteSignupApi(get()) }
     viewModel { AuthViewModel(get()) }
     viewModel { ScheduleViewModel(get()) }
     viewModel { DeveloperSettingsViewModel(get()) }
