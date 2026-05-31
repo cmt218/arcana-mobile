@@ -31,6 +31,7 @@ import androidx.navigation.toRoute
 import kotlinx.coroutines.delay
 import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
+import org.arcana.mobile.auth.SecureStorage
 import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.networking.ArcanaApiClient
@@ -48,6 +49,8 @@ import org.arcana.mobile.ui.ArcanaTabBar
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+
+private const val RECOVERY_ATTEMPTED_KEY = "first_launch_recovery_attempted"
 
 /**
  * @param initialWelcomeToken token parsed from a welcome deep link by the platform
@@ -78,26 +81,32 @@ fun App(
             }
         }
 
-        // Pending welcome token. Seeded from the cold-start deep link. On Android
-        // `initialWelcomeToken` can change at runtime — MainActivity.onNewIntent
-        // re-supplies it for a warm-start deep link (wired in C.7), recomposing App
-        // with a new value — and this effect propagates that into welcomeToken. On
-        // iOS only cold-start delivers a link today (warm-start is a follow-up, see
-        // ContentView.swift), so the effect is currently a no-op there.
+        // Pending welcome token. Seeded from the cold-start deep link.
+        // `initialWelcomeToken` can change at runtime on BOTH platforms, and this
+        // effect propagates the new value into welcomeToken. On Android,
+        // MainActivity.onNewIntent re-supplies it for a warm-start deep link (wired
+        // in C.7), recomposing App. On iOS, the IosDeepLinkBridge StateFlow that
+        // MainViewController collects pushes the new link in (cold AND warm), again
+        // recomposing App with a fresh token.
         var welcomeToken by remember { mutableStateOf(initialWelcomeToken) }
         LaunchedEffect(initialWelcomeToken) {
             if (initialWelcomeToken != null) welcomeToken = initialWelcomeToken
         }
 
+        val secureStorage = koinInject<SecureStorage>()
         LaunchedEffect(Unit) {
-            // First-launch recovery — runs at most once (keyed on Unit). The guards make it a
-            // no-op when a deep link already delivered a token or the member is already signed
-            // in, so the clipboard / Install Referrer is only read on a genuine fresh, signed-out
-            // launch.
+            // First-launch recovery (clipboard on iOS / Install Referrer on Android) — runs
+            // at most ONCE per install, and only when signed-out with no deep link. The short
+            // delay lets a cold-start deep link arrive first (the bridge sets welcomeToken),
+            // so a deep-link launch never triggers iOS's pasteboard permission prompt.
+            if (isAuthenticated) return@LaunchedEffect
+            if (secureStorage.load(RECOVERY_ATTEMPTED_KEY) == "1") return@LaunchedEffect
+            delay(700)
             if (initialWelcomeToken == null && welcomeToken == null && !isAuthenticated) {
                 val recovered = PendingTokenSource().consumePendingToken()
                 if (recovered != null) welcomeToken = recovered
             }
+            secureStorage.save(RECOVERY_ATTEMPTED_KEY, "1")
         }
 
         LaunchedEffect(isAuthenticated) {

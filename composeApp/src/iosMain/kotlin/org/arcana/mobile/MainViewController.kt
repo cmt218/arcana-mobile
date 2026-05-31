@@ -1,6 +1,9 @@
 package org.arcana.mobile
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.window.ComposeUIViewController
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.arcana.mobile.di.appModule
 import org.arcana.mobile.navigation.DeepLinkHandler
 import org.koin.core.context.startKoin
@@ -8,27 +11,33 @@ import org.koin.mp.KoinPlatformTools
 import platform.UIKit.UIViewController
 
 /**
- * iOS entry point. Receives the cold-start deep link (if any) from the Swift side,
- * extracts the welcome token, and hands it to the shared [App].
- *
- * @param pendingDeepLink the absolute URL the app was opened with (custom-scheme or
- *   Universal Link), or null on a normal launch.
- * @param onConsumed called once [App] has consumed the welcome token, so Swift can
- *   clear its pending-link binding.
+ * Bridge for iOS deep links. SwiftUI delivers an opened URL (onOpenURL /
+ * onContinueUserActivity) AFTER the Compose view controller is created, so the
+ * URL can't be passed as a one-shot constructor param — it must be pushed into
+ * an observable the running Compose hierarchy collects. [onIosDeepLink] is called
+ * from Swift; [MainViewController]'s composable collects [pendingDeepLink] and
+ * recomposes [App] with the extracted token. Works for both cold and warm starts.
  */
-fun MainViewController(
-    pendingDeepLink: String? = null,
-    onConsumed: () -> Unit = {},
-): UIViewController {
-    // Guard against a double startKoin: if this view controller is ever recreated,
-    // calling startKoin a second time throws KoinApplicationAlreadyStartedException.
-    // GlobalContext is JVM-only in Koin; the multiplatform-safe accessor for the
-    // started-Koin check in iosMain is KoinPlatformTools.defaultContext().
+object IosDeepLinkBridge {
+    val pendingDeepLink = MutableStateFlow<String?>(null)
+}
+
+/** Called from Swift (onOpenURL / onContinueUserActivity). */
+fun onIosDeepLink(url: String) {
+    IosDeepLinkBridge.pendingDeepLink.value = url
+}
+
+fun MainViewController(): UIViewController {
+    // Guard against a double startKoin if the VC is ever recreated.
     if (KoinPlatformTools.defaultContext().getOrNull() == null) {
         startKoin { modules(appModule) }
     }
     return ComposeUIViewController {
-        val token = pendingDeepLink?.let { DeepLinkHandler.extractWelcomeToken(it) }
-        App(initialWelcomeToken = token, onWelcomeTokenConsumed = onConsumed)
+        val pending by IosDeepLinkBridge.pendingDeepLink.collectAsState()
+        val token = pending?.let { DeepLinkHandler.extractWelcomeToken(it) }
+        App(
+            initialWelcomeToken = token,
+            onWelcomeTokenConsumed = { IosDeepLinkBridge.pendingDeepLink.value = null },
+        )
     }
 }
