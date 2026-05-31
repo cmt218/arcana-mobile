@@ -37,6 +37,7 @@ import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.ProfileScreen
 import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
+import org.arcana.mobile.signup.PendingTokenSource
 import org.arcana.mobile.signup.SignupCompletionScreen
 import org.arcana.mobile.signup.SignupCompletionViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
@@ -86,6 +87,17 @@ fun App(
         var welcomeToken by remember { mutableStateOf(initialWelcomeToken) }
         LaunchedEffect(initialWelcomeToken) {
             if (initialWelcomeToken != null) welcomeToken = initialWelcomeToken
+        }
+
+        LaunchedEffect(Unit) {
+            // First-launch recovery — runs at most once (keyed on Unit). The guards make it a
+            // no-op when a deep link already delivered a token or the member is already signed
+            // in, so the clipboard / Install Referrer is only read on a genuine fresh, signed-out
+            // launch.
+            if (initialWelcomeToken == null && welcomeToken == null && !isAuthenticated) {
+                val recovered = PendingTokenSource().consumePendingToken()
+                if (recovered != null) welcomeToken = recovered
+            }
         }
 
         LaunchedEffect(isAuthenticated) {

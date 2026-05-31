@@ -32,6 +32,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.android)
             implementation(libs.androidx.security.crypto)
+            implementation(libs.installreferrer)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
