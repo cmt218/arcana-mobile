@@ -67,6 +67,9 @@ class SignupCompletionViewModel(
         }
     }
 
+    /** Returns to a fresh [SignupCompletionState.Editing] — used by the error-state retry path. */
+    fun reset() = setState(SignupCompletionState.Editing())
+
     private fun mutateEditing(transform: (SignupCompletionState.Editing) -> SignupCompletionState.Editing) {
         val current = _state.value as? SignupCompletionState.Editing ?: return
         setState(transform(current))

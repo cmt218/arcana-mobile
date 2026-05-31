@@ -111,6 +111,15 @@ class SignupCompletionViewModelTest {
         assertTrue(s is SignupCompletionState.Error); assertEquals(SignupErrorKind.Network, s.kind)
     }
 
+    @Test fun `reset returns to fresh editing`() = runTest {
+        val vm = SignupCompletionViewModel("tok", FakeApi { CompleteSignupResult.Other(500, "x") })
+        vm.updatePassword("longenough1"); vm.updateConfirmPassword("longenough1"); vm.updateDisplayName("Alice"); vm.submit()
+        assertTrue(vm.state.value is SignupCompletionState.Error)
+        vm.reset()
+        val s = vm.state.value
+        assertTrue(s is SignupCompletionState.Editing); assertEquals("", s.password); assertFalse(vm.canSubmit.value)
+    }
+
     @Test fun `submit is a no-op when form invalid`() = runTest {
         val vm = SignupCompletionViewModel("tok", fakeSuccess())
         vm.updatePassword("short")
