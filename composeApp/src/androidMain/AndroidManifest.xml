@@ -19,6 +19,21 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Production App Link. autoVerify needs assetlinks.json hosted at arcana.fit (deferred);
+                 until then Android shows a chooser for https links. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="arcana.fit" android:pathPrefix="/welcome" />
+            </intent-filter>
+            <!-- Custom scheme for local testing (no assetlinks.json needed). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="arcana" android:host="welcome" />
+            </intent-filter>
         </activity>
     </application>
 
