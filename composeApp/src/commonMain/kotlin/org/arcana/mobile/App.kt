@@ -37,6 +37,8 @@ import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.ProfileScreen
 import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
+import org.arcana.mobile.signup.SignupCompletionScreen
+import org.arcana.mobile.signup.SignupCompletionViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
 import org.arcana.mobile.theme.Stone
@@ -44,9 +46,22 @@ import org.arcana.mobile.ui.ArcanaTab
 import org.arcana.mobile.ui.ArcanaTabBar
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
+/**
+ * @param initialWelcomeToken token parsed from a welcome deep link by the platform
+ *   entry point (see iOS `MainViewController`). When non-null and the member is
+ *   unauthenticated, [App] routes straight into [SignupCompletionScreen] instead of
+ *   [AuthScreen]. Platform-neutral so Android can reuse it.
+ * @param onWelcomeTokenConsumed invoked once the token has been consumed (auth
+ *   succeeded, or the member chose "log in instead") so the platform can drop its
+ *   pending-link reference and not re-deliver it.
+ */
 @Composable
-fun App() {
+fun App(
+    initialWelcomeToken: String? = null,
+    onWelcomeTokenConsumed: () -> Unit = {},
+) {
     ArcanaTheme {
         val apiClient = koinInject<ArcanaApiClient>()
         val isAuthenticated by apiClient.isAuthenticated.collectAsState()
@@ -62,8 +77,24 @@ fun App() {
             }
         }
 
+        // Pending welcome token. Seeded from the cold-start deep link. On Android
+        // `initialWelcomeToken` can change at runtime — MainActivity.onNewIntent
+        // re-supplies it for a warm-start deep link (wired in C.7), recomposing App
+        // with a new value — and this effect propagates that into welcomeToken. On
+        // iOS only cold-start delivers a link today (warm-start is a follow-up, see
+        // ContentView.swift), so the effect is currently a no-op there.
+        var welcomeToken by remember { mutableStateOf(initialWelcomeToken) }
+        LaunchedEffect(initialWelcomeToken) {
+            if (initialWelcomeToken != null) welcomeToken = initialWelcomeToken
+        }
+
         LaunchedEffect(isAuthenticated) {
-            if (!isAuthenticated) {
+            if (isAuthenticated) {
+                // completeSignup (or a normal login) flipped auth on — drop the
+                // token so a later logout can't re-surface the signup screen.
+                welcomeToken = null
+                onWelcomeTokenConsumed()
+            } else {
                 authVm.resetState()
                 sessionStore.clear()
             }
@@ -77,12 +108,28 @@ fun App() {
         // Render the post-splash destination underneath so the splash's 300 ms
         // fade-out reveals the next screen rather than a blank surface.
         if (!splashVisible) {
+            val welcome = welcomeToken
             if (isAuthenticated) {
                 CompositionLocalProvider(
                     LocalViewModelStoreOwner provides sessionStoreOwner
                 ) {
                     MainScaffold()
                 }
+            } else if (welcome != null) {
+                // key = welcome recreates the VM if a different token arrives.
+                val signupVm = koinViewModel<SignupCompletionViewModel>(key = welcome) {
+                    parametersOf(welcome)
+                }
+                SignupCompletionScreen(
+                    viewModel = signupVm,
+                    onNavigateToLogin = {
+                        // "Log in instead" (expired/consumed link): clear the token,
+                        // notify, and fall back to AuthScreen.
+                        welcomeToken = null
+                        onWelcomeTokenConsumed()
+                    },
+                    // lockedEmail stays null until the server token-preview endpoint lands.
+                )
             } else {
                 AuthScreen(viewModel = authVm)
             }
