@@ -79,7 +79,8 @@ class ArcanaApiClient(
                 }
                 sendWithoutRequest { request ->
                     !request.url.encodedPath.contains("token") &&
-                        !request.url.encodedPath.contains("register")
+                        !request.url.encodedPath.contains("register") &&
+                        !request.url.encodedPath.contains("complete-signup")
                 }
             }
         }

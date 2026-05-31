@@ -104,8 +104,12 @@ fun App(
             if (isAuthenticated) {
                 // completeSignup (or a normal login) flipped auth on — drop the
                 // token so a later logout can't re-surface the signup screen.
-                welcomeToken = null
-                onWelcomeTokenConsumed()
+                // Only notify when a token was actually pending; a normal
+                // logged-in launch never had one and must not fire the callback.
+                if (welcomeToken != null) {
+                    welcomeToken = null
+                    onWelcomeTokenConsumed()
+                }
             } else {
                 authVm.resetState()
                 sessionStore.clear()
