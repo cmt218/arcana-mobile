@@ -13,16 +13,12 @@ package org.arcana.mobile.navigation
  *     (host == `arcana.fit`, path == `/welcome` or `/welcome/`).
  *  2. Local-dev custom scheme:             `arcana://welcome?token=XXX`
  *     (authority == `welcome`, no path).
- *
- * [extractClipboardToken] is an unrelated colon-delimited format used by the
- * first-launch clipboard fallback: `arcana:welcome:<token>`.
  */
 object DeepLinkHandler {
     private const val WELCOME_HOST = "arcana.fit"
     private const val WELCOME_PATH = "/welcome"
     private const val CUSTOM_SCHEME = "arcana://"
     private const val CUSTOM_AUTHORITY = "welcome"
-    private const val CLIPBOARD_PREFIX = "arcana:welcome:"
 
     fun extractWelcomeToken(url: String): String? {
         val schemeIdx = url.indexOf("://")
@@ -55,11 +51,6 @@ object DeepLinkHandler {
         }
 
         return tokenFromQuery(query)
-    }
-
-    fun extractClipboardToken(content: String): String? {
-        if (!content.startsWith(CLIPBOARD_PREFIX)) return null
-        return content.substring(CLIPBOARD_PREFIX.length).trim().takeIf { it.isNotEmpty() }
     }
 
     /** Returns the query string (between '?' and '#'), or "" if there is none. */

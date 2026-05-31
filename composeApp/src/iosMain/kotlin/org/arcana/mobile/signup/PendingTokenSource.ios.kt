@@ -1,19 +1,13 @@
 package org.arcana.mobile.signup
 
-import org.arcana.mobile.navigation.DeepLinkHandler
-import platform.UIKit.UIPasteboard
-
+/**
+ * iOS intentionally performs NO first-launch token recovery. Reading the
+ * clipboard would show iOS's "… would like to paste from …" banner, which
+ * alarms users, and Apple offers no Install Referrer equivalent. Members who
+ * tapped the welcome link before installing should re-tap it once the app is
+ * installed (the Universal Link routes cleanly), or use the "Already paid?
+ * enter your email" fallback (request-signup-link; screens 04/05, deferred).
+ */
 actual class PendingTokenSource actual constructor() {
-    actual suspend fun consumePendingToken(): String? {
-        val pasteboard = UIPasteboard.generalPasteboard
-        // Note: reading the pasteboard shows the iOS 14+ "pasted from…" banner on cold
-        // start when the clipboard is non-empty. Accepted cost of the clipboard fallback;
-        // iOS 16+ UIPasteboard.detectPatterns could suppress it later (out of scope).
-        val content = pasteboard.string ?: return null
-        val token = DeepLinkHandler.extractClipboardToken(content)
-        if (token != null) {
-            pasteboard.setString("")  // clear so a re-launch doesn't re-trigger
-        }
-        return token
-    }
+    actual suspend fun consumePendingToken(): String? = null
 }

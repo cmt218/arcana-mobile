@@ -65,15 +65,4 @@ class DeepLinkHandlerTest {
     @Test fun `https rejects welcome as wrong path with extra segment`() {
         assertNull(DeepLinkHandler.extractWelcomeToken("https://arcana.fit/welcome/extra?token=x"))
     }
-
-    // --- clipboard fallback format (colon-delimited, NOT a URL) ---
-    @Test fun `parses clipboard fallback format`() {
-        assertEquals("abc123", DeepLinkHandler.extractClipboardToken("arcana:welcome:abc123"))
-    }
-    @Test fun `clipboard fallback rejects unrelated content`() {
-        assertNull(DeepLinkHandler.extractClipboardToken("https://example.com"))
-        assertNull(DeepLinkHandler.extractClipboardToken(""))
-        assertNull(DeepLinkHandler.extractClipboardToken("arcana:other:abc"))
-        assertNull(DeepLinkHandler.extractClipboardToken("arcana:welcome:"))
-    }
 }
