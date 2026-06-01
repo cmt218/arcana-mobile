@@ -327,7 +327,7 @@ private fun SuccessContent(
                     val count = state.sessionsByDay[date]?.size ?: 0
                     DayChip(
                         date = date,
-                        label = when (i) { 0 -> "TODAY"; 1 -> "TMR"; else -> "" },
+                        label = if (i == 0) "TODAY" else "",
                         count = count,
                         active = date == selectedDate,
                         onClick = { selectedDate = date },

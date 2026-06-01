@@ -216,13 +216,23 @@ class ScheduleViewModel(
                 (filters.locationIds.isEmpty() || s.location.id in filters.locationIds)
         }
 
+        // Hide sessions that have already started. On the "today" column a class
+        // whose start time is in the past is non-actionable — there's no use case
+        // for opening it, and the detail fetch errors for a session that's already
+        // begun. Applied to both the count and the list so the day banner's
+        // "N classes" and the rail's dots reflect only what's still bookable.
+        // Future days are unaffected: the 14-day window starts at today, so no
+        // session on a later day can be before `now`.
+        val now = Clock.System.now()
+        fun ScheduleSessionDto.isUpcoming(): Boolean = Instant.parse(startAt) >= now
+
         // Pre-bucket both unfiltered and filtered sessions by day so the
         // screen can read counts in O(1) for the banner.
         val totalByDay: Map<LocalDate, Int> = days.associateWith { date ->
-            unfilteredCache.count { Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
+            unfilteredCache.count { it.isUpcoming() && Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
         }
         val byDay: Map<LocalDate, List<ScheduleSessionDto>> = days.associateWith { date ->
-            filtered.filter { Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
+            filtered.filter { it.isUpcoming() && Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
         }
 
         val siteCount = unfilteredCache.map { it.location.id }.toSet().size
