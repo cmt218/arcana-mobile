@@ -721,7 +721,6 @@ private fun ClassRow(
             MetaLine(
                 brand = studio.name.uppercase(),
                 location = session.location.shortLabel(),
-                instructor = instructorName.uppercase(),
                 studioColor = sc,
             )
             Spacer(Modifier.height(4.dp))
@@ -732,6 +731,13 @@ private fun ClassRow(
                 weight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // Instructor on its own row. Previously it shared the meta line with
+            // brand · location and was the first to ellipsize when the location
+            // ran long; a dedicated line guarantees it always reads in full.
+            if (instructorName.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Overline(text = "WITH $instructorName", size = 10, color = Ash)
+            }
             Spacer(Modifier.height(8.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -810,27 +816,22 @@ private fun ClassRow(
 // ── Row meta line -------------------------------------------------------------
 
 /**
- * Single-line metadata stamp: `BRAND · LOCATION    ·    INSTRUCTOR`.
+ * Single-line metadata stamp: `BRAND · LOCATION`.
  *
  * Visual subtleties from the design handoff:
  * - Brand is fully saturated studio color, weight 700.
  * - The dot between brand and location is the same color at 55% alpha — visually
  *   linking the two as one unit.
  * - Location is the same color at 78% alpha but weight 500 (slightly demoted).
- * - The dot between location and instructor is a heavier Ash2 — a *visual
- *   separator* between the studio unit and the neutral instructor stamp.
- * - Instructor sits in Ash, weight 500.
  *
- * Overflow: location and instructor both flex with ellipsis, so neither single
- * field can squeeze the other off-screen. Brand is intrinsic — it never
- * truncates, because brand identity matters more than a few extra characters
- * of location text.
+ * Overflow: brand is intrinsic and never truncates; location flexes with
+ * ellipsis if a row is ever too narrow. The instructor is no longer part of
+ * this stamp — it renders on its own line under the class title (see ClassRow).
  */
 @Composable
 private fun MetaLine(
     brand: String,
     location: String,
-    instructor: String,
     studioColor: Color,
 ) {
     Row(
@@ -857,7 +858,7 @@ private fun MetaLine(
                     .clip(CircleShape)
                     .background(studioColor.copy(alpha = 0.55f)),
             )
-            // LOCATION — flexes + ellipsises before instructor.
+            // LOCATION — flexes + ellipsises only if the row is too narrow.
             Text(
                 text = location,
                 maxLines = 1,
@@ -870,29 +871,6 @@ private fun MetaLine(
                     fontSize = 10.sp,
                     letterSpacing = 0.20.em,
                     color = studioColor.copy(alpha = 0.78f),
-                ),
-            )
-        }
-        if (instructor.isNotEmpty()) {
-            // location→instructor separator: heavier Ash2 — a visual break.
-            Box(
-                Modifier
-                    .size(4.dp)
-                    .clip(CircleShape)
-                    .background(Ash2),
-            )
-            Text(
-                text = instructor,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-                style = TextStyle(
-                    fontFamily = Arcana.fonts.body,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 10.sp,
-                    letterSpacing = 0.20.em,
-                    color = Ash,
                 ),
             )
         }

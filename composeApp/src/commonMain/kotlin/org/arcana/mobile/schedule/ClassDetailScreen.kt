@@ -519,7 +519,10 @@ private fun SummaryCell(
 
 @Composable
 private fun VerticalHairline() {
-    Box(Modifier.width(1.dp).height(56.dp).background(Mist))
+    // Horizontal padding gives the hairline its own breathing room so adjacent
+    // cell values ("07:00", "45") don't crowd the bar — the 1dp line stays thin
+    // but sits inset 12dp from the values on either side.
+    Box(Modifier.padding(horizontal = 12.dp).width(1.dp).height(56.dp).background(Mist))
 }
 
 // ── Instructor row ------------------------------------------------------------
