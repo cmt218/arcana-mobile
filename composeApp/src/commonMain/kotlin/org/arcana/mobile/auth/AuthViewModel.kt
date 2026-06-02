@@ -37,24 +37,6 @@ class AuthViewModel(private val api: ArcanaApiClient) : ViewModel() {
         }
     }
 
-    fun register(email: String, password: String) {
-        viewModelScope.launch {
-            _uiState.value = AuthUiState.Loading
-            try {
-                api.register(email.trim(), password)
-                _uiState.value = AuthUiState.Success
-            } catch (e: ResponseException) {
-                val code = e.response.status.value
-                _uiState.value = AuthUiState.Error(
-                    if (code == 400) "An account with this email already exists."
-                    else "Server error ($code)."
-                )
-            } catch (e: Exception) {
-                _uiState.value = AuthUiState.Error("Could not connect to server.")
-            }
-        }
-    }
-
     fun resetState() {
         _uiState.value = AuthUiState.Idle
     }

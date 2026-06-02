@@ -3,6 +3,8 @@ package org.arcana.mobile.networking
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.auth.authProviders
+import io.ktor.client.plugins.auth.providers.BearerAuthProvider
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -35,7 +37,6 @@ import org.arcana.mobile.data.MyBookingsDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
-import org.arcana.mobile.data.RegisterRequest
 import org.arcana.mobile.data.TokenResponse
 import org.arcana.mobile.signup.CompleteSignupResult
 
@@ -100,16 +101,7 @@ class ArcanaApiClient(
         }.body<TokenResponse>()
         tokenStorage.accessToken = tokens.access
         tokenStorage.refreshToken = tokens.refresh
-        _isAuthenticated.value = true
-    }
-
-    suspend fun register(email: String, password: String) {
-        val tokens = client.post(v1("auth/register/")) {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest(email, password))
-        }.body<TokenResponse>()
-        tokenStorage.accessToken = tokens.access
-        tokenStorage.refreshToken = tokens.refresh
+        clearBearerTokenCache()
         _isAuthenticated.value = true
     }
 
@@ -128,6 +120,7 @@ class ArcanaApiClient(
                     val payload = response.body<CompleteSignupResponse>()
                     tokenStorage.accessToken = payload.access
                     tokenStorage.refreshToken = payload.refresh
+                    clearBearerTokenCache()
                     _isAuthenticated.value = true
                     CompleteSignupResult.Success(payload)
                 }
@@ -210,6 +203,21 @@ class ArcanaApiClient(
 
     fun logout() {
         tokenStorage.clear()
+        clearBearerTokenCache()
         _isAuthenticated.value = false
+    }
+
+    /**
+     * Clear the Auth plugin's in-memory bearer-token cache so the next request
+     * reloads from TokenStorage. Ktor's bearer provider caches the result of
+     * `loadTokens` and does NOT re-read storage on its own — without this, after
+     * logout + login as a different user, requests keep going out with the
+     * previous user's cached access token (showing the wrong account's data).
+     */
+    private fun clearBearerTokenCache() {
+        client.authProviders
+            .filterIsInstance<BearerAuthProvider>()
+            .firstOrNull()
+            ?.clearToken()
     }
 }

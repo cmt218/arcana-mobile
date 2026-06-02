@@ -50,10 +50,9 @@ import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.settings.DeveloperSettingsScreen
 
 /**
- * Gateway — sign-in / create-account. Both modes share one Stone shell;
- * only the copy and CTA differ. Layout is grouped (wordmark / header / form / cta)
- * with Arrangement.spacedBy + a weight-pushed footer so it breathes on any
- * screen size rather than relying on hand-tuned spacers.
+ * Gateway — sign-in only. There is no in-app sign-up: members onboard through
+ * the invite welcome flow (SignupCompletionScreen, reached via a welcome deep
+ * link). A cold launch with no welcome token lands here and can only log in.
  */
 @Composable
 fun AuthScreen(
@@ -70,7 +69,6 @@ fun AuthScreen(
         return
     }
 
-    var isLoginMode by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val uiState by viewModel.uiState.collectAsState()
@@ -80,31 +78,15 @@ fun AuthScreen(
     // way Android does, so this has to be wired explicitly.
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(isLoginMode) { viewModel.resetState() }
+    LaunchedEffect(Unit) { viewModel.resetState() }
 
-    val onSubmit = {
-        if (isLoginMode) viewModel.login(email, password)
-        else viewModel.register(email, password)
-    }
+    val onSubmit = { viewModel.login(email, password) }
 
-    // Single scrollable column with footer included.
-    //
-    // The footer used to live OUTSIDE the scroll so the keyboard could cover
-    // it without dragging it up — but that meant the user couldn't reach the
-    // footer at all while the keyboard was up. This layout collapses to one
-    // scroll with the footer pinned to the bottom of the viewport via a
-    // `Spacer.weight(1f)`, which gives us the best of both:
-    //
-    //  - Keyboard down: footer reads at the bottom of the screen as before
-    //    (the inner column's `heightIn(min = maxHeight)` makes it fill the
-    //    viewport, so the weight spacer has slack to push the footer down).
-    //  - Keyboard up: `imePadding` shrinks the scroll viewport. The inner
-    //    column still claims the *original* viewport height as its minimum,
-    //    so the footer ends up just below the fold — reachable via scroll
-    //    instead of riding the top edge of the keyboard.
-    //
-    // BoxWithConstraints supplies `maxHeight` (the viewport pre-IME) so the
-    // weight-spacer trick works inside an otherwise-unbounded scroll.
+    // Single scrollable column with footer included (see the original
+    // keyboard-handling rationale): BoxWithConstraints supplies `maxHeight`
+    // (the viewport pre-IME) so the weight-spacer keeps the footer at the
+    // bottom with the keyboard down, and just below the fold (scroll-reachable)
+    // with the keyboard up.
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -124,9 +106,8 @@ fun AuthScreen(
             ) {
                 Spacer(Modifier.height(8.dp))
                 WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
-                HeaderBlock(isLoginMode)
+                HeaderBlock()
                 FormBlock(
-                    isLoginMode = isLoginMode,
                     email = email, onEmailChange = { email = it },
                     password = password, onPasswordChange = { password = it },
                     error = (uiState as? AuthUiState.Error)?.message,
@@ -134,14 +115,11 @@ fun AuthScreen(
                     onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
                 )
                 CtaBlock(
-                    isLoginMode = isLoginMode,
                     loading = loading,
                     onSubmit = onSubmit,
                 )
                 Spacer(Modifier.weight(1f))
                 Footer(
-                    isLoginMode = isLoginMode,
-                    onToggle = { isLoginMode = !isLoginMode },
                     onDeveloperSettings = { showDeveloperSettings = true },
                     modifier = Modifier.padding(bottom = 24.dp),
                 )
@@ -151,20 +129,15 @@ fun AuthScreen(
 }
 
 @Composable
-private fun HeaderBlock(isLoginMode: Boolean) {
+private fun HeaderBlock() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Overline(text = if (isLoginMode) "Sign in" else "Create account", color = Moss)
-        Display(
-            text = if (isLoginMode) "Welcome\nback." else "Welcome.",
-            size = 52,
-            color = Ink,
-        )
+        Overline(text = "Sign in", color = Moss)
+        Display(text = "Welcome\nback.", size = 52, color = Ink)
     }
 }
 
 @Composable
 private fun FormBlock(
-    isLoginMode: Boolean,
     email: String,
     onEmailChange: (String) -> Unit,
     password: String,
@@ -187,7 +160,7 @@ private fun FormBlock(
             label = "Password",
             value = password,
             onValueChange = onPasswordChange,
-            placeholder = if (isLoginMode) "Your password" else "At least 8 characters",
+            placeholder = "Your password",
             secure = true,
             keyboardType = KeyboardType.Password,
             imeAction = ImeAction.Done,
@@ -201,48 +174,31 @@ private fun FormBlock(
 
 @Composable
 private fun CtaBlock(
-    isLoginMode: Boolean,
     loading: Boolean,
     onSubmit: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (loading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(CircleShape)
-                    .background(Moss),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(
-                    color = Lime,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        } else {
-            PrimaryCta(
-                label = if (isLoginMode) "Sign in" else "Create account",
-                onClick = onSubmit,
+    if (loading) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(CircleShape)
+                .background(Moss),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(
+                color = Lime,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(24.dp),
             )
         }
-        if (!isLoginMode) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                BodyText(
-                    text = "Continuing accepts the Member Agreement.",
-                    size = 12,
-                    color = Ash,
-                )
-            }
-        }
+    } else {
+        PrimaryCta(label = "Sign in", onClick = onSubmit)
     }
 }
 
 @Composable
 private fun Footer(
-    isLoginMode: Boolean,
-    onToggle: () -> Unit,
     onDeveloperSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -251,18 +207,6 @@ private fun Footer(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Overline(
-            text = if (isLoginMode) "New here?" else "Already a member?",
-            size = 10,
-            color = Ash,
-        )
-        TextLink(
-            label = if (isLoginMode) "Sign up" else "Sign in",
-            onClick = onToggle,
-            color = Moss,
-            icon = if (isLoginMode) ArcanaIcons.ArrowUpRight else ArcanaIcons.ArrowRight,
-        )
-        Spacer(Modifier.height(8.dp))
         // Pre-launch only: lets testers swap the API base URL before login,
         // for environments where the default URL isn't reachable.
         TextLink(
@@ -274,4 +218,3 @@ private fun Footer(
         )
     }
 }
-
