@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -41,8 +42,13 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.booking.BookingSheet
+import org.arcana.mobile.booking.BookingSubmit
+import org.arcana.mobile.booking.BookingViewModel
+import org.arcana.mobile.booking.bookingErrorCopy
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Graphite
@@ -57,6 +63,7 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.Overline
@@ -185,6 +192,15 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
     val isCancelled = session.status == "cancelled_by_studio"
     val capacity = session.detailCapacity()
 
+    val requiresSpot = session.template.spotSelectionMode != "none"
+    val bookingVm: BookingViewModel = koinViewModel { parametersOf(session.id, session.arcanaSpotsAvailable, requiresSpot) }
+    LaunchedEffect(session.id) { bookingVm.load() }
+    val cta by bookingVm.ctaState.collectAsState()
+    val sheetOpen by bookingVm.sheetOpen.collectAsState()
+    val selectedSpot by bookingVm.selectedSpot.collectAsState()
+    val credits by bookingVm.creditsRemaining.collectAsState()
+    val submit by bookingVm.submitState.collectAsState()
+
     // Scrollable list under a sticky CTA. The LazyColumn pads its bottom by
     // ~140dp so the last content can scroll out from behind the CTA without
     // ever being permanently obscured.
@@ -279,10 +295,32 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
                 capacity = capacity,
                 available = session.arcanaSpotsAvailable,
                 startLocal = startLocal,
-                onClick = { /* Phase 5 — booking flow */ },
+                // Right after a successful tap, confirm the request went through
+                // ("Requested ✓" matches the status the member sees in My Bookings)
+                // rather than the flat "Already booked" — which only appears on a
+                // later return visit, when load() detects the existing booking.
+                label = if (submit is BookingSubmit.Booked) "REQUESTED ✓" else cta.label,
+                enabled = cta.enabled,
+                onClick = { bookingVm.openSheet() },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+
+    if (sheetOpen) {
+        BookingSheet(
+            session = session,
+            requiresSpot = requiresSpot,
+            selectedSpot = selectedSpot,
+            creditsRemaining = credits,
+            onSelectSpot = bookingVm::selectSpot,
+            confirmEnabled = bookingVm.canConfirm,
+            onConfirm = bookingVm::confirmBooking,
+            onDismiss = bookingVm::dismissSheet,
+        )
+    }
+    (submit as? BookingSubmit.Failed)?.let { f ->
+        BookingErrorBanner(message = bookingErrorCopy(f.code))
     }
 }
 
@@ -749,15 +787,18 @@ private fun StickyReserveCta(
     startLocal: LocalDateTime,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    label: String? = null,
+    enabled: Boolean = true,
 ) {
-    val pillColor = when (capacity) {
-        DetailCapacity.Open -> Moss
-        DetailCapacity.Scarce -> Warning
-        DetailCapacity.Full -> Graphite
+    val pillColor = when {
+        !enabled -> Graphite
+        capacity == DetailCapacity.Scarce -> Warning
+        capacity == DetailCapacity.Full -> Graphite
+        else -> Moss
     }
-    val arrowWellColor = if (capacity == DetailCapacity.Full) Stone else Lime
-    val arrowIcon = if (capacity == DetailCapacity.Full) ArcanaIcons.Clock else ArcanaIcons.ArrowRight
-    val primaryLabel = when (capacity) {
+    val arrowWellColor = if (capacity == DetailCapacity.Full || !enabled) Stone else Lime
+    val arrowIcon = if (capacity == DetailCapacity.Full || !enabled) ArcanaIcons.Clock else ArcanaIcons.ArrowRight
+    val primaryLabel = label ?: when (capacity) {
         DetailCapacity.Open -> "RESERVE THIS SPOT"
         DetailCapacity.Scarce -> "RESERVE — ONLY $available LEFT"
         DetailCapacity.Full -> "JOIN THE WAITLIST"
@@ -792,7 +833,7 @@ private fun StickyReserveCta(
                     .height(56.dp)
                     .clip(RoundedCornerShape(22.dp))
                     .background(pillColor)
-                    .clickable(onClick = onClick)
+                    .clickable(enabled = enabled, onClick = onClick)
                     .padding(start = 20.dp, end = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -835,6 +876,19 @@ private fun StickyReserveCta(
         // Home-indicator inset — paint Stone beneath so the system gesture
         // bar reads as part of the CTA surface, not a glitch.
         Box(Modifier.fillMaxWidth().background(Stone).safeBottomBarPadding())
+    }
+}
+
+// ── Booking error banner -------------------------------------------------------
+
+@Composable
+private fun BookingErrorBanner(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Caption(message, size = 13, color = BurntNectar)
     }
 }
 
