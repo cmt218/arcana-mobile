@@ -614,20 +614,13 @@ private fun AvailabilityBlock(
                 Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
                 Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
             }
-            Spacer(Modifier.height(12.dp))
             if (offered > 0) {
+                Spacer(Modifier.height(12.dp))
                 CapacityPips(
                     offered = offered, taken = taken,
                     capacity = capacity, studioColor = studioColor,
                 )
-                Spacer(Modifier.height(12.dp))
             }
-            val statusCopy = when (capacity) {
-                DetailCapacity.Open -> "Plenty of room — pick a mat when you arrive."
-                DetailCapacity.Scarce -> "Filling fast — reserve now to hold your spot."
-                DetailCapacity.Full -> "Add yourself to the waitlist — drops happen."
-            }
-            BodyText(text = statusCopy, size = 13, color = Ash)
         } else {
             // Hidden-capacity form: studio doesn't publish exact counts
             // (e.g. ID Hot Yoga — their own first-party app hides them too).
@@ -636,13 +629,6 @@ private fun AvailabilityBlock(
             // worse than the simpler signal.
             val headline = if (available <= 0) "WAITLIST ONLY" else "AVAILABLE"
             Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            val statusCopy = if (available <= 0) {
-                "Add yourself to the waitlist — drops happen."
-            } else {
-                "This studio doesn't publish spot counts — reserve to confirm your place."
-            }
-            BodyText(text = statusCopy, size = 13, color = Ash)
         }
     }
 }

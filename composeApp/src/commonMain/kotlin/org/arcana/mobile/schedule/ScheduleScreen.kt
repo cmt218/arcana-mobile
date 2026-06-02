@@ -284,16 +284,6 @@ private fun SuccessContent(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
-        // Top capsule — "SCHEDULE · 14 DAYS" plus a paper chip with the live
-        // studio/site counts from the unfiltered fetch.
-        item("header-capsule") {
-            HeaderCapsule(
-                studioCount = state.knownStudios.size,
-                siteCount = state.siteCount,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-            )
-        }
-
         item("title") {
             // Track the *selected* day so the header flips when the user taps
             // a day in a different month (e.g. May 27 → June 1 on the rail).
@@ -301,17 +291,6 @@ private fun SuccessContent(
                 text = "${titleCase(selectedDate.month.name)}.",
                 size = 56, color = Ink,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-            )
-        }
-
-        item("subline") {
-            val studioList = state.knownStudios.joinToString(" · ") { titleCase(it.name) }
-            Spacer(Modifier.height(8.dp))
-            BodyText(
-                text = if (studioList.isEmpty()) "Book ahead 14 days."
-                else "Book ahead 14 days · $studioList",
-                size = 14, color = Ash,
-                modifier = Modifier.padding(horizontal = 24.dp),
             )
         }
 
@@ -495,41 +474,6 @@ private fun DayChip(
                         .background((if (active) Lime else MossLight).copy(alpha = if (active) 1f else 0.6f))
                 )
             }
-        }
-    }
-}
-
-// ── Header capsule ------------------------------------------------------------
-
-/** Top header row: "SCHEDULE · 14 DAYS" on the left, a paper-filled
- *  "(gear) N STUDIOS · M SITES" chip on the right. Pure decoration — the
- *  chip isn't tappable in Phase 3.5 (no studios-management surface yet). */
-@Composable
-private fun HeaderCapsule(
-    studioCount: Int,
-    siteCount: Int,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Overline(text = "SCHEDULE · 14 DAYS", size = 11, color = Ash)
-        Row(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(Paper)
-                .border(1.dp, Mist, CircleShape)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            StrokeIcon(icon = ArcanaIcons.Settings, size = 14.dp, tint = Ash)
-            Overline(
-                text = "$studioCount STUDIOS · $siteCount SITES",
-                size = 10, color = Ash,
-            )
         }
     }
 }
