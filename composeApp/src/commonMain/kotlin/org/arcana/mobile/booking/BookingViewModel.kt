@@ -40,13 +40,20 @@ class BookingViewModel(
     private val _submitState = MutableStateFlow<BookingSubmit>(BookingSubmit.Idle)
     val submitState: StateFlow<BookingSubmit> = _submitState
 
+    // Status of the member's existing (live) booking for THIS session, if any —
+    // "requested" or "confirmed" (the upcoming list only carries live statuses).
+    // null = not booked. Lets the CTA reflect the real ops-driven status.
+    private val _bookedStatus = MutableStateFlow<String?>(null)
+    val bookedStatus: StateFlow<String?> = _bookedStatus
+
     fun load() {
         viewModelScope.launch {
             val me = runCatching { membershipApi.membershipMe() }.getOrNull()
-            val alreadyBooked = runCatching { bookingApi.myBookings() }
-                .getOrNull()?.upcoming?.any { it.session.id == sessionId } ?: false
+            val existing = runCatching { bookingApi.myBookings() }
+                .getOrNull()?.upcoming?.firstOrNull { it.session.id == sessionId }
+            _bookedStatus.value = existing?.status
             _creditsRemaining.value = me?.currentPeriod?.creditsRemaining
-            _ctaState.value = bookCtaState(spotsAvailable, me?.currentPeriod, alreadyBooked)
+            _ctaState.value = bookCtaState(spotsAvailable, me?.currentPeriod, alreadyBooked = existing != null)
         }
     }
 

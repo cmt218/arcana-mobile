@@ -182,6 +182,15 @@ fun HomeScreen(
                 val hero = s.upcoming.firstOrNull()
                 val rest = s.upcoming.drop(1).take(UPCOMING_PREVIEW_COUNT)
 
+                // ── Upcoming umbrella header — always rendered first ───────────
+                item {
+                    SectionRule(
+                        label = "Upcoming · ${s.upcoming.size}",
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+
                 // ── Next-up card ──────────────────────────────────────────────
                 if (hero != null) {
                     item {
@@ -199,6 +208,7 @@ fun HomeScreen(
                         NextUpCard(
                             booking = hero,
                             modifier = Modifier.padding(horizontal = 24.dp),
+                            onClick = { onOpenClass(hero.session.id) },
                         )
                     }
                 } else {
@@ -222,14 +232,7 @@ fun HomeScreen(
 
                 item { Spacer(Modifier.height(32.dp)) }
 
-                // ── Upcoming list ─────────────────────────────────────────────
-                item {
-                    UpcomingSectionHeader(
-                        count = s.upcoming.size,
-                        onSeeAll = onSeeAllBookings,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
+                // ── Upcoming preview rows (items after the hero) ──────────────
                 item { Spacer(Modifier.height(8.dp)) }
 
                 if (rest.isEmpty() && hero == null) {
@@ -251,6 +254,18 @@ fun HomeScreen(
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
                     }
+                }
+
+                // "See all" sits below the previewed rows, not in the header.
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    TextLink(
+                        label = "See all",
+                        onClick = onSeeAllBookings,
+                        color = Moss,
+                        underline = false,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
                 }
 
                 item { Spacer(Modifier.height(32.dp)) }
@@ -373,7 +388,7 @@ private fun HeroHeader(dateLabel: String, greeting: String, displayName: String?
 }
 
 @Composable
-private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier) {
+private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     val session = booking.session
     val tz = remember { TimeZone.currentSystemDefault() }
     val local = remember(session.startAt) {
@@ -392,6 +407,7 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
+            .clickable { onClick() }
             .background(Moss),
     ) {
         DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.10f, spacing = 16)
@@ -468,32 +484,6 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier) {
                 )
             }
         }
-    }
-}
-
-/** Section rule with inline "See all" affordance. */
-@Composable
-private fun UpcomingSectionHeader(
-    count: Int,
-    onSeeAll: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        SectionRule(
-            label = "Upcoming · $count",
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(12.dp))
-        TextLink(
-            label = "See all",
-            onClick = onSeeAll,
-            color = Moss,
-            underline = false,
-        )
     }
 }
 

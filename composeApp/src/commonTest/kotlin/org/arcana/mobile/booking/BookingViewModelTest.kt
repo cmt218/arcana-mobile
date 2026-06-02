@@ -56,6 +56,15 @@ class BookingViewModelTest {
         val vm = BookingViewModel(482, 5, false, api, api)
         vm.load()
         assertEquals(BookCta.AlreadyBooked, vm.ctaState.value)
+        assertEquals("requested", vm.bookedStatus.value)
+    }
+
+    @Test fun `booked status reflects a confirmed booking`() = runTest {
+        val confirmed = booking(sessionId = 482).copy(status = "confirmed")
+        val api = FakeApi(me(), upcoming = listOf(confirmed))
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        assertEquals("confirmed", vm.bookedStatus.value)
     }
 
     @Test fun `submit success transitions to Booked`() = runTest {

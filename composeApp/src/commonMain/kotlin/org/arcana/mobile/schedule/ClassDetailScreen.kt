@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.Month
@@ -191,6 +192,10 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
     val sc = studioColorFor(studio.primaryColor)
     val isCancelled = session.status == "cancelled_by_studio"
     val capacity = session.detailCapacity()
+    // A class whose end time has passed: no availability + no live booking.
+    val isPast = remember(session.endAt) {
+        try { Instant.parse(session.endAt) < Clock.System.now() } catch (_: Exception) { false }
+    }
 
     val requiresSpot = session.template.spotSelectionMode != "none"
     val bookingVm: BookingViewModel = koinViewModel { parametersOf(session.id, session.arcanaSpotsAvailable, requiresSpot) }
@@ -200,6 +205,7 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
     val selectedSpot by bookingVm.selectedSpot.collectAsState()
     val credits by bookingVm.creditsRemaining.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
+    val bookedStatus by bookingVm.bookedStatus.collectAsState()
 
     // Scrollable list under a sticky CTA. The LazyColumn pads its bottom by
     // ~140dp so the last content can scroll out from behind the CTA without
@@ -253,7 +259,7 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
                         )
                     }
                 }
-            } else {
+            } else if (!isPast) {
                 item("availability") {
                     Spacer(Modifier.height(24.dp))
                     AvailabilityBlock(
@@ -295,13 +301,20 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
                 capacity = capacity,
                 available = session.arcanaSpotsAvailable,
                 startLocal = startLocal,
-                // Right after a successful tap, confirm the request went through
-                // ("Requested ✓" matches the status the member sees in My Bookings)
-                // rather than the flat "Already booked" — which only appears on a
-                // later return visit, when load() detects the existing booking.
-                label = if (submit is BookingSubmit.Booked) "REQUESTED ✓" else cta.label,
-                enabled = cta.enabled,
-                onClick = { bookingVm.openSheet() },
+                // Reflect the member's real booking status on the CTA. Right after
+                // a successful tap it's "Requested ✓"; on a return visit it shows the
+                // live ops-driven status — "REQUESTED" (pending) or "CONFIRMED ✓"
+                // (ops secured it) — instead of a flat "Already booked".
+                label = when {
+                    isPast -> "CLASS ENDED"
+                    submit is BookingSubmit.Booked -> "REQUESTED ✓"
+                    bookedStatus == "confirmed" -> "CONFIRMED ✓"
+                    bookedStatus == "requested" -> "REQUESTED"
+                    bookedStatus != null -> bookedStatus!!.uppercase()
+                    else -> cta.label
+                },
+                enabled = !isPast && cta.enabled,
+                onClick = { if (!isPast) bookingVm.openSheet() },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }

@@ -231,7 +231,10 @@ private fun MainScaffold() {
                 StudioSelectionScreen(onClose = { navController.popBackStack() })
             }
             composable<ArcanaDestination.MyBookings> {
-                MyBookingsScreen(onClose = { navController.popBackStack() })
+                MyBookingsScreen(
+                    onClose = { navController.popBackStack() },
+                    onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
+                )
             }
             composable<ArcanaDestination.ClassDetail> { backStackEntry ->
                 val args = backStackEntry.toRoute<ArcanaDestination.ClassDetail>()
