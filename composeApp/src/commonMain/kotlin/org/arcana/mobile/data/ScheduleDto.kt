@@ -29,6 +29,7 @@ data class ScheduleSessionDto(
     val template: TemplateBriefDto,
     val instructors: List<InstructorBriefDto>,
     val location: LocationBriefDto,
+    val spots: List<SpotDto> = emptyList(),
 )
 
 @Serializable
