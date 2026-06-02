@@ -1,6 +1,7 @@
 package org.arcana.mobile.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,24 +18,28 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.runtime.remember
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -49,40 +54,32 @@ import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
-import org.arcana.mobile.ui.Pulse
 import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.ShimmerBox
+import org.arcana.mobile.ui.StatusPill
 import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
+import org.koin.compose.viewmodel.koinViewModel
 
-// ── Mock content — mirrors the design handoff; swap for live reservations later.
-private data class Reservation(
-    val day: String,
-    val weekday: String,
-    val date: String,
-    val time: String,
-    val dur: String,
-    val name: String,
-    val studio: String,
-    val instructor: String,
-    val spots: String,
-)
-
-private val RESERVATIONS = listOf(
-    Reservation("TODAY", "TUE", "15", "07:00", "50min", "Reformer Flow", "FORM", "Reyna A.", "2 left"),
-    Reservation("TODAY", "TUE", "15", "12:30", "45min", "Power Boxing", "RISE", "Marcus T.", "Locked"),
-    Reservation("WED", "WED", "16", "06:15", "60min", "Strength · Lower", "APEX", "Jules K.", "8 open"),
-    Reservation("FRI", "FRI", "18", "07:00", "50min", "Reformer Flow", "FORM", "Reyna A.", "12 open"),
-)
+// ── Max upcoming rows shown below the hero card ────────────────────────────────
+private const val UPCOMING_PREVIEW_COUNT = 4
 
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
-    val hero = RESERVATIONS.first()
-    val rest = RESERVATIONS.drop(1)
+fun HomeScreen(
+    onSeeAllBookings: () -> Unit,
+    onOpenClass: (Int) -> Unit,
+) {
+    val vm = koinViewModel<HomeViewModel>()
+    LaunchedEffect(Unit) { vm.load() }
+    val state by vm.uiState.collectAsState()
+
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember(tz) { Clock.System.todayIn(tz) }
     val hour = remember(tz) { Clock.System.now().toLocalDateTime(tz).hour }
@@ -90,45 +87,239 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     val greeting = timeOfDay(hour)
 
     LazyColumn(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(Stone)
             .safeContentPadding(),
         contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
     ) {
+        // ── Static chrome — always visible ─────────────────────────────────
         item { TopBar() }
         item { Spacer(Modifier.height(32.dp)) }
-        item { HeroHeader(dateLabel = dateLabel, greeting = greeting) }
+
+        // ── Hero header — name shimmer while loading ────────────────────────
+        item {
+            val displayName = when (val s = state) {
+                is HomeUiState.Success -> firstName(s.displayName)
+                else -> null // null = loading or error; HeroHeader renders a shimmer name slot
+            }
+            HeroHeader(
+                dateLabel = dateLabel,
+                greeting = greeting,
+                displayName = displayName,
+            )
+        }
         item { Spacer(Modifier.height(28.dp)) }
-        item {
-            SectionRule(
-                label = "Next · in 18 min",
-                accent = true,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-        }
-        item { Spacer(Modifier.height(16.dp)) }
-        item { NextUpCard(hero, modifier = Modifier.padding(horizontal = 24.dp)) }
-        item { Spacer(Modifier.height(32.dp)) }
-        item {
-            SectionRule(label = "Upcoming · 3", modifier = Modifier.padding(horizontal = 24.dp))
-        }
-        item { Spacer(Modifier.height(8.dp)) }
 
-        // Day-grouped upcoming list. Once this is server-driven we'll group by date
-        // here and emit a sticky-header item per day; for now the showDay flag does it.
-        itemsIndexed(rest) { i, r ->
-            UpcomingRow(
-                r,
-                showDay = i == 0 || rest[i - 1].date != r.date,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-        }
+        when (val s = state) {
+            is HomeUiState.Loading -> {
+                // ── Next section — shimmer card ─────────────────────────────
+                item {
+                    SectionRule(
+                        label = "Next up",
+                        accent = true,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+                item {
+                    ShimmerBox(
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        shape = RoundedCornerShape(20.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(32.dp)) }
 
-        item { Spacer(Modifier.height(32.dp)) }
-        item { ManifestoCard(modifier = Modifier.padding(horizontal = 24.dp)) }
+                // ── Upcoming section — shimmer rows ─────────────────────────
+                item {
+                    SectionRule(
+                        label = "Upcoming",
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(8.dp)) }
+                repeat(3) {
+                    item {
+                        ShimmerBox(
+                            modifier = Modifier
+                                .padding(horizontal = 24.dp, vertical = 4.dp)
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(32.dp)) }
+
+                // ── ManifestoCard shimmer ───────────────────────────────────
+                item {
+                    ShimmerBox(
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        shape = RoundedCornerShape(20.dp),
+                    )
+                }
+            }
+
+            is HomeUiState.Error -> {
+                item { Spacer(Modifier.height(4.dp)) }
+                item {
+                    Caption(
+                        text = s.message,
+                        size = 13,
+                        color = Ash,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+            }
+
+            is HomeUiState.Success -> {
+                val hero = s.upcoming.firstOrNull()
+                val rest = s.upcoming.drop(1).take(UPCOMING_PREVIEW_COUNT)
+
+                // ── Next-up card ──────────────────────────────────────────────
+                if (hero != null) {
+                    item {
+                        val relLabel = remember(hero.session.startAt) {
+                            relativeTime(hero.session.startAt, tz)
+                        }
+                        SectionRule(
+                            label = "Next · $relLabel",
+                            accent = true,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
+                    item {
+                        NextUpCard(
+                            booking = hero,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                } else {
+                    item {
+                        SectionRule(
+                            label = "Next up",
+                            accent = true,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
+                    item {
+                        Caption(
+                            text = "No upcoming classes — browse the schedule.",
+                            size = 13,
+                            color = Ash,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                }
+
+                item { Spacer(Modifier.height(32.dp)) }
+
+                // ── Upcoming list ─────────────────────────────────────────────
+                item {
+                    UpcomingSectionHeader(
+                        count = s.upcoming.size,
+                        onSeeAll = onSeeAllBookings,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(8.dp)) }
+
+                if (rest.isEmpty() && hero == null) {
+                    item {
+                        Caption(
+                            text = "Nothing booked yet.",
+                            size = 13,
+                            color = Ash,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                } else {
+                    itemsIndexed(rest) { i, b ->
+                        UpcomingRow(
+                            booking = b,
+                            tz = tz,
+                            showDayDivider = i == 0 || rest[i - 1].session.startAt.take(10) != b.session.startAt.take(10),
+                            onClick = { onOpenClass(b.session.id) },
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                }
+
+                item { Spacer(Modifier.height(32.dp)) }
+
+                // ── Manifesto / credits card ──────────────────────────────────
+                item {
+                    ManifestoCard(
+                        creditsRemaining = s.creditsRemaining,
+                        weekStreak = s.weekStreak,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+            }
+        }
     }
 }
+
+// ── Relative-time helper ────────────────────────────────────────────────────────
+
+/**
+ * Returns a human-readable label relative to now:
+ *   "in 18 min"  — less than 60 minutes away
+ *   "in 3h"      — less than 24 hours away
+ *   "Mon 6:00am" — further out
+ */
+internal fun relativeTime(startAtIso: String, tz: TimeZone): String {
+    return try {
+        val start = Instant.parse(startAtIso)
+        val now = Clock.System.now()
+        val diffSec = (start - now).inWholeSeconds
+        val diffMin = diffSec / 60
+        val diffHours = diffMin / 60
+        when {
+            diffMin < 0 -> {
+                // Already started — show local time
+                val local = start.toLocalDateTime(tz)
+                formatLocalTime(local.hour, local.minute)
+            }
+            diffMin < 60 -> "in ${diffMin}min"
+            diffHours < 24 -> "in ${diffHours}h"
+            else -> {
+                val local = start.toLocalDateTime(tz)
+                val day = local.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.titlecase() }
+                "$day ${formatLocalTime(local.hour, local.minute)}"
+            }
+        }
+    } catch (_: Exception) {
+        startAtIso.take(16).replace("T", " ")
+    }
+}
+
+private fun formatLocalTime(hour: Int, minute: Int): String {
+    val h = if (hour % 12 == 0) 12 else hour % 12
+    val m = minute.toString().padStart(2, '0')
+    val ampm = if (hour < 12) "am" else "pm"
+    return "${h}:${m}${ampm}"
+}
+
+// ── Private time-of-day helper ──────────────────────────────────────────────────
+
+/** Returns "morning" / "afternoon" / "evening" based on the local hour. */
+private fun timeOfDay(hour: Int): String = when {
+    hour < 5 -> "evening"
+    hour < 12 -> "morning"
+    hour < 17 -> "afternoon"
+    else -> "evening"
+}
+
+// ── Components ──────────────────────────────────────────────────────────────────
 
 @Composable
 private fun TopBar() {
@@ -140,31 +331,63 @@ private fun TopBar() {
     )
 }
 
+/**
+ * Hero greeting header. Pass [displayName] = null while loading to render a
+ * ShimmerBox in place of the name; pass "" to omit it (error state); pass the
+ * resolved first name for success.
+ */
 @Composable
-private fun HeroHeader(dateLabel: String, greeting: String) {
+private fun HeroHeader(dateLabel: String, greeting: String, displayName: String?) {
     Column(
         modifier = Modifier.padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Overline(text = dateLabel, color = Moss)
-        Display(text = "Good\n$greeting,\nFelicia.", size = 56, color = Ink)
+        when {
+            displayName == null -> {
+                // Loading: show static greeting lines with a shimmer slot for the name
+                Display(text = "Good\n$greeting,", size = 56, color = Ink)
+                ShimmerBox(
+                    modifier = Modifier
+                        .fillMaxWidth(0.55f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(8.dp),
+                )
+            }
+            displayName.isBlank() -> {
+                Display(text = "Good\n$greeting.", size = 56, color = Ink)
+            }
+            else -> {
+                Display(
+                    text = "Good\n$greeting,\n$displayName.",
+                    size = 56,
+                    color = Ink,
+                )
+            }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            AccentText(text = "Two sessions on the board today.", size = 20, color = Ash)
-            AccentText(text = "The work makes the week.", size = 20, color = Moss)
+            AccentText(text = "Show up. Do the work.", size = 20, color = Ash)
+            AccentText(text = "The rest takes care of itself.", size = 20, color = Moss)
         }
     }
 }
 
-/** Returns "morning" / "afternoon" / "evening" based on the local hour. */
-private fun timeOfDay(hour: Int): String = when {
-    hour < 5 -> "evening"
-    hour < 12 -> "morning"
-    hour < 17 -> "afternoon"
-    else -> "evening"
-}
-
 @Composable
-private fun NextUpCard(r: Reservation, modifier: Modifier = Modifier) {
+private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier) {
+    val session = booking.session
+    val tz = remember { TimeZone.currentSystemDefault() }
+    val local = remember(session.startAt) {
+        try {
+            Instant.parse(session.startAt).toLocalDateTime(tz)
+        } catch (_: Exception) { null }
+    }
+    val timeStr = local?.let {
+        val h = if (it.hour % 12 == 0) 12 else it.hour % 12
+        h.toString()
+    } ?: "--"
+    val amPm = local?.let { if (it.hour < 12) "am" else "pm" } ?: ""
+    val spotLabel = booking.spot?.label ?: booking.fulfilledSpot?.label ?: booking.requestedSpot?.label
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -181,21 +404,19 @@ private fun NextUpCard(r: Reservation, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
-                Overline(text = "${r.studio} · Studio 3", size = 10, color = Lime)
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Lime)
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                ) {
-                    Overline(text = "Booked", size = 10, color = Ink)
-                }
+                val studioLine = if (spotLabel != null) "${session.studio} · $spotLabel" else session.studio
+                Overline(text = studioLine, size = 10, color = Lime)
+                StatusPill(booking.status)
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Time row: baseline-align the large hour digit and the am/pm suffix
+            // so the suffix sits on the digit's baseline rather than floating at
+            // the top of the BodyText line box.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = r.time,
+                    text = timeStr,
                     maxLines = 1,
                     softWrap = false,
+                    modifier = Modifier.alignByBaseline(),
                     style = TextStyle(
                         fontFamily = Arcana.fonts.display,
                         fontWeight = FontWeight.Bold,
@@ -205,7 +426,18 @@ private fun NextUpCard(r: Reservation, modifier: Modifier = Modifier) {
                         color = Stone,
                     ),
                 )
-                BodyText(text = "am", size = 18, color = StoneAlpha55, weight = FontWeight.Medium)
+                Text(
+                    text = amPm,
+                    maxLines = 1,
+                    modifier = Modifier.alignByBaseline(),
+                    style = TextStyle(
+                        fontFamily = Arcana.fonts.body,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 18.sp,
+                        lineHeight = 18.sp,
+                        color = StoneAlpha55,
+                    ),
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -213,9 +445,16 @@ private fun NextUpCard(r: Reservation, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.Bottom,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Heading2(text = r.name, size = 22, color = Stone)
+                    Heading2(text = session.name, size = 22, color = Stone)
+                    val durationMin = remember(session.startAt, session.endAt) {
+                        try {
+                            val s = Instant.parse(session.startAt)
+                            val e = Instant.parse(session.endAt)
+                            "${(e - s).inWholeMinutes}min"
+                        } catch (_: Exception) { "" }
+                    }
                     BodyText(
-                        text = "${r.instructor} · ${r.dur} · ${r.spots}",
+                        text = if (durationMin.isNotEmpty()) "${session.studio} · $durationMin" else session.studio,
                         size = 12,
                         color = StoneAlpha65,
                     )
@@ -232,29 +471,84 @@ private fun NextUpCard(r: Reservation, modifier: Modifier = Modifier) {
     }
 }
 
+/** Section rule with inline "See all" affordance. */
 @Composable
-private fun UpcomingRow(r: Reservation, showDay: Boolean, modifier: Modifier = Modifier) {
+private fun UpcomingSectionHeader(
+    count: Int,
+    onSeeAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        SectionRule(
+            label = "Upcoming · $count",
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
+        TextLink(
+            label = "See all",
+            onClick = onSeeAll,
+            color = Moss,
+            underline = false,
+        )
+    }
+}
+
+@Composable
+private fun UpcomingRow(
+    booking: BookingDto,
+    tz: TimeZone,
+    showDayDivider: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val session = booking.session
+    val local = remember(session.startAt) {
+        try { Instant.parse(session.startAt).toLocalDateTime(tz) } catch (_: Exception) { null }
+    }
+    val timeStr = local?.let {
+        val h = if (it.hour % 12 == 0) 12 else it.hour % 12
+        val m = it.minute.toString().padStart(2, '0')
+        "$h:$m"
+    } ?: "--:--"
+    val durationStr = remember(session.startAt, session.endAt) {
+        try {
+            val s = Instant.parse(session.startAt)
+            val e = Instant.parse(session.endAt)
+            "${(e - s).inWholeMinutes}min"
+        } catch (_: Exception) { "" }
+    }
+    val dayLabel = local?.let {
+        val dow = it.dayOfWeek.name.take(3)
+        val mon = it.month.name.take(3)
+        "${dow} · ${mon} ${it.date.day}"
+    } ?: ""
+
     Column(modifier = modifier) {
-        if (showDay) {
+        if (showDayDivider && dayLabel.isNotEmpty()) {
             Row(
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Overline(text = "${r.day} · ${r.weekday} ${r.date}", size = 10, color = Moss)
+                Overline(text = dayLabel, size = 10, color = Moss)
                 Box(Modifier.weight(1f).height(1.dp).background(Mist))
             }
         }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onClick)
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column(modifier = Modifier.widthIn(min = 64.dp).wrapContentWidth(Alignment.Start)) {
                 Text(
-                    text = r.time,
+                    text = timeStr,
                     maxLines = 1,
                     softWrap = false,
                     style = TextStyle(
@@ -265,7 +559,9 @@ private fun UpcomingRow(r: Reservation, showDay: Boolean, modifier: Modifier = M
                     ),
                 )
                 Spacer(Modifier.height(4.dp))
-                Overline(text = r.dur, size = 10, color = Ash)
+                if (durationStr.isNotEmpty()) {
+                    Overline(text = durationStr, size = 10, color = Ash)
+                }
             }
             Box(Modifier.width(1.dp).height(40.dp).background(Mist))
             Column(modifier = Modifier.weight(1f)) {
@@ -273,27 +569,38 @@ private fun UpcomingRow(r: Reservation, showDay: Boolean, modifier: Modifier = M
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Overline(text = r.studio, size = 10, color = Moss)
-                    Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                    Overline(text = r.instructor, size = 10, color = Ash)
+                    Overline(text = session.studio, size = 10, color = Moss)
+                    booking.spot?.let { spot ->
+                        Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
+                        Overline(text = spot.label, size = 10, color = Ash)
+                    }
                 }
                 Spacer(Modifier.height(4.dp))
                 BodyText(
-                    text = r.name,
+                    text = session.name,
                     size = 16,
                     color = Ink,
                     weight = FontWeight.Medium,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 20.dp, tint = Ash)
+            StatusPill(booking.status)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
     }
 }
 
 @Composable
-private fun ManifestoCard(modifier: Modifier = Modifier) {
+private fun ManifestoCard(
+    creditsRemaining: Int?,
+    weekStreak: Int,
+    modifier: Modifier = Modifier,
+) {
+    val tz = remember { TimeZone.currentSystemDefault() }
+    val today = remember(tz) { Clock.System.todayIn(tz) }
+    val weekNum = (today.day + today.month.ordinal * 30) / 7 + 1
+    val weekLabel = "Week $weekNum · ${today.year}"
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -305,10 +612,16 @@ private fun ManifestoCard(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Overline(text = "Week 19 · ARC 2026", size = 10, color = Lime)
-            Heading2(text = "7 sessions\non the books.", size = 26, color = Stone)
+            Overline(text = weekLabel, size = 10, color = Lime)
+            val creditsLine = if (creditsRemaining != null) {
+                "$creditsRemaining credits remaining."
+            } else {
+                "Track your progress."
+            }
+            Heading2(text = creditsLine, size = 26, color = Stone)
+            val streakLine = if (weekStreak > 0) "$weekStreak-week streak. Keep it going." else "Build your streak."
             BodyText(
-                text = "Your monthly cap renews 31 May.",
+                text = streakLine,
                 size = 12,
                 color = StoneAlpha65,
             )

@@ -209,7 +209,12 @@ private fun MainScaffold() {
             popEnterTransition = { fadeIn(tween(150)) },
             popExitTransition = { fadeOut(tween(150)) },
         ) {
-            composable<ArcanaDestination.Home> { HomeScreen() }
+            composable<ArcanaDestination.Home> {
+                HomeScreen(
+                    onSeeAllBookings = { navController.navigate(ArcanaDestination.MyBookings) },
+                    onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
+                )
+            }
             composable<ArcanaDestination.Schedule> {
                 ScheduleScreen(
                     onOpenClassDetail = { id ->
