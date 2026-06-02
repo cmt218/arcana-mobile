@@ -4,6 +4,7 @@ import org.arcana.mobile.auth.SecureStorage
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.booking.BookingViewModel
+import org.arcana.mobile.booking.MyBookingsViewModel
 import org.arcana.mobile.defaultBaseUrl
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.networking.BaseUrlProvider
@@ -29,6 +30,7 @@ val appModule = module {
     single<MembershipApi> { get<ArcanaApiClient>() }
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
     viewModel { AuthViewModel(get()) }
+    viewModel { MyBookingsViewModel(api = get()) }
     viewModel { ScheduleViewModel(get()) }
     viewModel { DeveloperSettingsViewModel(get()) }
     viewModel { (sessionId: Int) -> ClassDetailViewModel(get(), sessionId) }
