@@ -6,6 +6,7 @@ import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -22,9 +23,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
 import org.arcana.mobile.auth.TokenStorage
+import org.arcana.mobile.data.BookingDto
+import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CompleteSignupRequest
 import org.arcana.mobile.data.CompleteSignupResponse
+import org.arcana.mobile.data.CreateBookingRequest
+import org.arcana.mobile.data.CreateBookingResponse
 import org.arcana.mobile.data.LoginRequest
+import org.arcana.mobile.data.MembershipMeDto
+import org.arcana.mobile.data.MyBookingsDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
@@ -35,7 +42,7 @@ import org.arcana.mobile.signup.CompleteSignupResult
 class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
-) {
+) : BookingApi, MembershipApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -173,6 +180,33 @@ class ArcanaApiClient(
     suspend fun fetchClassDetail(id: Int): ScheduleSessionDto {
         return client.get(v1("classes/$id/")).body()
     }
+
+    override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto {
+        val response = client.post(v1("bookings/")) {
+            contentType(ContentType.Application.Json)
+            setBody(CreateBookingRequest(sessionId, requestedSpotId))
+        }
+        if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
+            val created = response.body<CreateBookingResponse>()
+            return client.get(v1("bookings/${created.bookingId}/")).body()
+        }
+        // Non-2xx: the server returns {"error": "<reason_code>"}. Surface the code.
+        val code = try {
+            response.body<Map<String, String>>()["error"]
+        } catch (_: Exception) {
+            null
+        } ?: "booking_failed"
+        throw BookingError(code)
+    }
+
+    override suspend fun myBookings(): MyBookingsDto =
+        client.get(v1("bookings/me/")).body()
+
+    override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse =
+        client.delete(v1("bookings/$bookingId/")).body()
+
+    override suspend fun membershipMe(): MembershipMeDto =
+        client.get(v1("memberships/me")).body()
 
     fun logout() {
         tokenStorage.clear()
