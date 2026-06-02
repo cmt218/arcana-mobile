@@ -8,6 +8,7 @@ import org.arcana.mobile.booking.MyBookingsViewModel
 import org.arcana.mobile.defaultBaseUrl
 import org.arcana.mobile.home.HomeViewModel
 import org.arcana.mobile.networking.ArcanaApiClient
+import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.networking.BaseUrlProvider
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.MembershipApi
@@ -32,6 +33,7 @@ val appModule = module {
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
     viewModel { AuthViewModel(get()) }
     viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
+    viewModel { ProfileViewModel(api = get()) }
     viewModel { MyBookingsViewModel(api = get()) }
     viewModel { ScheduleViewModel(get()) }
     viewModel { DeveloperSettingsViewModel(get()) }

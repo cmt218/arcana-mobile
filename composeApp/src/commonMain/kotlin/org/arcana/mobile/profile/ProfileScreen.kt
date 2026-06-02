@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,12 +60,14 @@ import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
 import org.jetbrains.compose.resources.DrawableResource
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 private data class StudioEntry(
     val name: String,
@@ -92,6 +97,10 @@ fun ProfileScreen(
     modifier: Modifier = Modifier,
 ) {
     val apiClient = koinInject<ArcanaApiClient>()
+    val vm = koinViewModel<ProfileViewModel>()
+    val state by vm.uiState.collectAsState()
+
+    LaunchedEffect(Unit) { vm.load() }
 
     val accountItems = listOf(
         AccountItem(ArcanaIcons.Bell, "Notifications", "ON · 06:00", Ash),
@@ -117,7 +126,7 @@ fun ProfileScreen(
             contentPadding = PaddingValues(bottom = 16.dp),
         ) {
         // Profile hero — full-bleed ink that extends behind the status bar.
-        item { ProfileHero() }
+        item { ProfileHero(state) }
 
         // YOUR STUDIOS header
         stoneItem {
@@ -221,8 +230,16 @@ private fun StoneWrap(content: @Composable BoxScope.() -> Unit) {
     )
 }
 
+/**
+ * Full-bleed Ink hero. Accepts [ProfileUiState] so it can shimmer the
+ * data-driven fields (avatar initials, full name, member number, stats)
+ * while serving the static chrome (dot-field, settings icon, structural layout)
+ * immediately regardless of load state.
+ */
 @Composable
-private fun ProfileHero() {
+private fun ProfileHero(state: ProfileUiState) {
+    val success = state as? ProfileUiState.Success
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -240,7 +257,21 @@ private fun ProfileHero() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Overline(text = "Member · No. 0001", size = 10, color = Lime)
+                // Member number — shimmer while loading
+                if (success != null) {
+                    val memberLabel = if (success.memberNumber != null)
+                        "Member · No. ${success.memberNumber}"
+                    else
+                        "Member"
+                    Overline(text = memberLabel, size = 10, color = Lime)
+                } else {
+                    ShimmerBox(
+                        modifier = Modifier
+                            .width(140.dp)
+                            .height(12.dp),
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                }
                 IconCircle(
                     icon = ArcanaIcons.Settings,
                     diameter = 36,
@@ -257,39 +288,74 @@ private fun ProfileHero() {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    Box(
-                        modifier = Modifier
-                            .size(116.dp)
-                            .clip(CircleShape)
-                            .background(MossDeep)
-                            .border(2.dp, Lime, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "FD",
-                            style = TextStyle(
-                                fontFamily = Arcana.fonts.display,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 46.sp,
-                                letterSpacing = (-0.02).em,
-                                color = Lime,
-                            ),
+                // Avatar — shimmer while loading
+                if (success != null) {
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        Box(
+                            modifier = Modifier
+                                .size(116.dp)
+                                .clip(CircleShape)
+                                .background(MossDeep)
+                                .border(2.dp, Lime, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = success.initials,
+                                style = TextStyle(
+                                    fontFamily = Arcana.fonts.display,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 46.sp,
+                                    letterSpacing = (-0.02).em,
+                                    color = Lime,
+                                ),
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 4.dp, bottom = 4.dp)
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(Ink)
+                                .padding(4.dp)
+                                .clip(CircleShape)
+                                .background(Lime)
                         )
                     }
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 4.dp, bottom = 4.dp)
-                            .size(16.dp)
-                            .clip(CircleShape)
-                            .background(Ink)
-                            .padding(4.dp)
-                            .clip(CircleShape)
-                            .background(Lime)
+                } else {
+                    ShimmerBox(
+                        modifier = Modifier.size(116.dp),
+                        shape = CircleShape,
                     )
                 }
-                Display(text = "Felicia Dodge", size = 36, color = Stone)
-                Overline(text = "Since May 2026", size = 10, color = StoneAlpha55)
+
+                // Full name — shimmer while loading
+                if (success != null) {
+                    Display(text = success.fullName, size = 36, color = Stone)
+                } else {
+                    ShimmerBox(
+                        modifier = Modifier
+                            .width(200.dp)
+                            .height(36.dp),
+                        shape = RoundedCornerShape(6.dp),
+                    )
+                }
+
+                // Membership line: tier name + title-cased status — shimmer while loading
+                if (success != null) {
+                    val statusLabel = success.status.replaceFirstChar { it.uppercase() }
+                    Overline(
+                        text = "${success.tierName} · $statusLabel",
+                        size = 10,
+                        color = StoneAlpha55,
+                    )
+                } else {
+                    ShimmerBox(
+                        modifier = Modifier
+                            .width(120.dp)
+                            .height(10.dp),
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -301,33 +367,72 @@ private fun ProfileHero() {
                     .drawTopRule(StoneAlpha18)
                     .drawBottomRule(StoneAlpha18),
             ) {
-                StatCell("142", "Sessions", Modifier.weight(1f))
+                StatCell(
+                    value = success?.lifetimeSessions?.toString(),
+                    label = "Sessions",
+                    modifier = Modifier.weight(1f),
+                )
                 Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
-                StatCell("07", "Week streak", Modifier.weight(1f))
+                StatCell(
+                    value = success?.weekStreak?.let { it.toString().padStart(2, '0') },
+                    label = "Week streak",
+                    modifier = Modifier.weight(1f),
+                )
                 Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
-                StatCell("23", "Cap · May", Modifier.weight(1f))
+                // Credits label: "Cap" when we have period data, otherwise "Credits".
+                val creditsLabel = if (success?.creditsGranted != null) "Cap" else "Credits"
+                val creditsValue = success?.creditsRemaining?.toString()
+                StatCell(
+                    value = creditsValue,
+                    label = creditsLabel,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Error caption — unobtrusive, below stats
+            if (state is ProfileUiState.Error) {
+                Spacer(Modifier.height(8.dp))
+                BodyText(
+                    text = "Could not load profile.",
+                    size = 12,
+                    color = StoneAlpha55,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
             }
         }
     }
 }
 
+/**
+ * A stat cell that accepts a nullable [value]: null triggers a shimmer
+ * placeholder sized to match the display-number text block.
+ */
 @Composable
-private fun StatCell(value: String, label: String, modifier: Modifier = Modifier) {
+private fun StatCell(value: String?, label: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.padding(vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = value,
-            style = TextStyle(
-                fontFamily = Arcana.fonts.display,
-                fontWeight = FontWeight.Bold,
-                fontSize = 36.sp,
-                letterSpacing = (-0.02).em,
-                color = Lime,
-            ),
-        )
+        if (value != null) {
+            Text(
+                text = value,
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.display,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 36.sp,
+                    letterSpacing = (-0.02).em,
+                    color = Lime,
+                ),
+            )
+        } else {
+            ShimmerBox(
+                modifier = Modifier
+                    .width(56.dp)
+                    .height(36.dp),
+                shape = RoundedCornerShape(6.dp),
+            )
+        }
         Overline(text = label, size = 10, color = StoneAlpha55)
     }
 }

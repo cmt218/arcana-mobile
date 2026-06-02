@@ -1,0 +1,52 @@
+package org.arcana.mobile.profile
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import org.arcana.mobile.networking.MembershipApi
+
+sealed interface ProfileUiState {
+    data object Loading : ProfileUiState
+    data class Success(
+        val fullName: String,
+        val initials: String,
+        val memberNumber: String?,
+        val memberSince: String?,
+        val status: String,
+        val tierName: String,
+        val creditsRemaining: Int?,
+        val creditsGranted: Int?,
+        val lifetimeSessions: Int,
+        val weekStreak: Int,
+    ) : ProfileUiState
+    data class Error(val message: String) : ProfileUiState
+}
+
+class ProfileViewModel(private val api: MembershipApi) : ViewModel() {
+    private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
+    val uiState: StateFlow<ProfileUiState> = _uiState
+
+    fun load() {
+        viewModelScope.launch {
+            try {
+                val me = api.membershipMe()
+                _uiState.value = ProfileUiState.Success(
+                    fullName = me.member.displayName ?: me.member.email,
+                    initials = me.member.avatarInitials,
+                    memberNumber = me.member.memberNumber,
+                    memberSince = me.member.memberSince,
+                    status = me.membership.status,
+                    tierName = me.membership.tier.name,
+                    creditsRemaining = me.currentPeriod?.creditsRemaining,
+                    creditsGranted = me.currentPeriod?.creditsGranted,
+                    lifetimeSessions = me.member.lifetimeSessions,
+                    weekStreak = me.member.weekStreak,
+                )
+            } catch (e: Exception) {
+                _uiState.value = ProfileUiState.Error("server error")
+            }
+        }
+    }
+}
