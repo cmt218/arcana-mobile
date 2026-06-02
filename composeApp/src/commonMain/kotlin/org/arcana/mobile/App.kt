@@ -39,6 +39,7 @@ import org.arcana.mobile.profile.ProfileScreen
 import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
 import org.arcana.mobile.signup.PendingTokenSource
+import org.arcana.mobile.booking.MyBookingsScreen
 import org.arcana.mobile.signup.SignupCompletionScreen
 import org.arcana.mobile.signup.SignupCompletionViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
@@ -223,6 +224,9 @@ private fun MainScaffold() {
             }
             composable<ArcanaDestination.StudioSelection> {
                 StudioSelectionScreen(onClose = { navController.popBackStack() })
+            }
+            composable<ArcanaDestination.MyBookings> {
+                MyBookingsScreen(onClose = { navController.popBackStack() })
             }
             composable<ArcanaDestination.ClassDetail> { backStackEntry ->
                 val args = backStackEntry.toRoute<ArcanaDestination.ClassDetail>()
