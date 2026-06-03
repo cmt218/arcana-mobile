@@ -13,8 +13,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Tests (shared/common):**
 ```bash
-./gradlew :composeApp:test
+./gradlew :composeApp:testDebugUnitTest   # runs commonTest on the Android JVM target
 ```
+(The aggregate `:composeApp:test` task does NOT accept `--tests`; filter on `:composeApp:testDebugUnitTest`.)
+
+**ALWAYS compile BOTH targets when touching `commonMain`** — Android alone won't catch Kotlin/Native errors:
+```bash
+./gradlew :composeApp:compileDebugKotlinAndroid       # JVM/Android
+./gradlew :composeApp:compileKotlinIosSimulatorArm64  # Kotlin/Native (iOS)
+```
+JVM-only APIs compile on Android but break the iOS build — notably `String.format` / `"%02d".format(x)` / `java.*` / `Locale`. Use string templates, `padStart`, and `kotlinx-datetime` instead. (`compileKotlinMetadata` is a no-op SKIP in this project — don't rely on it.)
 
 No linter is configured (no ktlint/detekt).
 
@@ -145,7 +153,7 @@ These are pre-launch dev affordances that must be removed (or hardened) before p
 
 ## Open items
 
-- **Live data wiring.** Home + Profile still render placeholder content (mock reservations, mock studios, hardcoded member name). Schedule + ClassDetail are real-data-backed. Wire the others as their endpoints land.
+- **Live data wiring.** Home + Profile are now real-data-backed (Phase 5 — `HomeViewModel`/`ProfileViewModel` read `/memberships/me` + `/bookings/me/`). The Profile **"Your studios"** section is still static mock (favorite-studios-with-real-data is a future feature). Schedule + ClassDetail have been real-data-backed since Phase 3.
 - **Pull-to-refresh + resume-refresh on Schedule.** Today the Schedule fetch happens once on `ScheduleViewModel.init` and again only on a fresh login. Add a pull-to-refresh gesture and an auto-refresh when the app returns from background if last fetch > N min ago.
 - **Network image loader.** `ClassDetailScreen` currently renders a studio-color-tinted Box as the class hero placeholder because no Compose Multiplatform network-image library is configured. When adopting Coil-MP or Kamel, swap the placeholder for `AsyncImage` reading `session.template.heroImageUrl`.
 
@@ -156,3 +164,15 @@ These are pre-launch dev affordances that must be removed (or hardened) before p
 `ClassDetailScreen` (Phase 3.5) is reached by tapping a class row on Schedule. `ClassDetailViewModel` takes the session id as a Koin parameter (`koinViewModel { parametersOf(id) }`) and fetches `GET /api/v1/classes/<id>/`. The server refreshes from the upstream platform if its cached row is > 30s old, so capacity numbers on the detail screen are always near-real-time — hence we DO show precise spot counts here. Cancelled sessions render a cancellation notice in place of the capacity block.
 
 The DTOs in `data/ScheduleDto.kt` are shared between list and detail responses; detail-only fields (`template.description`, `template.layout_metadata`, `location.address`/`latitude`/`longitude`) have default values so list responses still deserialize cleanly.
+
+## Booking flow (Phase 5)
+
+Member booking UI built against the locked `arcana-server` `/api/v1/bookings/` + `/memberships/me` contract. Spec: `docs/superpowers/specs/2026-06-02-phase-5-booking-fulfillment-design.md` §11; plan: `docs/superpowers/plans/2026-06-02-phase-5-booking-mobile.md`.
+
+**Data + API.** DTOs in `data/BookingDto.kt` (`BookingDto`, `SpotDto`, `SessionBriefDto` incl. `instructor`, `MyBookingsDto`, `CreateBooking*`, `CancelBookingResponse`) and `data/MembershipDto.kt` (`MembershipMeDto`). `ScheduleSessionDto` gained `spots: List<SpotDto>` (detail-only). `ArcanaApiClient` implements two **narrow interfaces** — `networking/BookingApi.kt` (`createBooking`/`myBookings`/`cancelBooking`) + `MembershipApi` (`membershipMe`) — so ViewModels depend on the interfaces and are faked in `commonTest`. `createBooking` inspects `response.status` manually (the client has `expectSuccess=false`, so 4xx does NOT throw) and surfaces the server `{error: code}` as `BookingError(code)`.
+
+**Booking from class detail.** `schedule/ClassDetailScreen.kt`'s `StickyReserveCta` is driven by `booking/BookingViewModel.kt`: it reads `/me` (credits) + `/bookings/me/` (to detect an existing booking for this session), derives the CTA via the pure `bookCtaState(...)` → `BookCta` (`Bookable`/`Full`/`OutOfCredits`/`AlreadyBooked`/`NotBookable`), opens the `booking/BookingSheet.kt` confirmation sheet (Material3 `ModalBottomSheet`; `booking/SpotPicker.kt` for spot studios), submits, and maps errors via `bookingErrorCopy(code)`. The CTA reflects real status: `REQUESTED ✓` (just booked) / `REQUESTED` / `CONFIRMED ✓` on return, and `CLASS ENDED` (no availability, no-op) for past classes.
+
+**My Bookings + Home + Profile.** `booking/MyBookingsScreen.kt` (`MyBookingsViewModel`) — a `MyBookings` non-tab destination reached from Home's "See all"; rows show date/time + instructor + `ui/StatusPill`, tap opens the class detail, X closes; cancel uses `cancel_policy.will_forfeit_credit` to warn before a forfeiting cancel. `home/HomeViewModel` + `profile/ProfileViewModel` read `/me` (+ `/bookings/me/`) and render real greeting/credits/streak/upcoming and member card; both shimmer while loading via `ui/Shimmer.kt`. `ui/StatusPill` mirrors the server ops-console pill tones (good/warn/bad).
+
+**Auth: sign-in only.** There is no in-app sign-up — `auth/AuthScreen.kt` is login-only; members onboard via the invite welcome flow (`SignupCompletionScreen`, welcome deep link). `ArcanaApiClient.login/logout/completeSignup` call `clearBearerTokenCache()` (clears the Ktor `Auth` plugin's in-memory bearer token via `client.authProviders…clearToken()`) so requests use the current user's token after a re-login — without it, the plugin keeps sending the previous user's cached token.
