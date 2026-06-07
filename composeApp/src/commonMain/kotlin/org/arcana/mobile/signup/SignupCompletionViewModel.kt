@@ -38,14 +38,17 @@ class SignupCompletionViewModel(
 
     fun updatePassword(value: String) = mutateEditing { it.copy(password = value) }
     fun updateConfirmPassword(value: String) = mutateEditing { it.copy(confirmPassword = value) }
-    fun updateDisplayName(value: String) = mutateEditing { it.copy(displayName = value.trim()) }
+    // Don't trim on every keystroke — that strips the trailing space the moment
+    // you type it, making a multi-word "First Last" name impossible. Trim only on
+    // submit (see submit()); isValidEditing's isBlank() still rejects all-whitespace.
+    fun updateDisplayName(value: String) = mutateEditing { it.copy(displayName = value) }
 
     fun submit() {
         val current = _state.value as? SignupCompletionState.Editing ?: return
         if (!isValidEditing(current) || current.isSubmitting) return
         setState(current.copy(isSubmitting = true))
         viewModelScope.launch {
-            val result = api.complete(token, current.password, current.displayName)
+            val result = api.complete(token, current.password, current.displayName.trim())
             setState(
                 when (result) {
                     is CompleteSignupResult.Success ->

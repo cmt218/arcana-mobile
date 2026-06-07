@@ -128,15 +128,9 @@ private fun EditingForm(
         ) {
             Column(modifier = Modifier.heightIn(min = viewportMinHeight)) {
                 Spacer(Modifier.height(8.dp))
-                // Wordmark row: wordmark left, step stamp right.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
-                    Overline(text = "STEP 02 OF 02", size = 10, color = Ash)
-                }
+                // Wordmark only — the step stamp was removed now that signup
+                // completion is a single screen (no multi-step flow to count).
+                WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
 
                 Spacer(Modifier.height(44.dp))
                 // Header.
@@ -151,9 +145,10 @@ private fun EditingForm(
                         LockedEmailRow(email = lockedEmail)
                     }
                     ArcanaTextField(
-                        label = "Display name",
+                        label = "Full name",
                         value = editing.displayName,
                         onValueChange = onDisplayNameChange,
+                        placeholder = "First and last name",
                         imeAction = ImeAction.Next,
                         onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
                     )
