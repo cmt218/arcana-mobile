@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The brand icon is a full-bleed opaque gradient square; use it as the
-         background layer (fills 108dp, masked to the launcher shape) with a
-         transparent foreground rather than splitting fg/bg. -->
+    <!-- Standard two-layer adaptive icon: gradient background + the 'a' glyph as
+         a padded foreground (sits in the safe zone, so launchers don't oversize
+         it when masking/rounding). -->
     <background android:drawable="@mipmap/ic_launcher_bg" />
-    <foreground android:drawable="@android:color/transparent" />
+    <foreground android:drawable="@mipmap/ic_launcher_fg" />
 </adaptive-icon>
