@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -305,6 +306,14 @@ private fun ProfileHero(state: ProfileUiState) {
                                     fontFamily = Arcana.fonts.display,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 46.sp,
+                                    // Trim League Spartan's extra ascent/descent and
+                                    // center the glyph so a single initial sits dead
+                                    // center in the avatar circle.
+                                    lineHeight = 46.sp,
+                                    lineHeightStyle = LineHeightStyle(
+                                        alignment = LineHeightStyle.Alignment.Center,
+                                        trim = LineHeightStyle.Trim.Both,
+                                    ),
                                     letterSpacing = (-0.02).em,
                                     color = Lime,
                                 ),

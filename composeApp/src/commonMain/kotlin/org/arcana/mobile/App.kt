@@ -36,6 +36,8 @@ import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.ProfileScreen
+import org.arcana.mobile.profile.ProfileUiState
+import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
 import org.arcana.mobile.signup.PendingTokenSource
@@ -176,6 +178,14 @@ private fun MainScaffold() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
+    // Real member initials for the Profile-tab avatar (was hardcoded "FD").
+    // Shares the session-scoped ProfileViewModel, so this is the same /me the
+    // Profile screen reads — no extra fetch beyond the first load.
+    val profileVm = koinViewModel<ProfileViewModel>()
+    LaunchedEffect(Unit) { profileVm.load() }
+    val profileState by profileVm.uiState.collectAsState()
+    val avatarInitials = (profileState as? ProfileUiState.Success)?.initials ?: ""
+
     val selectedTab: ArcanaTab? = when {
         currentDestination?.hasRoute<ArcanaDestination.Home>() == true -> ArcanaTab.Home
         currentDestination?.hasRoute<ArcanaDestination.Schedule>() == true -> ArcanaTab.Schedule
@@ -191,7 +201,7 @@ private fun MainScaffold() {
                 ArcanaTabBar(
                     active = selectedTab,
                     onSelect = { tab -> navController.navigateToTab(tab) },
-                    avatarInitials = "FD",
+                    avatarInitials = avatarInitials,
                 )
             }
         },
