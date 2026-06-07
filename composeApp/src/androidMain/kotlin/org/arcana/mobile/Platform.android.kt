@@ -9,9 +9,9 @@ class AndroidPlatform : Platform {
 
 actual fun getPlatform(): Platform = AndroidPlatform()
 
-// 10.0.2.2 is the emulator's loopback to the host machine. Physical Android
-// devices need a tunnel URL set via Developer Settings.
-actual fun defaultBaseUrl(): String = "http://10.0.2.2:8000"
+// Production API. Override via Developer Settings to point at a local server
+// (e.g. http://10.0.2.2:8000 — the emulator's loopback to the host) during dev.
+actual fun defaultBaseUrl(): String = "https://api.arcana.fit"
 
 actual fun logWarning(tag: String, message: String) {
     Log.w(tag, message)
