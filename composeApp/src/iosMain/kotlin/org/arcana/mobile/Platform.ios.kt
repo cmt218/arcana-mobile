@@ -8,9 +8,9 @@ class IOSPlatform: Platform {
 
 actual fun getPlatform(): Platform = IOSPlatform()
 
-// Simulator can reach the host Mac at localhost. Physical iPhones need a
-// tunnel URL set via Developer Settings.
-actual fun defaultBaseUrl(): String = "http://localhost:8000"
+// Production API. Override via Developer Settings to point at a local server
+// (e.g. http://localhost:8000 — the host Mac, reachable from the simulator) during dev.
+actual fun defaultBaseUrl(): String = "https://api.arcana.fit"
 
 actual fun logWarning(tag: String, message: String) {
     println("W/$tag: $message")
