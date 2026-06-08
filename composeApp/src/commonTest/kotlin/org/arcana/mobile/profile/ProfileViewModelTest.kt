@@ -69,4 +69,23 @@ class ProfileViewModelTest {
         val s = vm.uiState.value as ProfileUiState.Success
         assertEquals("cole@arcana.fit", s.fullName)
     }
+
+    @Test fun `refresh keeps existing content when the re-fetch fails`() = runTest {
+        var failNext = false
+        val api = object : MembershipApi {
+            override suspend fun membershipMe(): MembershipMeDto {
+                if (failNext) throw RuntimeException("network failure")
+                return meDto
+            }
+        }
+        val vm = ProfileViewModel(api)
+        vm.load()
+        assertTrue(vm.uiState.value is ProfileUiState.Success)
+
+        failNext = true
+        vm.refresh()
+        // Still showing the previously-loaded content, not a full-screen error.
+        assertTrue(vm.uiState.value is ProfileUiState.Success)
+        assertFalse(vm.isRefreshing.value)
+    }
 }

@@ -10,11 +10,16 @@ import org.arcana.mobile.data.CompleteSignupResponse
 
 sealed interface SignupCompletionState {
     data class Editing(
+        val firstName: String = "",
+        val lastName: String = "",
         val password: String = "",
         val confirmPassword: String = "",
-        val displayName: String = "",
         val isSubmitting: Boolean = false,
-    ) : SignupCompletionState
+    ) : SignupCompletionState {
+        /** First + last collapsed into the single name the server still stores
+         *  as `display_name`. Trimmed so trailing spaces never leak through. */
+        val displayName: String get() = "${firstName.trim()} ${lastName.trim()}".trim()
+    }
 
     data class Success(val response: CompleteSignupResponse) : SignupCompletionState
 
@@ -38,17 +43,18 @@ class SignupCompletionViewModel(
 
     fun updatePassword(value: String) = mutateEditing { it.copy(password = value) }
     fun updateConfirmPassword(value: String) = mutateEditing { it.copy(confirmPassword = value) }
-    // Don't trim on every keystroke — that strips the trailing space the moment
-    // you type it, making a multi-word "First Last" name impossible. Trim only on
-    // submit (see submit()); isValidEditing's isBlank() still rejects all-whitespace.
-    fun updateDisplayName(value: String) = mutateEditing { it.copy(displayName = value) }
+    // Don't trim on every keystroke — that would strip the trailing space the
+    // moment you type it. Trimming happens in Editing.displayName at read time;
+    // isValidEditing's isBlank() still rejects all-whitespace input.
+    fun updateFirstName(value: String) = mutateEditing { it.copy(firstName = value) }
+    fun updateLastName(value: String) = mutateEditing { it.copy(lastName = value) }
 
     fun submit() {
         val current = _state.value as? SignupCompletionState.Editing ?: return
         if (!isValidEditing(current) || current.isSubmitting) return
         setState(current.copy(isSubmitting = true))
         viewModelScope.launch {
-            val result = api.complete(token, current.password, current.displayName.trim())
+            val result = api.complete(token, current.password, current.displayName)
             setState(
                 when (result) {
                     is CompleteSignupResult.Success ->
@@ -89,7 +95,8 @@ class SignupCompletionViewModel(
         if (state.isSubmitting) return false
         if (state.password.length < MIN_PASSWORD_LENGTH) return false
         if (state.password != state.confirmPassword) return false
-        if (state.displayName.isBlank()) return false
+        if (state.firstName.isBlank()) return false
+        if (state.lastName.isBlank()) return false
         if (state.displayName.length > MAX_DISPLAY_NAME_LENGTH) return false
         return true
     }

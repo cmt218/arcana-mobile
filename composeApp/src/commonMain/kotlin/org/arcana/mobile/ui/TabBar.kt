@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -130,10 +132,18 @@ private fun TabItem(
             ) {
                 Text(
                     text = avatarInitials,
+                    // Match the profile hero: trim the line box and nudge the
+                    // all-caps initials down ~0.09em so they sit dead-center.
+                    modifier = Modifier.offset(y = 1.dp),
                     style = TextStyle(
                         fontFamily = Arcana.fonts.display,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
+                        lineHeight = 10.sp,
+                        lineHeightStyle = LineHeightStyle(
+                            alignment = LineHeightStyle.Alignment.Center,
+                            trim = LineHeightStyle.Trim.Both,
+                        ),
                         letterSpacing = 0.02.em,
                         color = if (active) Lime else Ash,
                     ),

@@ -44,4 +44,26 @@ class HomeViewModelTest {
         assertEquals(2, s.upcoming.size)
         assertEquals(2, s.weekStreak)
     }
+
+    @Test fun `refresh keeps existing content when the re-fetch fails`() = runTest {
+        var failNext = false
+        val api = object : BookingApi, MembershipApi {
+            override suspend fun membershipMe(): MembershipMeDto {
+                if (failNext) throw RuntimeException("network failure")
+                return meDto
+            }
+            override suspend fun myBookings() = MyBookingsDto(listOf(booking(1)), emptyList())
+            override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?) = throw NotImplementedError()
+            override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+        }
+        val vm = HomeViewModel(api)
+        vm.load()
+        assertTrue(vm.uiState.value is HomeUiState.Success)
+
+        failNext = true
+        vm.refresh()
+        // Still showing the previously-loaded content, not a full-screen error.
+        assertTrue(vm.uiState.value is HomeUiState.Success)
+        assertFalse(vm.isRefreshing.value)
+    }
 }

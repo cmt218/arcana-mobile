@@ -30,18 +30,41 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState
 
+    /** Drives the pull-to-refresh spinner; true only during a [refresh] fetch. */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     fun load() {
+        viewModelScope.launch { fetch() }
+    }
+
+    /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
+     *  current content visible (and untouched on a transient failure). */
+    fun refresh() {
         viewModelScope.launch {
+            _isRefreshing.value = true
             try {
-                val me = membershipApi.membershipMe()
-                val upcoming = runCatching { bookingApi.myBookings().upcoming }.getOrDefault(emptyList())
-                _uiState.value = HomeUiState.Success(
-                    displayName = me.member.displayName ?: me.member.email.substringBefore("@"),
-                    creditsRemaining = me.currentPeriod?.creditsRemaining,
-                    upcoming = upcoming,
-                    weekStreak = me.member.weekStreak,
-                )
-            } catch (e: Exception) {
+                fetch()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    private suspend fun fetch() {
+        try {
+            val me = membershipApi.membershipMe()
+            val upcoming = runCatching { bookingApi.myBookings().upcoming }.getOrDefault(emptyList())
+            _uiState.value = HomeUiState.Success(
+                displayName = me.member.displayName ?: me.member.email.substringBefore("@"),
+                creditsRemaining = me.currentPeriod?.creditsRemaining,
+                upcoming = upcoming,
+                weekStreak = me.member.weekStreak,
+            )
+        } catch (e: Exception) {
+            // On a refresh failure keep whatever's already on screen rather than
+            // replacing good content with a full-screen error.
+            if (_uiState.value !is HomeUiState.Success) {
                 _uiState.value = HomeUiState.Error("server error")
             }
         }

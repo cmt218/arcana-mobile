@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -92,6 +95,7 @@ private data class AccountItem(
     val onClick: (() -> Unit)? = null,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onManageStudios: () -> Unit,
@@ -100,6 +104,7 @@ fun ProfileScreen(
     val apiClient = koinInject<ArcanaApiClient>()
     val vm = koinViewModel<ProfileViewModel>()
     val state by vm.uiState.collectAsState()
+    val refreshing by vm.isRefreshing.collectAsState()
 
     LaunchedEffect(Unit) { vm.load() }
 
@@ -122,6 +127,11 @@ fun ProfileScreen(
                 .fillMaxHeight(0.55f)
                 .background(Ink),
         )
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = vm::refresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 16.dp),
@@ -203,6 +213,7 @@ fun ProfileScreen(
                 AccentText(text = "Earned, never given.", size = 18, color = Ash)
                 Overline(text = "Arcana · v2.4.0", size = 10, color = Ash2)
             }
+        }
         }
         }
     }
@@ -302,13 +313,15 @@ private fun ProfileHero(state: ProfileUiState) {
                         ) {
                             Text(
                                 text = success.initials,
+                                // All-caps initials sit optically high because the font
+                                // reserves descent space the glyphs never use. Trim the
+                                // line box, then nudge down ~0.09em to seat the caps on
+                                // the circle's true center.
+                                modifier = Modifier.offset(y = 4.dp),
                                 style = TextStyle(
                                     fontFamily = Arcana.fonts.display,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 46.sp,
-                                    // Trim League Spartan's extra ascent/descent and
-                                    // center the glyph so a single initial sits dead
-                                    // center in the avatar circle.
                                     lineHeight = 46.sp,
                                     lineHeightStyle = LineHeightStyle(
                                         alignment = LineHeightStyle.Alignment.Center,

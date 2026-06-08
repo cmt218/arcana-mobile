@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -135,6 +137,7 @@ fun ClassDetailScreen(
     viewModel: ClassDetailViewModel = koinViewModel { parametersOf(sessionId) },
 ) {
     val state by viewModel.uiState.collectAsState()
+    val refreshing by viewModel.isRefreshing.collectAsState()
 
     // Outer Box on Stone — children handle their own safe-area padding so the
     // sticky CTA can sit flush with the bottom safe inset while the list scrolls
@@ -143,7 +146,12 @@ fun ClassDetailScreen(
         when (val s = state) {
             ClassDetailUiState.Loading -> LoadingBlock(onClose)
             is ClassDetailUiState.Error -> ErrorBlock(message = s.message, onClose = onClose, onRetry = viewModel::reload)
-            is ClassDetailUiState.Success -> SuccessBlock(session = s.session, onClose = onClose)
+            is ClassDetailUiState.Success -> SuccessBlock(
+                session = s.session,
+                onClose = onClose,
+                isRefreshing = refreshing,
+                onRefresh = viewModel::refresh,
+            )
         }
     }
 }
@@ -185,7 +193,13 @@ private fun ErrorBlock(message: String, onClose: () -> Unit, onRetry: () -> Unit
 // ── Success layout ------------------------------------------------------------
 
 @Composable
-private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SuccessBlock(
+    session: ScheduleSessionDto,
+    onClose: () -> Unit,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+) {
     val tz = remember { TimeZone.currentSystemDefault() }
     val startLocal = remember(session.startAt) { Instant.parse(session.startAt).toLocalDateTime(tz) }
     val studio = session.location.studio
@@ -211,6 +225,14 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
     // ~140dp so the last content can scroll out from behind the CTA without
     // ever being permanently obscured.
     Box(modifier = Modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                onRefresh()
+                bookingVm.load()
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().safeContentPadding(),
             contentPadding = PaddingValues(bottom = 140.dp),
@@ -292,6 +314,7 @@ private fun SuccessBlock(session: ScheduleSessionDto, onClose: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
             }
+        }
         }
         // Sticky reserve CTA — pinned to bottom safe inset. Capped fade above
         // it so scrolling list content feathers out instead of butting hard
@@ -635,9 +658,10 @@ private fun initialsOf(name: String): String {
 
 /**
  * "N OF M SPOTS OPEN" headline + segmented pip row + status copy. Each pip
- * represents one spot — reads as a counter, not just a progress bar. Pip
- * color encodes state: open → moss, scarce → warning, full → ash. Open pips
- * (the trailing ones) are always Mist@70.
+ * represents one spot — reads as a counter, not just a progress bar. The open
+ * (trailing) pips carry the state color — moss when open, warning when scarce,
+ * ash when full — so available capacity is the prominent signal; taken pips
+ * recede to Mist@70 (stone).
  */
 @Composable
 private fun AvailabilityBlock(
@@ -691,7 +715,9 @@ private fun CapacityPips(
     capacity: DetailCapacity,
     studioColor: Color,
 ) {
-    val takenColor = when (capacity) {
+    // Available capacity is the prominent signal: open pips carry the state
+    // color (moss when open, warning when scarce), taken pips recede to stone.
+    val openColor = when (capacity) {
         DetailCapacity.Open -> MossLight
         DetailCapacity.Scarce -> Warning
         DetailCapacity.Full -> Ash2
@@ -700,7 +726,7 @@ private fun CapacityPips(
     // when brand-tinted pips land in a later iteration, the studioColor will
     // be the source.
     @Suppress("UNUSED_VARIABLE") val tint = studioColor
-    val openColor = Mist.copy(alpha = 0.70f)
+    val takenColor = Mist.copy(alpha = 0.70f)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),

@@ -76,7 +76,8 @@ fun SignupCompletionScreen(
             editing = s,
             canSubmit = canSubmit,
             lockedEmail = lockedEmail,
-            onDisplayNameChange = viewModel::updateDisplayName,
+            onFirstNameChange = viewModel::updateFirstName,
+            onLastNameChange = viewModel::updateLastName,
             onPasswordChange = viewModel::updatePassword,
             onConfirmPasswordChange = viewModel::updateConfirmPassword,
             onSubmit = viewModel::submit,
@@ -99,7 +100,8 @@ private fun EditingForm(
     editing: SignupCompletionState.Editing,
     canSubmit: Boolean,
     lockedEmail: String?,
-    onDisplayNameChange: (String) -> Unit,
+    onFirstNameChange: (String) -> Unit,
+    onLastNameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onConfirmPasswordChange: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -145,10 +147,18 @@ private fun EditingForm(
                         LockedEmailRow(email = lockedEmail)
                     }
                     ArcanaTextField(
-                        label = "Full name",
-                        value = editing.displayName,
-                        onValueChange = onDisplayNameChange,
-                        placeholder = "First and last name",
+                        label = "First name",
+                        value = editing.firstName,
+                        onValueChange = onFirstNameChange,
+                        placeholder = "Your first name",
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                    )
+                    ArcanaTextField(
+                        label = "Last name",
+                        value = editing.lastName,
+                        onValueChange = onLastNameChange,
+                        placeholder = "Your last name",
                         imeAction = ImeAction.Next,
                         onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
                     )

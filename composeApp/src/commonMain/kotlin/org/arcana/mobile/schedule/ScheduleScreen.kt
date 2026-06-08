@@ -23,7 +23,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -177,6 +179,7 @@ private fun LocalTime.timeBand(): TimeBand = when {
 
 // ── Screen --------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScheduleScreen(
     modifier: Modifier = Modifier,
@@ -184,8 +187,11 @@ fun ScheduleScreen(
     onOpenClassDetail: (Int) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
+    val refreshing by viewModel.isRefreshing.collectAsState()
 
-    Box(
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = viewModel::refresh,
         modifier = modifier
             .fillMaxSize()
             .background(Stone)

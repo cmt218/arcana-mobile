@@ -92,6 +92,10 @@ class ScheduleViewModel(
     private val _uiState = MutableStateFlow<ScheduleUiState>(ScheduleUiState.Loading)
     val uiState: StateFlow<ScheduleUiState> = _uiState
 
+    /** Drives the pull-to-refresh spinner; true only during a [refresh] fetch. */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     /**
      * Unfiltered 14-day result, kept around so toggling chips refilters
      * client-side for studio chips (cheap, instant) while `availableOnly`
@@ -109,26 +113,50 @@ class ScheduleViewModel(
         reload()
     }
 
-    /** Force a network re-fetch using the current filter state. */
+    /** Force a network re-fetch using the current filter state. Flashes the
+     *  shimmer placeholder — for first load, filter changes, and error-retry. */
     fun reload() {
         viewModelScope.launch {
             _uiState.value = ScheduleUiState.Loading
+            fetch()
+        }
+    }
+
+    /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
+     *  current content visible (and untouched on a transient failure). */
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
             try {
-                val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-                days = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
-                val sessions = api.fetchSchedule(
-                    from = today,
-                    to = today.plus(WINDOW_DAYS - 1, DateTimeUnit.DAY),
-                    availableOnly = filters.availableOnly,
-                )
-                unfilteredCache = sessions
-                publish()
-            } catch (e: ResponseException) {
-                val code = e.response.status.value
-                logWarning("ScheduleViewModel", e.message ?: "HTTP $code")
+                fetch()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    private suspend fun fetch() {
+        try {
+            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+            days = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
+            val sessions = api.fetchSchedule(
+                from = today,
+                to = today.plus(WINDOW_DAYS - 1, DateTimeUnit.DAY),
+                availableOnly = filters.availableOnly,
+            )
+            unfilteredCache = sessions
+            publish()
+        } catch (e: ResponseException) {
+            val code = e.response.status.value
+            logWarning("ScheduleViewModel", e.message ?: "HTTP $code")
+            // On a refresh failure keep whatever's already on screen rather than
+            // replacing good content with a full-screen error.
+            if (_uiState.value !is ScheduleUiState.Success) {
                 _uiState.value = ScheduleUiState.Error("server error $code")
-            } catch (e: Exception) {
-                logWarning("ScheduleViewModel", e.message ?: "Unknown error")
+            }
+        } catch (e: Exception) {
+            logWarning("ScheduleViewModel", e.message ?: "Unknown error")
+            if (_uiState.value !is ScheduleUiState.Success) {
                 _uiState.value = ScheduleUiState.Error("server error")
             }
         }

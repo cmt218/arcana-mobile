@@ -20,7 +20,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,6 +73,7 @@ import org.koin.compose.viewmodel.koinViewModel
 // ── Max upcoming rows shown below the hero card ────────────────────────────────
 private const val UPCOMING_PREVIEW_COUNT = 4
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onSeeAllBookings: () -> Unit,
@@ -79,6 +82,7 @@ fun HomeScreen(
     val vm = koinViewModel<HomeViewModel>()
     LaunchedEffect(Unit) { vm.load() }
     val state by vm.uiState.collectAsState()
+    val refreshing by vm.isRefreshing.collectAsState()
 
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember(tz) { Clock.System.todayIn(tz) }
@@ -86,6 +90,11 @@ fun HomeScreen(
     val dateLabel = "${today.dayOfWeek.name.take(3)} · ${today.month.name.take(3)} ${today.day}"
     val greeting = timeOfDay(hour)
 
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = vm::refresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -182,15 +191,6 @@ fun HomeScreen(
                 val hero = s.upcoming.firstOrNull()
                 val rest = s.upcoming.drop(1).take(UPCOMING_PREVIEW_COUNT)
 
-                // ── Upcoming umbrella header — always rendered first ───────────
-                item {
-                    SectionRule(
-                        label = "Upcoming · ${s.upcoming.size}",
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
-                item { Spacer(Modifier.height(16.dp)) }
-
                 // ── Next-up card ──────────────────────────────────────────────
                 if (hero != null) {
                     item {
@@ -280,6 +280,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
     }
 }
 
@@ -398,7 +399,8 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
     }
     val timeStr = local?.let {
         val h = if (it.hour % 12 == 0) 12 else it.hour % 12
-        h.toString()
+        val m = it.minute.toString().padStart(2, '0')
+        "$h:$m"
     } ?: "--"
     val amPm = local?.let { if (it.hour < 12) "am" else "pm" } ?: ""
     val spotLabel = booking.spot?.label ?: booking.fulfilledSpot?.label ?: booking.requestedSpot?.label

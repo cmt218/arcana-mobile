@@ -28,23 +28,46 @@ class ProfileViewModel(private val api: MembershipApi) : ViewModel() {
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
     val uiState: StateFlow<ProfileUiState> = _uiState
 
+    /** Drives the pull-to-refresh spinner; true only during a [refresh] fetch. */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     fun load() {
+        viewModelScope.launch { fetch() }
+    }
+
+    /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
+     *  current content visible (and untouched on a transient failure). */
+    fun refresh() {
         viewModelScope.launch {
+            _isRefreshing.value = true
             try {
-                val me = api.membershipMe()
-                _uiState.value = ProfileUiState.Success(
-                    fullName = me.member.displayName ?: me.member.email,
-                    initials = me.member.avatarInitials,
-                    memberNumber = me.member.memberNumber,
-                    memberSince = me.member.memberSince,
-                    status = me.membership.status,
-                    tierName = me.membership.tier.name,
-                    creditsRemaining = me.currentPeriod?.creditsRemaining,
-                    creditsGranted = me.currentPeriod?.creditsGranted,
-                    lifetimeSessions = me.member.lifetimeSessions,
-                    weekStreak = me.member.weekStreak,
-                )
-            } catch (e: Exception) {
+                fetch()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    private suspend fun fetch() {
+        try {
+            val me = api.membershipMe()
+            _uiState.value = ProfileUiState.Success(
+                fullName = me.member.displayName ?: me.member.email,
+                initials = me.member.avatarInitials,
+                memberNumber = me.member.memberNumber,
+                memberSince = me.member.memberSince,
+                status = me.membership.status,
+                tierName = me.membership.tier.name,
+                creditsRemaining = me.currentPeriod?.creditsRemaining,
+                creditsGranted = me.currentPeriod?.creditsGranted,
+                lifetimeSessions = me.member.lifetimeSessions,
+                weekStreak = me.member.weekStreak,
+            )
+        } catch (e: Exception) {
+            // On a refresh failure keep whatever's already on screen rather than
+            // replacing good content with a full-screen error.
+            if (_uiState.value !is ProfileUiState.Success) {
                 _uiState.value = ProfileUiState.Error("server error")
             }
         }
