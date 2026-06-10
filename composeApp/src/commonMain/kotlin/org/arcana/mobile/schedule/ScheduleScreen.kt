@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Display
+import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
@@ -208,15 +209,19 @@ fun ScheduleScreen(
 @Composable
 private fun LoadingPlaceholder() {
     val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
-    Column {
+    Column(modifier = Modifier.fillMaxSize()) {
         Display(
             text = "${titleCase(today.month.name)}.",
             size = 56, color = Ink,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
         )
-        Spacer(Modifier.height(24.dp))
-        Row(modifier = Modifier.padding(horizontal = 24.dp)) {
-            Overline(text = "LOADING SCHEDULE…", size = 12, color = Ash)
+        // Centered in the space below the header so the wave reads as the
+        // screen's focal point while the schedule loads.
+        Box(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            DotMatrixLoader()
         }
     }
 }
