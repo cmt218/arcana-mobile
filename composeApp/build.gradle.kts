@@ -90,6 +90,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    testOptions {
+        // commonTest runs on the JVM where android.util.Log is a stub that
+        // throws "not mocked". Return defaults instead so code under test can
+        // call logWarning() in error paths (e.g. FavoritesRepository.refresh).
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

@@ -13,19 +13,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -33,76 +33,58 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
-import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
-import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.StoneAlpha55
-import org.arcana.mobile.theme.StoneAlpha65
+import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotField
+import org.arcana.mobile.ui.DotMatrixLoader
+import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.StrokeIcon
-import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeBottomBarPadding
-
-private data class Studio(
-    val id: String,
-    val name: String,
-    val city: String,
-    val distance: String,
-    val tag: String,
-    val classes: String,
-)
-
-private val ALL_STUDIOS = listOf(
-    Studio("form", "FORM", "Tribeca", "0.4 mi", "Reformer & mat", "32 / wk"),
-    Studio("rise", "RISE", "Venice", "1.1 mi", "Boxing & conditioning", "28 / wk"),
-    Studio("apex", "APEX", "Marylebone", "2.6 mi", "Strength & lift", "24 / wk"),
-    Studio("core", "CORE", "Dumbo", "3.2 mi", "Mat & mobility", "36 / wk"),
-    Studio("pace", "PACE", "Williamsburg", "4.5 mi", "Run · row · ride", "30 / wk"),
-    Studio("arc", "ARC", "Soho", "5.1 mi", "Strength", "22 / wk"),
-)
-
-private const val MAX_PICKS = 3
+import org.arcana.mobile.ui.safeContentPadding
+import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * Studio selection flow — pick three studios, locked for the month.
- * Launched from Profile (and at first sign-in). [onClose] dismisses it.
+ * Favorites manager — favorite whole Partners or individual locations.
+ * Launched from Profile ("Manage") and the Schedule empty-favorites prompt.
+ * [onClose] dismisses it; a successful save also closes.
  */
 @Composable
 fun StudioSelectionScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val picked = remember { mutableStateListOf("form", "rise") }
-    val count = picked.size
-    val complete = count == MAX_PICKS
+    val viewModel = koinViewModel<StudioSelectionViewModel>()
+    val state by viewModel.uiState.collectAsState()
+
+    val saved = (state as? StudioSelectionUiState.Ready)?.saved == true
+    LaunchedEffect(saved) { if (saved) onClose() }
 
     Box(modifier = modifier.fillMaxSize().background(Stone)) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeContentPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 128.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            modifier = Modifier.fillMaxSize().safeContentPadding(),
         ) {
-            // Top bar
+            // Top bar — close only.
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconCircle(
@@ -113,104 +95,147 @@ fun StudioSelectionScreen(
                     contentColor = Ink,
                     onClick = onClose,
                 )
-                Overline(text = "Step 02 of 03", size = 10, color = Moss)
-                Overline(
-                    text = "Skip",
-                    size = 10,
-                    color = Ash2,
-                    modifier = Modifier.clickable(onClick = onClose),
+            }
+
+            when (val s = state) {
+                is StudioSelectionUiState.Loading -> Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DotMatrixLoader()
+                }
+                is StudioSelectionUiState.Error -> ErrorBlock(
+                    message = s.message,
+                    onRetry = viewModel::retry,
                 )
-            }
-
-            // Title
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Overline(text = "Your network", color = Moss)
-                Display(text = "Pick\nthree\nrooms.", size = 48, color = Ink)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    AccentText(text = "Locked for the month.", size = 18, color = Ash)
-                    AccentText(text = "One swap per cycle.", size = 18, color = Moss)
-                }
-            }
-
-            // Progress — 3-slot scoreboard
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                (1..MAX_PICKS).forEach { i ->
-                    ProgressCell(index = i, filled = i <= count, modifier = Modifier.weight(1f))
-                }
-            }
-
-            // Studio list
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ALL_STUDIOS.forEach { studio ->
-                    val chosen = studio.id in picked
-                    SelectableStudioCard(
-                        studio = studio,
-                        chosen = chosen,
-                        onToggle = {
-                            if (chosen) picked.remove(studio.id)
-                            else if (count < MAX_PICKS) picked.add(studio.id)
-                        },
-                    )
-                }
+                is StudioSelectionUiState.Ready -> ReadyContent(
+                    state = s,
+                    viewModel = viewModel,
+                )
             }
         }
 
         // Sticky CTA — fades the bottom of the scroll under the bar.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(listOf(Color.Transparent, Stone, Stone))
+        if (state is StudioSelectionUiState.Ready) {
+            val s = state as StudioSelectionUiState.Ready
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(listOf(Color.Transparent, Stone, Stone))
+                    )
+                    .safeBottomBarPadding()
+                    .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (s.error != null) {
+                    Caption(text = s.error, size = 12, color = Warning)
+                }
+                PrimaryCta(
+                    label = if (s.saving) "Saving…" else "Save favorites",
+                    enabled = !s.saving,
+                    onClick = viewModel::save,
                 )
-                .safeBottomBarPadding()
-                .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 16.dp),
-        ) {
-            PrimaryCta(
-                label = if (complete) "Confirm selection" else "Pick ${MAX_PICKS - count} more",
-                onClick = { if (complete) onClose() },
-                enabled = complete,
-                trailing = if (complete) null else {
-                    { Overline(text = "$count / $MAX_PICKS", size = 12, color = StoneAlpha55) }
-                },
-            )
+            }
         }
     }
 }
 
 @Composable
-private fun ProgressCell(index: Int, filled: Boolean, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (filled) Moss else Mist2),
-        contentAlignment = Alignment.Center,
+private fun ReadyContent(
+    state: StudioSelectionUiState.Ready,
+    viewModel: StudioSelectionViewModel,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 128.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        if (filled) {
-            DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.12f, spacing = 12)
+        // Title
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Overline(text = "Your favorites", color = Moss)
+            Display(text = "Make it\nyours.", size = 48, color = Ink)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                AccentText(
+                    text = "Favorite your Partners — or just the rooms you love.",
+                    size = 18,
+                    color = Ash,
+                )
+                AccentText(text = "Change anytime.", size = 18, color = Moss)
+            }
         }
-        Text(
-            text = "0$index",
-            style = TextStyle(
-                fontFamily = Arcana.fonts.display,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                letterSpacing = (-0.01).em,
-                color = if (filled) Lime else Ash2,
-            ),
-        )
+
+        // Partner list
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.studios.forEach { studio ->
+                val chosen = studio.slug in state.selectedStudioSlugs
+                val expanded = studio.slug in state.expandedStudioSlugs
+                PartnerCard(
+                    studio = studio,
+                    chosen = chosen,
+                    expanded = expanded,
+                    onToggle = { viewModel.toggleStudio(studio.slug) },
+                    onToggleExpanded = { viewModel.toggleExpanded(studio.slug) },
+                )
+                if (expanded) {
+                    Column(
+                        modifier = Modifier.padding(start = 32.dp, top = 4.dp, bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        studio.locations.forEach { location ->
+                            LocationRow(
+                                label = locationLabel(studio.name, location.name),
+                                checked = location.id in state.selectedLocationIds || chosen,
+                                implied = chosen,
+                                onTap = { viewModel.toggleLocation(studio.slug, location.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun SelectableStudioCard(
-    studio: Studio,
+private fun ErrorBlock(message: String, onRetry: () -> Unit) {
+    Column(modifier = Modifier.padding(24.dp)) {
+        Heading2(text = "Couldn't load Partners", size = 22, color = Ink)
+        Spacer(Modifier.height(8.dp))
+        BodyText(text = message, size = 14, color = Ash)
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Ink)
+                .clickable(onClick = onRetry)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Overline(text = "RETRY", size = 12, color = Stone)
+        }
+    }
+}
+
+/** Display-friendly location label: the brand prefix is stripped so a row
+ *  reads "Williamsburg", not "YO BK Williamsburg" under the YO BK card.
+ *  Mirrors `LocationBriefDto.shortLabel()` in ScheduleViewModel. */
+private fun locationLabel(studioName: String, locationName: String): String {
+    val raw = locationName.removePrefix(studioName).trim()
+        .removePrefix("·").trim()
+        .removePrefix("-").trim()
+    return raw.ifEmpty { locationName }
+}
+
+@Composable
+private fun PartnerCard(
+    studio: StudioDto,
     chosen: Boolean,
+    expanded: Boolean,
     onToggle: () -> Unit,
+    onToggleExpanded: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -224,11 +249,11 @@ private fun SelectableStudioCard(
             DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.08f, spacing = 14)
         }
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Check / empty marker
+            // Check / empty marker — whole-Partner selection.
             Box(
                 modifier = Modifier
                     .size(32.dp)
@@ -244,38 +269,79 @@ private fun SelectableStudioCard(
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = studio.name,
-                        style = TextStyle(
-                            fontFamily = Arcana.fonts.display,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 22.sp,
-                            letterSpacing = (-0.02).em,
-                            color = if (chosen) Stone else Ink,
-                        ),
-                    )
-                    Overline(
-                        text = studio.city,
-                        size = 10,
-                        color = if (chosen) StoneAlpha55 else Ash,
-                    )
-                }
+                Text(
+                    text = studio.name.uppercase(),
+                    style = TextStyle(
+                        fontFamily = Arcana.fonts.display,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        letterSpacing = (-0.02).em,
+                        color = if (chosen) Stone else Ink,
+                    ),
+                )
                 Spacer(Modifier.height(4.dp))
-                BodyText(
-                    text = "${studio.tag} · ${studio.classes}",
-                    size = 12,
-                    color = if (chosen) StoneAlpha65 else Ash,
+                val count = studio.locations.size
+                Overline(
+                    text = if (count == 1) "1 site" else "$count sites",
+                    size = 10,
+                    color = if (chosen) StoneAlpha55 else Ash,
                 )
             }
-            Overline(
-                text = studio.distance,
-                size = 10,
-                color = if (chosen) Lime else Moss,
-            )
+            // Expansion chevron — its own tap target, separate from the card's.
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onToggleExpanded),
+                contentAlignment = Alignment.Center,
+            ) {
+                StrokeIcon(
+                    icon = ArcanaIcons.ChevronDown,
+                    size = 18.dp,
+                    tint = if (chosen) Lime else Moss,
+                    modifier = Modifier.rotate(if (expanded) 180f else 0f),
+                )
+            }
         }
+    }
+}
+
+/**
+ * Expanded location row. [implied] means the whole Partner is selected — the
+ * check renders at reduced opacity to hint that tapping narrows to just
+ * this location.
+ */
+@Composable
+private fun LocationRow(
+    label: String,
+    checked: Boolean,
+    implied: Boolean,
+    onTap: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onTap)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val checkTint = if (implied) Lime.copy(alpha = 0.45f) else Lime
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .then(
+                    if (checked) Modifier.background(checkTint)
+                    else Modifier.border(2.dp, Mist, CircleShape)
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                StrokeIcon(ArcanaIcons.Check, size = 12.dp, tint = Ink)
+            }
+        }
+        BodyText(text = label, size = 14, color = Ink)
     }
 }

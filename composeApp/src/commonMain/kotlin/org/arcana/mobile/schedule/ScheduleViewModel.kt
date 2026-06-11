@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import io.ktor.client.plugins.ResponseException
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -14,10 +15,14 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
+import org.arcana.mobile.data.StudioDto
+import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
-import org.arcana.mobile.networking.ArcanaApiClient
+import org.arcana.mobile.networking.FavoritesApi
+import org.arcana.mobile.networking.ScheduleApi
 
 /**
  * Filter state controlled by the chip rails.
@@ -52,6 +57,15 @@ sealed interface ScheduleUiState {
          *  one brand is soloed; otherwise the screen hides the sub-row. */
         val knownLocationsForBrand: List<LocationChipData>,
         val filters: ScheduleFilters,
+        /** True while the schedule is server-filtered to the member's
+         *  favorite locations (the FAVORITES chip is the active filter). */
+        val favoritesMode: Boolean,
+        /** Favorites loaded and non-empty — gates the FAVORITES chip and
+         *  suppresses the "choose favorites" nudge banner. */
+        val hasFavorites: Boolean,
+        /** False when the favorites fetch failed (state unknown) — the nudge
+         *  must not show to a member who may already have favorites. */
+        val favoritesKnown: Boolean,
     ) : ScheduleUiState
     data class Error(val message: String) : ScheduleUiState
 }
@@ -86,7 +100,9 @@ internal fun LocationBriefDto.shortLabel(): String {
 }
 
 class ScheduleViewModel(
-    private val api: ArcanaApiClient,
+    private val api: ScheduleApi,
+    private val favoritesRepository: FavoritesRepository,
+    private val favoritesApi: FavoritesApi,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ScheduleUiState>(ScheduleUiState.Loading)
@@ -109,8 +125,53 @@ class ScheduleViewModel(
     private var days: List<LocalDate> = emptyList()
     private var filters: ScheduleFilters = ScheduleFilters()
 
+    /** True while the schedule is server-filtered to the member's favorite
+     *  locations. Defaults on at startup when the member has favorites;
+     *  toggling any explicit studio filter exits the mode. */
+    private var favoritesMode: Boolean = false
+
+    /** Full active-Partner directory (`GET /studios/`) so the chip rail shows
+     *  every Partner — not just those with sessions in the current (possibly
+     *  favorites-narrowed) fetch. Empty if the fetch failed; publish() falls
+     *  back to the cache-derived list. */
+    private var studioDirectory: List<StudioDto> = emptyList()
+
+    /** The favorites value this VM last acted on — lets the repository
+     *  collector below ignore the init-time value and only react to changes
+     *  made elsewhere (the favorites manager saving a new set). */
+    private var lastAppliedFavorites: FavoritesDto? = null
+
     init {
-        reload()
+        viewModelScope.launch {
+            _uiState.value = ScheduleUiState.Loading
+            // Favorites first — they decide whether the first fetch is
+            // narrowed to the member's locations.
+            val favorites = favoritesRepository.refresh()
+            if (favorites != null && !favorites.isEmpty()) favoritesMode = true
+            lastAppliedFavorites = favorites
+            try {
+                studioDirectory = favoritesApi.fetchStudios()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Tolerated: chips fall back to the cache-derived list.
+                logWarning("ScheduleViewModel", e.message ?: "studio directory fetch failed")
+            }
+            fetch()
+            // This VM outlives navigation (session-scoped store), so react to
+            // favorites saved in the manager: re-enter (or exit) favorites
+            // mode and re-fetch with the new scope. The collector replays the
+            // current StateFlow value first; `lastAppliedFavorites` makes that
+            // initial replay a no-op.
+            favoritesRepository.favorites.collect { favs ->
+                if (favs == null) return@collect // logout clear; VM is being torn down
+                if (favs == lastAppliedFavorites) return@collect
+                lastAppliedFavorites = favs
+                favoritesMode = !favs.isEmpty()
+                filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+                reload()
+            }
+        }
     }
 
     /** Force a network re-fetch using the current filter state. Flashes the
@@ -139,9 +200,22 @@ class ScheduleViewModel(
         try {
             val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
             days = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
+            // In favorites mode the fetch narrows server-side to the favorite
+            // locations. The takeIf guard matters: a studio-grain favorite with
+            // zero active locations must NOT become an empty `location_id=`
+            // param — the server treats empty as no-filter anyway, so we simply
+            // don't send it (show-all is correct: the favorite matches nothing).
+            val favoriteLocationIds: List<Int>? = if (favoritesMode) {
+                favoritesRepository.favorites.value
+                    ?.expandedLocationIds()
+                    ?.takeIf { it.isNotEmpty() }
+            } else {
+                null
+            }
             val sessions = api.fetchSchedule(
                 from = today,
                 to = today.plus(WINDOW_DAYS - 1, DateTimeUnit.DAY),
+                locationIds = favoriteLocationIds,
                 availableOnly = filters.availableOnly,
             )
             unfilteredCache = sessions
@@ -162,11 +236,33 @@ class ScheduleViewModel(
         }
     }
 
+    /** Re-enter favorites mode (the FAVORITES chip). No-op unless the member
+     *  actually has favorites. Clears explicit studio/location filters — the
+     *  favorites narrow happens server-side, so this re-fetches. */
+    fun enterFavoritesMode() {
+        if (favoritesMode) return // already active — don't flash a pointless reload
+        val favorites = favoritesRepository.favorites.value
+        if (favorites == null || favorites.isEmpty()) return
+        favoritesMode = true
+        filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+        reload()
+    }
+
     /** Toggle a studio in/out of the chip filter. Re-renders client-side; no network.
      *  Always clears any tier-2 location selection — locations only make sense
      *  when exactly one brand is soloed, and the user's brand-toggle has just
-     *  invalidated that assumption. */
+     *  invalidated that assumption.
+     *
+     *  From favorites mode, tapping a studio chip exits the mode and solos that
+     *  studio: the cache only holds favorite locations, so this re-fetches the
+     *  full window rather than refiltering client-side. */
     fun toggleStudio(slug: String) {
+        if (favoritesMode) {
+            favoritesMode = false
+            filters = ScheduleFilters(studioSlugs = setOf(slug), availableOnly = filters.availableOnly)
+            reload()
+            return
+        }
         val next = filters.studioSlugs.toMutableSet().apply {
             if (!add(slug)) remove(slug)
         }
@@ -174,8 +270,16 @@ class ScheduleViewModel(
         publish()
     }
 
-    /** Clear all studio + location selections (the "ALL" chip behavior). */
+    /** Clear all studio + location selections (the "ALL" chip behavior).
+     *  From favorites mode this exits the mode — the cache only holds the
+     *  favorites-narrowed window, so showing "all" needs a re-fetch. */
     fun clearStudios() {
+        if (favoritesMode) {
+            favoritesMode = false
+            filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+            reload()
+            return
+        }
         if (filters.studioSlugs.isEmpty() && filters.locationIds.isEmpty()) return
         filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
         publish()
@@ -218,13 +322,21 @@ class ScheduleViewModel(
     private fun publish() {
         val tz = TimeZone.currentSystemDefault()
 
-        // Distinct studios from the unfiltered fetch — chips reflect the
-        // 14-day fleet, not just today's slice.
-        val knownStudios = unfilteredCache
-            .map { it.location.studio }
-            .distinctBy { it.slug }
-            .sortedBy { it.name }
-            .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
+        // Chip rail studios: prefer the full Partner directory so every active
+        // Partner gets a chip even when the current fetch is favorites-narrowed
+        // (or a Partner simply has no sessions in the window). Fall back to the
+        // cache-derived list if the directory fetch failed.
+        val knownStudios = if (studioDirectory.isNotEmpty()) {
+            studioDirectory
+                .sortedBy { it.name }
+                .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
+        } else {
+            unfilteredCache
+                .map { it.location.studio }
+                .distinctBy { it.slug }
+                .sortedBy { it.name }
+                .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
+        }
 
         // Tier-2 location chips: only when one brand is soloed.
         val knownLocationsForBrand: List<LocationChipData> = if (filters.studioSlugs.size == 1) {
@@ -273,6 +385,9 @@ class ScheduleViewModel(
             siteCount = siteCount,
             knownLocationsForBrand = knownLocationsForBrand,
             filters = filters,
+            favoritesMode = favoritesMode,
+            hasFavorites = favoritesRepository.favorites.value?.isEmpty() == false,
+            favoritesKnown = favoritesRepository.favorites.value != null,
         )
     }
 

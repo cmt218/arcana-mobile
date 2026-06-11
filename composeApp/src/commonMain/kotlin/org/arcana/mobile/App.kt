@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.auth.SecureStorage
+import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.networking.ArcanaApiClient
@@ -71,6 +72,7 @@ fun App(
 ) {
     ArcanaTheme {
         val apiClient = koinInject<ArcanaApiClient>()
+        val favoritesRepository = koinInject<FavoritesRepository>()
         val isAuthenticated by apiClient.isAuthenticated.collectAsState()
 
         var splashVisible by rememberSaveable { mutableStateOf(true) }
@@ -125,6 +127,10 @@ fun App(
             } else {
                 authVm.resetState()
                 sessionStore.clear()
+                // FavoritesRepository is a Koin single that outlives the
+                // session ViewModelStore — wipe it so the next member's
+                // session doesn't flash the previous member's favorites.
+                favoritesRepository.clear()
             }
         }
 
@@ -230,6 +236,7 @@ private fun MainScaffold() {
                     onOpenClassDetail = { id ->
                         navController.navigate(ArcanaDestination.ClassDetail(id))
                     },
+                    onManageFavorites = { navController.navigate(ArcanaDestination.StudioSelection) },
                 )
             }
             composable<ArcanaDestination.Profile> {

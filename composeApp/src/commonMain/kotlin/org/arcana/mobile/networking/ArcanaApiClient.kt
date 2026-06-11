@@ -12,6 +12,7 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -31,19 +32,22 @@ import org.arcana.mobile.data.CompleteSignupRequest
 import org.arcana.mobile.data.CompleteSignupResponse
 import org.arcana.mobile.data.CreateBookingRequest
 import org.arcana.mobile.data.CreateBookingResponse
+import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LoginRequest
 import org.arcana.mobile.data.MembershipMeDto
 import org.arcana.mobile.data.MyBookingsDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
+import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.data.TokenResponse
+import org.arcana.mobile.data.UpdateFavoritesRequest
 import org.arcana.mobile.signup.CompleteSignupResult
 
 class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
-) : BookingApi, MembershipApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -145,13 +149,13 @@ class ArcanaApiClient(
      * @param modality optional case-insensitive modality match
      * @param availableOnly when true, hides sessions with no remaining spots
      */
-    suspend fun fetchSchedule(
+    override suspend fun fetchSchedule(
         from: LocalDate,
         to: LocalDate,
-        studioSlugs: List<String>? = null,
-        locationIds: List<Int>? = null,
-        modality: String? = null,
-        availableOnly: Boolean = false,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        modality: String?,
+        availableOnly: Boolean,
     ): List<ScheduleSessionDto> {
         return client.get(v1("classes/")) {
             parameter("from", from.toString())
@@ -164,6 +168,20 @@ class ArcanaApiClient(
             if (availableOnly) parameter("available_only", "true")
         }.body()
     }
+
+    override suspend fun fetchStudios(): List<StudioDto> =
+        client.get(v1("studios/")).body()
+
+    override suspend fun fetchFavorites(): FavoritesDto =
+        client.get(v1("users/me/favorites/")).body()
+
+    override suspend fun updateFavorites(
+        studioSlugs: List<String>,
+        locationIds: List<Int>,
+    ): FavoritesDto = client.put(v1("users/me/favorites/")) {
+        contentType(ContentType.Application.Json)
+        setBody(UpdateFavoritesRequest(studioSlugs, locationIds))
+    }.body()
 
     /**
      * `GET /api/v1/classes/<id>/` — single-class drill-down with sync-on-read.

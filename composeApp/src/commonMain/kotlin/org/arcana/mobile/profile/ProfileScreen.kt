@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +42,8 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import org.arcana.mobile.data.FavoriteLocationDto
+import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
@@ -73,19 +76,22 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
-private data class StudioEntry(
-    val name: String,
-    val city: String,
-    val distance: String,
-    val tag: String,
-    val classes: String,
-)
+/**
+ * Row labels for the "Your Partners" section: whole-Partner favorites first
+ * (by name), then location-grain favorites as "STUDIO — LOCATION" with the
+ * brand prefix stripped from the location name (mirrors `shortLabel()` in
+ * ScheduleViewModel).
+ */
+private fun favoriteRowLabels(favorites: FavoritesDto): List<String> =
+    favorites.studios.map { it.name.uppercase() } +
+        favorites.locations.map { it.rowLabel().uppercase() }
 
-private val SELECTED_STUDIOS = listOf(
-    StudioEntry("FORM", "Tribeca", "0.4 mi", "Reformer & mat", "32 / wk"),
-    StudioEntry("RISE", "Venice", "1.1 mi", "Boxing & conditioning", "28 / wk"),
-    StudioEntry("APEX", "Marylebone", "2.6 mi", "Strength & lift", "24 / wk"),
-)
+private fun FavoriteLocationDto.rowLabel(): String {
+    val raw = name.removePrefix(studioName).trim()
+        .removePrefix("·").trim()
+        .removePrefix("-").trim()
+    return "$studioName — ${raw.ifEmpty { name }}"
+}
 
 private data class AccountItem(
     val icon: DrawableResource,
@@ -105,6 +111,7 @@ fun ProfileScreen(
     val vm = koinViewModel<ProfileViewModel>()
     val state by vm.uiState.collectAsState()
     val refreshing by vm.isRefreshing.collectAsState()
+    val favorites by vm.favorites.collectAsState()
 
     LaunchedEffect(Unit) { vm.load() }
 
@@ -139,7 +146,7 @@ fun ProfileScreen(
         // Profile hero — full-bleed ink that extends behind the status bar.
         item { ProfileHero(state) }
 
-        // YOUR STUDIOS header
+        // YOUR PARTNERS header
         stoneItem {
             Row(
                 modifier = Modifier
@@ -148,23 +155,46 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Overline(text = "Your studios · 3 / 3", color = Moss)
+                Overline(text = "Your Partners", color = Moss)
                 TextLink(label = "Manage", onClick = onManageStudios, underline = false)
             }
         }
         stoneItem { Spacer(Modifier.height(16.dp)) }
-        items(items = SELECTED_STUDIOS) { studio ->
-            StoneWrap {
-                StudioRow(
-                    studio,
-                    idx = SELECTED_STUDIOS.indexOf(studio) + 1,
+        val favoriteLabels = favorites?.let(::favoriteRowLabels)
+        when {
+            // Not loaded yet — shimmer a single row-sized placeholder,
+            // matching the hero's shimmer treatment.
+            favoriteLabels == null -> stoneItem {
+                ShimmerBox(
+                    modifier = Modifier
+                        .padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    shape = RoundedCornerShape(16.dp),
+                )
+            }
+            // Loaded, member has none yet.
+            favoriteLabels.isEmpty() -> stoneItem {
+                BodyText(
+                    text = "No favorites yet",
+                    size = 14,
+                    color = Ash,
                     modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
                 )
+            }
+            else -> itemsIndexed(items = favoriteLabels) { idx, label ->
+                StoneWrap {
+                    FavoriteRow(
+                        label = label,
+                        idx = idx + 1,
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                    )
+                }
             }
         }
         stoneItem {
             BodyText(
-                text = "One swap allowed each cycle. Next swap unlocks 31 May.",
+                text = "Favorites shape your schedule. Change anytime.",
                 size = 12,
                 color = Ash,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp),
@@ -459,8 +489,14 @@ private fun StatCell(value: String?, label: String, modifier: Modifier = Modifie
     }
 }
 
+/**
+ * A single favorite in the "Your Partners" section. [label] is the
+ * pre-formatted row text from [favoriteRowLabels] (Partner name, or
+ * "STUDIO — LOCATION" for location-grain favorites); [idx] is the 1-based
+ * position rendered in the Moss number badge.
+ */
 @Composable
-private fun StudioRow(s: StudioEntry, idx: Int, modifier: Modifier = Modifier) {
+private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -479,7 +515,7 @@ private fun StudioRow(s: StudioEntry, idx: Int, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "0$idx",
+                text = idx.toString().padStart(2, '0'),
                 style = TextStyle(
                     fontFamily = Arcana.fonts.display,
                     fontWeight = FontWeight.Bold,
@@ -489,33 +525,18 @@ private fun StudioRow(s: StudioEntry, idx: Int, modifier: Modifier = Modifier) {
                 ),
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = s.name,
-                    style = TextStyle(
-                        fontFamily = Arcana.fonts.display,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        letterSpacing = (-0.01).em,
-                        color = Ink,
-                    ),
-                )
-                Overline(text = s.city, size = 10, color = Ash)
-            }
-            Spacer(Modifier.height(4.dp))
-            BodyText(text = "${s.tag} · ${s.classes}", size = 12, color = Ash)
-        }
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Overline(text = s.distance, size = 10, color = Moss)
-            StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash)
-        }
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = TextStyle(
+                fontFamily = Arcana.fonts.display,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                letterSpacing = (-0.01).em,
+                color = Ink,
+            ),
+        )
+        StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash)
     }
 }
 

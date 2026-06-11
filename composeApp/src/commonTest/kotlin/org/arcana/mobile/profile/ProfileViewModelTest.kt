@@ -4,6 +4,8 @@ package org.arcana.mobile.profile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.*
 import org.arcana.mobile.data.*
+import org.arcana.mobile.favorites.FavoritesRepository
+import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
 import kotlin.test.*
 
@@ -21,8 +23,17 @@ class ProfileViewModelTest {
         override suspend fun membershipMe() = me
     }
 
+    private class FakeFavoritesApi : FavoritesApi {
+        override suspend fun fetchStudios(): List<StudioDto> = emptyList()
+        override suspend fun fetchFavorites(): FavoritesDto = FavoritesDto()
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
+            FavoritesDto()
+    }
+
+    private fun vm(api: MembershipApi) = ProfileViewModel(api, FavoritesRepository(FakeFavoritesApi()))
+
     @Test fun `loads profile fields`() = runTest {
-        val vm = ProfileViewModel(FakeApi(meDto))
+        val vm = vm(FakeApi(meDto))
         vm.load()
         val s = vm.uiState.value
         assertTrue(s is ProfileUiState.Success)
@@ -38,7 +49,7 @@ class ProfileViewModelTest {
 
     @Test fun `starts in Loading state`() = runTest {
         // We need a suspending fake to capture the loading state
-        val vm = ProfileViewModel(FakeApi(meDto))
+        val vm = vm(FakeApi(meDto))
         assertTrue(vm.uiState.value is ProfileUiState.Loading)
     }
 
@@ -47,7 +58,7 @@ class ProfileViewModelTest {
             override suspend fun membershipMe(): MembershipMeDto =
                 throw RuntimeException("network failure")
         }
-        val vm = ProfileViewModel(errorApi)
+        val vm = vm(errorApi)
         vm.load()
         val s = vm.uiState.value
         assertTrue(s is ProfileUiState.Error)
@@ -55,7 +66,7 @@ class ProfileViewModelTest {
 
     @Test fun `null currentPeriod gives null credits`() = runTest {
         val dto = meDto.copy(currentPeriod = null)
-        val vm = ProfileViewModel(FakeApi(dto))
+        val vm = vm(FakeApi(dto))
         vm.load()
         val s = vm.uiState.value as ProfileUiState.Success
         assertNull(s.creditsRemaining)
@@ -64,7 +75,7 @@ class ProfileViewModelTest {
 
     @Test fun `null displayName falls back to email`() = runTest {
         val dto = meDto.copy(member = meDto.member.copy(displayName = null))
-        val vm = ProfileViewModel(FakeApi(dto))
+        val vm = vm(FakeApi(dto))
         vm.load()
         val s = vm.uiState.value as ProfileUiState.Success
         assertEquals("cole@arcana.fit", s.fullName)
@@ -78,7 +89,7 @@ class ProfileViewModelTest {
                 return meDto
             }
         }
-        val vm = ProfileViewModel(api)
+        val vm = vm(api)
         vm.load()
         assertTrue(vm.uiState.value is ProfileUiState.Success)
 

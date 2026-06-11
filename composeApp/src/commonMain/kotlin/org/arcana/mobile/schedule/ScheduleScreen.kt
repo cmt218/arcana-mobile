@@ -186,6 +186,7 @@ fun ScheduleScreen(
     modifier: Modifier = Modifier,
     viewModel: ScheduleViewModel = koinViewModel(),
     onOpenClassDetail: (Int) -> Unit = {},
+    onManageFavorites: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val refreshing by viewModel.isRefreshing.collectAsState()
@@ -201,7 +202,12 @@ fun ScheduleScreen(
         when (val s = state) {
             is ScheduleUiState.Loading -> LoadingPlaceholder()
             is ScheduleUiState.Error -> ErrorBlock(message = s.message, onRetry = viewModel::reload)
-            is ScheduleUiState.Success -> SuccessContent(state = s, viewModel = viewModel, onOpenClassDetail = onOpenClassDetail)
+            is ScheduleUiState.Success -> SuccessContent(
+                state = s,
+                viewModel = viewModel,
+                onOpenClassDetail = onOpenClassDetail,
+                onManageFavorites = onManageFavorites,
+            )
         }
     }
 }
@@ -260,6 +266,7 @@ private fun SuccessContent(
     state: ScheduleUiState.Success,
     viewModel: ScheduleViewModel,
     onOpenClassDetail: (Int) -> Unit,
+    onManageFavorites: () -> Unit = {},
 ) {
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember { Clock.System.todayIn(tz) }
@@ -269,6 +276,9 @@ private fun SuccessContent(
     var selectedDate by rememberSaveable(stateSaver = LocalDateSaver) {
         mutableStateOf(today)
     }
+    // Session-scoped dismissal of the "choose favorites" nudge — survives
+    // navigation away and back, resets on process restart. Fine for a nudge.
+    var nudgeDismissed by rememberSaveable { mutableStateOf(false) }
 
     val sessionsForSelected = state.sessionsByDay[selectedDate].orEmpty()
     // Recompute the time-of-day bucketing only when the selected day's
@@ -359,9 +369,16 @@ private fun SuccessContent(
                     .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (state.hasFavorites) {
+                    BrandFilterChip(
+                        label = "FAVORITES",
+                        active = state.favoritesMode,
+                        onClick = { viewModel.enterFavoritesMode() },
+                    )
+                }
                 BrandFilterChip(
                     label = "ALL",
-                    active = state.filters.studioSlugs.isEmpty(),
+                    active = !state.favoritesMode && state.filters.studioSlugs.isEmpty(),
                     onClick = { viewModel.clearStudios() },
                 )
                 state.knownStudios.forEach { studio ->
@@ -394,6 +411,53 @@ private fun SuccessContent(
                     onClickAll = { viewModel.clearLocations() },
                     onToggleLocation = { id -> viewModel.toggleLocation(id) },
                 )
+            }
+        }
+
+        // Nudge banner: members with no favorites yet get a one-tap path into
+        // the favorites manager. Dismissable per-session via the close glyph.
+        // `favoritesKnown` keeps it hidden when the favorites fetch failed —
+        // never nudge a member who may already have favorites.
+        if (state.favoritesKnown && !state.hasFavorites && !nudgeDismissed) {
+            item("favorites-nudge") {
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Paper)
+                        .border(1.dp, Mist, RoundedCornerShape(16.dp))
+                        .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        BodyText(
+                            text = "Make it yours — save your favorite Partners.",
+                            size = 13, color = Ink,
+                        )
+                        // Padding inside the clickable so the CTA's hit area
+                        // clears the 40dp minimum despite the 11sp label.
+                        Overline(
+                            text = "CHOOSE FAVORITES",
+                            size = 11, color = Moss,
+                            modifier = Modifier
+                                .clickable(onClick = onManageFavorites)
+                                .padding(top = 12.dp, bottom = 12.dp, end = 12.dp),
+                        )
+                    }
+                    // 40dp tap target around the 14dp glyph (house pattern —
+                    // see PartnerCard's chevron in StudioSelectionScreen).
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .clickable { nudgeDismissed = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        StrokeIcon(icon = ArcanaIcons.Close, size = 14.dp, tint = Ash2)
+                    }
+                }
             }
         }
 
