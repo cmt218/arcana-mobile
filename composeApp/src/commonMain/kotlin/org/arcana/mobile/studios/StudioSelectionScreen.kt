@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,14 +24,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -160,7 +169,7 @@ private fun ReadyContent(
             Display(text = "Make it\nyours.", size = 48, color = Ink)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AccentText(
-                    text = "Favorite your Partners — or just the rooms you love.",
+                    text = "Save the places you keep coming back to.",
                     size = 18,
                     color = Ash,
                 )
@@ -173,32 +182,69 @@ private fun ReadyContent(
             state.studios.forEach { studio ->
                 val chosen = studio.slug in state.selectedStudioSlugs
                 val expanded = studio.slug in state.expandedStudioSlugs
-                PartnerCard(
-                    studio = studio,
-                    chosen = chosen,
-                    expanded = expanded,
-                    onToggle = { viewModel.toggleStudio(studio.slug) },
-                    onToggleExpanded = { viewModel.toggleExpanded(studio.slug) },
-                )
-                if (expanded) {
-                    Column(
-                        modifier = Modifier.padding(start = 32.dp, top = 4.dp, bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        studio.locations.forEach { location ->
-                            LocationRow(
-                                label = locationLabel(studio.name, location.name),
-                                checked = location.id in state.selectedLocationIds || chosen,
-                                implied = chosen,
-                                onTap = { viewModel.toggleLocation(studio.slug, location.id) },
-                            )
+                // Expanding a card near the bottom of the screen would reveal
+                // its locations underneath the sticky Save bar with no visible
+                // change. On expansion, ask the scroller to reveal the card +
+                // its locations, extending the request by the CTA's height so
+                // they land above the bar (the overlay isn't a real inset, so
+                // the scroll container doesn't know about it). Anchoring on
+                // card + locations together means a taller-than-viewport list
+                // pins the card header to the top instead of scrolling past it.
+                // Already-visible expansions are a no-op — bringIntoView only
+                // scrolls the minimum needed.
+                val bringIntoViewRequester = remember { BringIntoViewRequester() }
+                var groupSize by remember { mutableStateOf(IntSize.Zero) }
+                val ctaAllowancePx = with(LocalDensity.current) { STICKY_CTA_REVEAL_ALLOWANCE.toPx() }
+                Column(
+                    modifier = Modifier
+                        .bringIntoViewRequester(bringIntoViewRequester)
+                        .onSizeChanged { groupSize = it },
+                ) {
+                    PartnerCard(
+                        studio = studio,
+                        chosen = chosen,
+                        expanded = expanded,
+                        selectedLocationCount = studio.locations.count { it.id in state.selectedLocationIds },
+                        onToggle = { viewModel.toggleStudio(studio.slug) },
+                        onToggleExpanded = { viewModel.toggleExpanded(studio.slug) },
+                    )
+                    if (expanded) {
+                        Column(
+                            modifier = Modifier.padding(start = 32.dp, top = 12.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            studio.locations.forEach { location ->
+                                LocationRow(
+                                    label = locationLabel(studio.name, location.name),
+                                    checked = location.id in state.selectedLocationIds || chosen,
+                                    implied = chosen,
+                                    onTap = { viewModel.toggleLocation(studio.slug, location.id) },
+                                )
+                            }
                         }
+                    }
+                }
+                LaunchedEffect(expanded, groupSize) {
+                    if (expanded && groupSize != IntSize.Zero) {
+                        bringIntoViewRequester.bringIntoView(
+                            Rect(
+                                0f,
+                                0f,
+                                groupSize.width.toFloat(),
+                                groupSize.height + ctaAllowancePx,
+                            )
+                        )
                     }
                 }
             }
         }
     }
 }
+
+/** How far past an expanded card's bottom edge the reveal-scroll reaches —
+ *  covers the sticky Save bar overlay. Matches the scroll content's 128.dp
+ *  bottom padding, so the request never overshoots the scroll range. */
+private val STICKY_CTA_REVEAL_ALLOWANCE = 128.dp
 
 @Composable
 private fun ErrorBlock(message: String, onRetry: () -> Unit) {
@@ -234,38 +280,61 @@ private fun PartnerCard(
     studio: StudioDto,
     chosen: Boolean,
     expanded: Boolean,
+    selectedLocationCount: Int,
     onToggle: () -> Unit,
     onToggleExpanded: () -> Unit,
 ) {
+    // Some-but-not-all selection: individual locations are favorited without
+    // the whole Partner. Surfaced on the collapsed card via a partial check
+    // ring + a "N of M locations" overline so the selection isn't invisible.
+    val partial = !chosen && selectedLocationCount > 0
+    // Tap model: the card body expands/collapses the location list; ONLY the
+    // check circle selects/deselects the whole Partner. Selection is the
+    // higher-consequence action, so it gets the deliberate, smaller target.
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(if (chosen) Ink else Paper)
             .border(1.dp, if (chosen) Ink else Mist, RoundedCornerShape(16.dp))
-            .clickable(onClick = onToggle),
+            .clickable(onClick = onToggleExpanded),
     ) {
         if (chosen) {
             DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.08f, spacing = 14)
         }
         Row(
-            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
+            modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Check / empty marker — whole-Partner selection.
+            // Check / empty marker — filled check for whole-Partner selection,
+            // Lime ring + dot for a partial (some-locations) selection. Its
+            // own 40dp tap target, separate from the card's expand/collapse.
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .then(
-                        if (chosen) Modifier.background(Lime)
-                        else Modifier.border(2.dp, Mist, CircleShape)
-                    ),
+                    .clickable(onClick = onToggle),
                 contentAlignment = Alignment.Center,
             ) {
-                if (chosen) {
-                    StrokeIcon(ArcanaIcons.Check, size = 18.dp, tint = Ink)
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .then(
+                            when {
+                                chosen -> Modifier.background(Lime)
+                                partial -> Modifier.border(2.dp, Lime, CircleShape)
+                                else -> Modifier.border(2.dp, Mist, CircleShape)
+                            }
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (chosen) {
+                        StrokeIcon(ArcanaIcons.Check, size = 18.dp, tint = Ink)
+                    } else if (partial) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(Lime))
+                    }
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -281,13 +350,23 @@ private fun PartnerCard(
                 )
                 Spacer(Modifier.height(4.dp))
                 val count = studio.locations.size
+                val locationsWord = if (count == 1) "location" else "locations"
                 Overline(
-                    text = if (count == 1) "1 site" else "$count sites",
+                    text = if (partial) {
+                        "$selectedLocationCount of $count $locationsWord"
+                    } else {
+                        "$count $locationsWord"
+                    },
                     size = 10,
-                    color = if (chosen) StoneAlpha55 else Ash,
+                    color = when {
+                        chosen -> StoneAlpha55
+                        partial -> Moss
+                        else -> Ash
+                    },
                 )
             }
-            // Expansion chevron — its own tap target, separate from the card's.
+            // Expansion chevron — visual affordance for the card's tap action
+            // (the whole card body expands/collapses; this mirrors it).
             Box(
                 modifier = Modifier
                     .size(40.dp)

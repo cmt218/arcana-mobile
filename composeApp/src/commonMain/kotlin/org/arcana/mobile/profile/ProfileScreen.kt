@@ -118,7 +118,6 @@ fun ProfileScreen(
     val accountItems = listOf(
         AccountItem(ArcanaIcons.Bell, "Notifications", "ON · 06:00", Ash),
         AccountItem(ArcanaIcons.Card, "Membership", "$540 / MO", Ash),
-        AccountItem(ArcanaIcons.Swap, "Swap a studio", "AVAILABLE", Moss, onManageStudios),
         AccountItem(ArcanaIcons.Support, "Concierge", "LIVE · 24/7", Ash),
     )
 
@@ -155,7 +154,7 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Overline(text = "Your Partners", color = Moss)
+                Overline(text = "Your favorites", color = Moss)
                 TextLink(label = "Manage", onClick = onManageStudios, underline = false)
             }
         }
