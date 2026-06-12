@@ -7,15 +7,11 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import kotlinx.datetime.LocalDate
-import org.arcana.mobile.data.FavoriteLocationDto
-import org.arcana.mobile.data.FavoriteStudioDto
 import org.arcana.mobile.data.FavoritesDto
-import org.arcana.mobile.data.ScheduleSessionDto
-import org.arcana.mobile.data.StudioDto
+import org.arcana.mobile.data.OverviewLocationDto
+import org.arcana.mobile.data.OverviewStudioDto
+import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.favorites.FavoritesRepository
-import org.arcana.mobile.networking.FavoritesApi
-import org.arcana.mobile.networking.ScheduleApi
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -24,68 +20,26 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** Favorites scoping + chip behavior on the paged (Phase 2) pipeline. Every
+ *  refetch is now an overview + page-1 pair; filter mutations are debounced
+ *  ([settleFilters] advances virtual time past the debounce window). */
 class ScheduleViewModelFavoritesTest {
     private val dispatcher = UnconfinedTestDispatcher()
     @BeforeTest fun setup() { Dispatchers.setMain(dispatcher) }
     @AfterTest fun teardown() { Dispatchers.resetMain() }
 
-    private class FakeScheduleApi : ScheduleApi {
-        data class Call(
-            val from: LocalDate,
-            val to: LocalDate,
-            val studioSlugs: List<String>?,
-            val locationIds: List<Int>?,
-            val availableOnly: Boolean,
-        )
-        val calls = mutableListOf<Call>()
-        override suspend fun fetchSchedule(
-            from: LocalDate,
-            to: LocalDate,
-            studioSlugs: List<String>?,
-            locationIds: List<Int>?,
-            modality: String?,
-            availableOnly: Boolean,
-        ): List<ScheduleSessionDto> {
-            calls += Call(from, to, studioSlugs, locationIds, availableOnly)
-            return emptyList()
-        }
-    }
-
-    private class FakeFavoritesApi(
-        var favoritesResult: FavoritesDto = FavoritesDto(),
-        var studiosResult: List<StudioDto> = emptyList(),
-    ) : FavoritesApi {
-        override suspend fun fetchStudios(): List<StudioDto> = studiosResult
-        override suspend fun fetchFavorites(): FavoritesDto = favoritesResult
-        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
-            favoritesResult
-    }
-
-    private fun favStudio(slug: String = "barrys", locationIds: List<Int>) = FavoriteStudioDto(
-        id = 1, slug = slug, name = "Barry's", locationIds = locationIds,
-    )
-
-    private fun favLocation(id: Int) = FavoriteLocationDto(
-        id = id, name = "YO BK Williamsburg", studioSlug = "yo-bk", studioName = "YO BK",
-    )
-
     private fun vm(
         scheduleApi: FakeScheduleApi,
         favoritesApi: FakeFavoritesApi,
         repository: FavoritesRepository = FavoritesRepository(favoritesApi),
+        bookingApi: FakeBookingApi = FakeBookingApi(),
     ): ScheduleViewModel = ScheduleViewModel(
         api = scheduleApi,
         favoritesRepository = repository,
-        favoritesApi = favoritesApi,
+        bookingApi = bookingApi,
     )
 
-    private fun ScheduleViewModel.success(): ScheduleUiState.Success {
-        val s = uiState.value
-        assertTrue(s is ScheduleUiState.Success, "expected Success but was $s")
-        return s
-    }
-
-    @Test fun `favorites present - first fetch carries expanded location ids`() = runTest {
+    @Test fun `favorites present - both first fetches carry expanded location ids`() = runTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(
             favoritesResult = FavoritesDto(
@@ -95,20 +49,24 @@ class ScheduleViewModelFavoritesTest {
         )
         val vm = vm(scheduleApi, favoritesApi)
 
-        assertEquals(1, scheduleApi.calls.size)
-        assertEquals(listOf(11, 12, 31), scheduleApi.calls.single().locationIds)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+        assertEquals(1, scheduleApi.pageCalls.size)
+        assertEquals(listOf(11, 12, 31), scheduleApi.overviewCalls.single().locationIds)
+        assertEquals(listOf(11, 12, 31), scheduleApi.pageCalls.single().locationIds)
+        assertNull(scheduleApi.pageCalls.single().cursor)
         val state = vm.success()
         assertTrue(state.favoritesMode)
         assertTrue(state.hasFavorites)
     }
 
-    @Test fun `favorites empty - first fetch has no location ids and mode stays off`() = runTest {
+    @Test fun `favorites empty - first fetches have no location ids and mode stays off`() = runTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
         val vm = vm(scheduleApi, favoritesApi)
 
-        assertEquals(1, scheduleApi.calls.size)
-        assertNull(scheduleApi.calls.single().locationIds)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+        assertNull(scheduleApi.overviewCalls.single().locationIds)
+        assertNull(scheduleApi.pageCalls.single().locationIds)
         val state = vm.success()
         assertFalse(state.favoritesMode)
         assertFalse(state.hasFavorites)
@@ -121,8 +79,9 @@ class ScheduleViewModelFavoritesTest {
         )
         val vm = vm(scheduleApi, favoritesApi)
 
-        assertEquals(1, scheduleApi.calls.size)
-        assertNull(scheduleApi.calls.single().locationIds)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+        assertNull(scheduleApi.overviewCalls.single().locationIds)
+        assertNull(scheduleApi.pageCalls.single().locationIds)
         val state = vm.success()
         assertTrue(state.favoritesMode)
         assertTrue(state.hasFavorites)
@@ -134,15 +93,29 @@ class ScheduleViewModelFavoritesTest {
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11)))),
         )
         val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(1, scheduleApi.calls.size)
+        assertEquals(1, scheduleApi.overviewCalls.size)
 
         vm.toggleStudio("barrys")
 
-        assertEquals(2, scheduleApi.calls.size)
-        assertNull(scheduleApi.calls[1].locationIds)
+        // Chips update instantly; the refetch waits out the debounce.
+        val pending = vm.success()
+        assertFalse(pending.favoritesMode)
+        assertEquals(setOf("barrys"), pending.filters.studioSlugs)
+        assertTrue(pending.refreshingFilters)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+
+        settleFilters()
+
+        assertEquals(2, scheduleApi.overviewCalls.size)
+        assertEquals(2, scheduleApi.pageCalls.size)
+        assertEquals(listOf("barrys"), scheduleApi.overviewCalls[1].studioSlugs)
+        assertNull(scheduleApi.overviewCalls[1].locationIds)
+        assertEquals(listOf("barrys"), scheduleApi.pageCalls[1].studioSlugs)
+        assertNull(scheduleApi.pageCalls[1].locationIds)
         val state = vm.success()
         assertFalse(state.favoritesMode)
         assertTrue(state.hasFavorites)
+        assertFalse(state.refreshingFilters)
         assertEquals(setOf("barrys"), state.filters.studioSlugs)
     }
 
@@ -153,12 +126,17 @@ class ScheduleViewModelFavoritesTest {
         )
         val vm = vm(scheduleApi, favoritesApi)
         vm.toggleStudio("barrys")
-        assertEquals(2, scheduleApi.calls.size)
+        settleFilters()
+        assertEquals(2, scheduleApi.overviewCalls.size)
 
         vm.enterFavoritesMode()
+        settleFilters()
 
-        assertEquals(3, scheduleApi.calls.size)
-        assertEquals(listOf(11, 12), scheduleApi.calls[2].locationIds)
+        assertEquals(3, scheduleApi.overviewCalls.size)
+        assertEquals(3, scheduleApi.pageCalls.size)
+        assertEquals(listOf(11, 12), scheduleApi.overviewCalls[2].locationIds)
+        assertNull(scheduleApi.overviewCalls[2].studioSlugs)
+        assertEquals(listOf(11, 12), scheduleApi.pageCalls[2].locationIds)
         val state = vm.success()
         assertTrue(state.favoritesMode)
         assertTrue(state.filters.studioSlugs.isEmpty())
@@ -170,17 +148,19 @@ class ScheduleViewModelFavoritesTest {
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
         val repository = FavoritesRepository(favoritesApi)
         val vm = vm(scheduleApi, favoritesApi, repository)
-        assertEquals(1, scheduleApi.calls.size)
-        assertNull(scheduleApi.calls.single().locationIds)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+        assertNull(scheduleApi.overviewCalls.single().locationIds)
 
         // The favorites manager saves a new set while this VM sits on the
         // back stack — the repository StateFlow is the change signal.
         favoritesApi.favoritesResult =
             FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12))))
         repository.save(studioSlugs = listOf("barrys"), locationIds = emptyList())
+        settleFilters()
 
-        assertEquals(2, scheduleApi.calls.size)
-        assertEquals(listOf(11, 12), scheduleApi.calls[1].locationIds)
+        assertEquals(2, scheduleApi.overviewCalls.size)
+        assertEquals(listOf(11, 12), scheduleApi.overviewCalls[1].locationIds)
+        assertEquals(listOf(11, 12), scheduleApi.pageCalls[1].locationIds)
         val state = vm.success()
         assertTrue(state.favoritesMode)
         assertTrue(state.hasFavorites)
@@ -193,14 +173,16 @@ class ScheduleViewModelFavoritesTest {
         )
         val repository = FavoritesRepository(favoritesApi)
         val vm = vm(scheduleApi, favoritesApi, repository)
-        assertEquals(1, scheduleApi.calls.size)
-        assertEquals(listOf(11), scheduleApi.calls.single().locationIds)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+        assertEquals(listOf(11), scheduleApi.overviewCalls.single().locationIds)
 
         favoritesApi.favoritesResult = FavoritesDto()
         repository.save(studioSlugs = emptyList(), locationIds = emptyList())
+        settleFilters()
 
-        assertEquals(2, scheduleApi.calls.size)
-        assertNull(scheduleApi.calls[1].locationIds)
+        assertEquals(2, scheduleApi.overviewCalls.size)
+        assertNull(scheduleApi.overviewCalls[1].locationIds)
+        assertNull(scheduleApi.pageCalls[1].locationIds)
         val state = vm.success()
         assertFalse(state.favoritesMode)
         assertFalse(state.hasFavorites)
@@ -212,11 +194,13 @@ class ScheduleViewModelFavoritesTest {
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11)))),
         )
         val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(1, scheduleApi.calls.size)
+        assertEquals(1, scheduleApi.overviewCalls.size)
 
         vm.enterFavoritesMode()
+        settleFilters()
 
-        assertEquals(1, scheduleApi.calls.size) // no redundant reload
+        assertEquals(1, scheduleApi.overviewCalls.size) // no redundant refetch
+        assertEquals(1, scheduleApi.pageCalls.size)
         assertTrue(vm.success().favoritesMode)
     }
 
@@ -224,26 +208,27 @@ class ScheduleViewModelFavoritesTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
         val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(1, scheduleApi.calls.size)
+        assertEquals(1, scheduleApi.overviewCalls.size)
 
         vm.enterFavoritesMode()
+        settleFilters()
 
-        assertEquals(1, scheduleApi.calls.size)
+        assertEquals(1, scheduleApi.overviewCalls.size)
         assertFalse(vm.success().favoritesMode)
     }
 
-    @Test fun `knownStudios comes from the studio directory when present`() = runTest {
+    @Test fun `knownStudios comes from the overview studios block sorted by name`() = runTest {
         val scheduleApi = FakeScheduleApi()
-        val favoritesApi = FakeFavoritesApi(
-            studiosResult = listOf(
-                StudioDto(id = 2, slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A"),
-                StudioDto(id = 1, slug = "barrys", name = "Barry's", primaryColor = "#F65713"),
-            ),
-        )
-        val vm = vm(scheduleApi, favoritesApi)
+        scheduleApi.overviewResult = {
+            ScheduleOverviewDto(
+                studios = listOf(
+                    OverviewStudioDto(id = 2, slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A"),
+                    OverviewStudioDto(id = 1, slug = "barrys", name = "Barry's", primaryColor = "#F65713"),
+                ),
+            )
+        }
+        val vm = vm(scheduleApi, FakeFavoritesApi())
 
-        // The schedule response is empty, so a cache-derived list would have no
-        // chips at all — the directory must drive them, sorted by name.
         val state = vm.success()
         assertEquals(
             listOf(
@@ -251,6 +236,36 @@ class ScheduleViewModelFavoritesTest {
                 StudioChipData(slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A"),
             ),
             state.knownStudios,
+        )
+    }
+
+    @Test fun `tier-2 location chips derive from the soloed overview studio`() = runTest {
+        val scheduleApi = FakeScheduleApi()
+        scheduleApi.overviewResult = {
+            ScheduleOverviewDto(
+                studios = listOf(
+                    OverviewStudioDto(
+                        id = 2, slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A",
+                        locations = listOf(
+                            OverviewLocationDto(id = 45, name = "YO BK Williamsburg", timezone = "America/New_York"),
+                            OverviewLocationDto(id = 44, name = "YO BK Cobble Hill", timezone = "America/New_York"),
+                        ),
+                    ),
+                ),
+            )
+        }
+        val vm = vm(scheduleApi, FakeFavoritesApi())
+        assertTrue(vm.success().knownLocationsForBrand.isEmpty()) // nothing soloed yet
+
+        vm.toggleStudio("yo-bk")
+
+        // Sorted by full name; labels are brand-prefix-stripped + uppercased.
+        assertEquals(
+            listOf(
+                LocationChipData(id = 44, shortLabel = "COBBLE HILL"),
+                LocationChipData(id = 45, shortLabel = "WILLIAMSBURG"),
+            ),
+            vm.success().knownLocationsForBrand,
         )
     }
 }

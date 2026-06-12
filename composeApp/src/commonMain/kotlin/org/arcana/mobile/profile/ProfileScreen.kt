@@ -62,6 +62,7 @@ import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.IconCircle
@@ -513,16 +514,7 @@ private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) 
                 .background(Moss),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = idx.toString().padStart(2, '0'),
-                style = TextStyle(
-                    fontFamily = Arcana.fonts.display,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    letterSpacing = 0.06.em,
-                    color = Lime,
-                ),
-            )
+            CircleMonogram(text = idx.toString().padStart(2, '0'), fontSize = 14, color = Lime)
         }
         Text(
             text = label,

@@ -36,6 +36,8 @@ import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LoginRequest
 import org.arcana.mobile.data.MembershipMeDto
 import org.arcana.mobile.data.MyBookingsDto
+import org.arcana.mobile.data.ScheduleOverviewDto
+import org.arcana.mobile.data.SchedulePageDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
@@ -166,6 +168,58 @@ class ArcanaApiClient(
                 ?.let { parameter("location_id", it.joinToString(",")) }
             modality?.let { parameter("modality", it) }
             if (availableOnly) parameter("available_only", "true")
+        }.body()
+    }
+
+    /**
+     * `GET /api/v1/classes/overview/` — the window's chip-rail data (Partners +
+     * locations). Filter-independent: the server builds the studios block from
+     * the unfiltered window so chips never vanish while a filter is active.
+     */
+    override suspend fun fetchOverview(
+        from: LocalDate,
+        to: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        modality: String?,
+        availableOnly: Boolean,
+    ): ScheduleOverviewDto {
+        return client.get(v1("classes/overview/")) {
+            parameter("from", from.toString())
+            parameter("to", to.toString())
+            studioSlugs?.takeIf { it.isNotEmpty() }
+                ?.let { parameter("studio_slug", it.joinToString(",")) }
+            locationIds?.takeIf { it.isNotEmpty() }
+                ?.let { parameter("location_id", it.joinToString(",")) }
+            modality?.let { parameter("modality", it) }
+            if (availableOnly) parameter("available_only", "true")
+        }.body()
+    }
+
+    /**
+     * `GET /api/v1/classes/sessions/` — one keyset page of [date]'s sessions
+     * (server scopes to a single day via `from == to`). Pass the previous
+     * page's `next_cursor` to continue; omit for page 1. `limit` is left to
+     * the server default (50).
+     */
+    override suspend fun fetchSessionsPage(
+        date: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        modality: String?,
+        availableOnly: Boolean,
+        cursor: String?,
+    ): SchedulePageDto {
+        return client.get(v1("classes/sessions/")) {
+            parameter("from", date.toString())
+            parameter("to", date.toString())
+            studioSlugs?.takeIf { it.isNotEmpty() }
+                ?.let { parameter("studio_slug", it.joinToString(",")) }
+            locationIds?.takeIf { it.isNotEmpty() }
+                ?.let { parameter("location_id", it.joinToString(",")) }
+            modality?.let { parameter("modality", it) }
+            if (availableOnly) parameter("available_only", "true")
+            cursor?.let { parameter("cursor", it) }
         }.body()
     }
 

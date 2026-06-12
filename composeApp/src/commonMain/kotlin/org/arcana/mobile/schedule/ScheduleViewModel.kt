@@ -4,24 +4,28 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.ktor.client.plugins.ResponseException
 import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
-import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LocationBriefDto
+import org.arcana.mobile.data.OverviewStudioDto
 import org.arcana.mobile.data.ScheduleSessionDto
-import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
-import org.arcana.mobile.networking.FavoritesApi
+import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.ScheduleApi
 
 /**
@@ -31,6 +35,9 @@ import org.arcana.mobile.networking.ScheduleApi
  * - `locationIds` is only meaningful when exactly one brand is soloed
  *   (the two-tier filter from `design_handoff_schedule_v2`). Whenever the
  *   brand selection changes, locations are cleared by [ScheduleViewModel].
+ *
+ * Since Phase 2 every filter narrows SERVER-side: a change feeds the
+ * debounced refetch pipeline rather than refiltering a client cache.
  */
 data class ScheduleFilters(
     val studioSlugs: Set<String> = emptySet(),
@@ -38,21 +45,34 @@ data class ScheduleFilters(
     val availableOnly: Boolean = false,
 )
 
+/** One day's cursor-paged session cache. */
+data class DayState(
+    val sessions: List<ScheduleSessionDto> = emptyList(),
+    /** Opaque keyset cursor for the next page; null ⇒ no more pages. */
+    val nextCursor: String? = null,
+    /** Page 1 has been fetched for the current filter set. */
+    val loaded: Boolean = false,
+    /** A next-page fetch is in flight (footer loader + loadMore guard). */
+    val loadingMore: Boolean = false,
+)
+
 sealed interface ScheduleUiState {
     data object Loading : ScheduleUiState
     data class Success(
-        /** Today through today + 13 days, oldest first. */
+        /** Today through today + 13 days, oldest first ([ScheduleViewModel.ScheduleTimeZone] dates). */
         val days: List<LocalDate>,
-        /** Map from each date in [days] to the sessions on that date AFTER filters. */
-        val sessionsByDay: Map<LocalDate, List<ScheduleSessionDto>>,
-        /** Total session count per day BEFORE filters — drives the
-         *  "5 of 10 classes" subtitle in the day banner. */
-        val totalCountByDay: Map<LocalDate, Int>,
-        /** Distinct studios appearing in the unfiltered 14-day fetch, for chip rendering. */
+        /** The day whose sessions are on screen — owned by the VM so it
+         *  survives navigation and so refetches target the right day. */
+        val selectedDate: LocalDate,
+        /** Per-day paged session caches. Only days the member has visited
+         *  under the current filter set have an entry. */
+        val dayStates: Map<LocalDate, DayState>,
+        /** True from a filter mutation until its debounced refetch settles —
+         *  the screen dims the stale list instead of flashing the loader. */
+        val refreshingFilters: Boolean,
+        /** Every Partner in the window (from the overview's `studios` block,
+         *  which ignores studio/location narrowing — chips never vanish). */
         val knownStudios: List<StudioChipData>,
-        /** Distinct location count across the entire unfiltered 14-day fetch.
-         *  Drives the "N STUDIOS · M SITES" header chip. */
-        val siteCount: Int,
         /** Locations to surface in the tier-2 sub-row. Non-empty iff exactly
          *  one brand is soloed; otherwise the screen hides the sub-row. */
         val knownLocationsForBrand: List<LocationChipData>,
@@ -66,6 +86,14 @@ sealed interface ScheduleUiState {
         /** False when the favorites fetch failed (state unknown) — the nudge
          *  must not show to a member who may already have favorites. */
         val favoritesKnown: Boolean,
+        /** sessionId → live booking status (requested/confirmed/…) for every
+         *  upcoming booking the member holds. Lets a row show an "I'm in this
+         *  one" status pill. BEST-EFFORT and STALE-TOLERANT: refreshed only on
+         *  init and pull-to-refresh, and left empty if the bookings fetch
+         *  fails — so a booking made elsewhere (e.g. the class-detail sheet)
+         *  surfaces here only after the next refresh, never blocking or
+         *  breaking the schedule itself. */
+        val bookedSessions: Map<Int, String> = emptyMap(),
     ) : ScheduleUiState
     data class Error(val message: String) : ScheduleUiState
 }
@@ -81,28 +109,31 @@ data class StudioChipData(
 data class LocationChipData(
     val id: Int,
     /** The display label, e.g. "WILLIAMSBURG" — already uppercased and
-     *  brand-prefix-stripped. See [shortLabel] for the derivation. */
+     *  brand-prefix-stripped. See [locationShortLabel] for the derivation. */
     val shortLabel: String,
 )
 
 /**
- * Display-friendly short location label, derived from `name`. The backend
- * names locations like "YO BK Williamsburg"; we strip the studio prefix so
- * chips and row metadata can read "WILLIAMSBURG" rather than repeating the
- * brand. Shared helper so VM (chip generation) and screens (row + detail
- * meta lines) all produce the same string.
+ * Display-friendly short location label. The backend names locations like
+ * "YO BK Williamsburg"; we strip the studio prefix so chips and row metadata
+ * can read "WILLIAMSBURG" rather than repeating the brand. Shared string core
+ * so the VM (overview-fed chip generation) and the screens (row + detail meta
+ * lines) all produce the same label.
  */
-internal fun LocationBriefDto.shortLabel(): String {
-    val raw = name.removePrefix(studio.name).trim()
+internal fun locationShortLabel(studioName: String, locationName: String): String {
+    val raw = locationName.removePrefix(studioName).trim()
         .removePrefix("·").trim()
         .removePrefix("-").trim()
-    return (raw.ifEmpty { name }).uppercase()
+    return (raw.ifEmpty { locationName }).uppercase()
 }
 
+internal fun LocationBriefDto.shortLabel(): String = locationShortLabel(studio.name, name)
+
+@OptIn(FlowPreview::class)
 class ScheduleViewModel(
     private val api: ScheduleApi,
     private val favoritesRepository: FavoritesRepository,
-    private val favoritesApi: FavoritesApi,
+    private val bookingApi: BookingApi,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ScheduleUiState>(ScheduleUiState.Loading)
@@ -112,29 +143,40 @@ class ScheduleViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
-    /**
-     * Unfiltered 14-day result, kept around so toggling chips refilters
-     * client-side for studio chips (cheap, instant) while `availableOnly`
-     * still drives a re-fetch (because visibility-strip is a server contract).
-     *
-     * Studios chips that the user has *enabled* are applied client-side;
-     * the `availableOnly` toggle is sent up to the server because it changes
-     * which rows the server even returns.
-     */
-    private var unfilteredCache: List<ScheduleSessionDto> = emptyList()
+    // ── Source-of-truth fields. publish() snapshots them into ONE Success
+    //    assignment; refetchForFilters() only mutates them after both network
+    //    results are in (atomic apply — a cancelled refetch leaves no
+    //    half-applied state).
     private var days: List<LocalDate> = emptyList()
+    private var selectedDate: LocalDate = Clock.System.todayIn(ScheduleTimeZone)
+    private var dayStates: Map<LocalDate, DayState> = emptyMap()
+    private var overviewStudios: List<OverviewStudioDto> = emptyList()
     private var filters: ScheduleFilters = ScheduleFilters()
+    private var refreshingFilters: Boolean = false
 
     /** True while the schedule is server-filtered to the member's favorite
      *  locations. Defaults on at startup when the member has favorites;
      *  toggling any explicit studio filter exits the mode. */
     private var favoritesMode: Boolean = false
 
-    /** Full active-Partner directory (`GET /studios/`) so the chip rail shows
-     *  every Partner — not just those with sessions in the current (possibly
-     *  favorites-narrowed) fetch. Empty if the fetch failed; publish() falls
-     *  back to the cache-derived list. */
-    private var studioDirectory: List<StudioDto> = emptyList()
+    /** sessionId → live booking status for the member's upcoming bookings.
+     *  Source-of-truth for the row "already booked" pill; snapshotted into
+     *  Success by [publish]. Best-effort — see [refreshBookedSessions]. */
+    private var bookedSessions: Map<Int, String> = emptyMap()
+
+    /** Bumped by every settled-filter refetch and pull-to-refresh. In-flight
+     *  page fetches snapshot it and drop their result if it moved — a stale
+     *  loadMore must never append old-filter rows to a new-filter list. */
+    private var fetchGeneration: Int = 0
+
+    /** Days with a page-1 fetch in flight — dedupes rapid re-taps of an
+     *  unloaded day chip. */
+    private val loadingDays = mutableSetOf<LocalDate>()
+
+    /** Monotonic filter-change counter feeding the debounced refetch
+     *  pipeline. A StateFlow (not SharedFlow) so rapid bumps conflate —
+     *  debounce only ever needs the latest epoch. */
+    private val filterEpoch = MutableStateFlow(0)
 
     /** The favorites value this VM last acted on — lets the repository
      *  collector below ignore the init-time value and only react to changes
@@ -142,25 +184,35 @@ class ScheduleViewModel(
     private var lastAppliedFavorites: FavoritesDto? = null
 
     init {
+        // Debounced filter pipeline. drop(1) skips the StateFlow's replay of
+        // the initial epoch — the cold-start fetch below runs immediately
+        // rather than waiting out the debounce. collectLatest cancels an
+        // in-flight refetch when another settles in behind it; that's safe
+        // because refetchForFilters applies its result atomically.
         viewModelScope.launch {
-            _uiState.value = ScheduleUiState.Loading
+            filterEpoch
+                .drop(1)
+                .debounce(FILTER_DEBOUNCE_MS)
+                .collectLatest { refetchForFilters() }
+        }
+        // Bookings ride their OWN job, independent of the schedule fetch: a
+        // slow or failing /bookings/me call must never block (or break) the
+        // list from rendering. When it lands, republish over whatever Success
+        // is already on screen so the "already booked" pills appear.
+        viewModelScope.launch {
+            refreshBookedSessions()
+            if (_uiState.value is ScheduleUiState.Success) publish()
+        }
+        viewModelScope.launch {
             // Favorites first — they decide whether the first fetch is
             // narrowed to the member's locations.
             val favorites = favoritesRepository.refresh()
             if (favorites != null && !favorites.isEmpty()) favoritesMode = true
             lastAppliedFavorites = favorites
-            try {
-                studioDirectory = favoritesApi.fetchStudios()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Tolerated: chips fall back to the cache-derived list.
-                logWarning("ScheduleViewModel", e.message ?: "studio directory fetch failed")
-            }
-            fetch()
+            refetchForFilters()
             // This VM outlives navigation (session-scoped store), so react to
             // favorites saved in the manager: re-enter (or exit) favorites
-            // mode and re-fetch with the new scope. The collector replays the
+            // mode and refetch with the new scope. The collector replays the
             // current StateFlow value first; `lastAppliedFavorites` makes that
             // initial replay a no-op.
             favoritesRepository.favorites.collect { favs ->
@@ -169,120 +221,153 @@ class ScheduleViewModel(
                 lastAppliedFavorites = favs
                 favoritesMode = !favs.isEmpty()
                 filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-                reload()
+                onFiltersChanged()
             }
         }
     }
 
-    /** Force a network re-fetch using the current filter state. Flashes the
-     *  shimmer placeholder — for first load, filter changes, and error-retry. */
+    /** Full re-fetch with the shimmer placeholder — error-retry path. */
     fun reload() {
         viewModelScope.launch {
             _uiState.value = ScheduleUiState.Loading
-            fetch()
+            refetchForFilters()
         }
     }
 
-    /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
-     *  current content visible (and untouched on a transient failure). */
+    /** Pull-to-refresh: re-fetch the overview + the selected day's first page
+     *  without flashing the shimmer, keeping the current content visible (and
+     *  untouched on a transient failure). Other days' caches are dropped and
+     *  the generation bumps, so any in-flight loadMore result is discarded. */
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                fetch()
+                // Keep the "already booked" pills fresh: a booking made on the
+                // class-detail sheet (or cancelled elsewhere) shows after a
+                // pull-to-refresh. Best-effort — failure leaves the map intact.
+                refreshBookedSessions()
+                refetchForFilters()
             } finally {
                 _isRefreshing.value = false
             }
         }
     }
 
-    private suspend fun fetch() {
-        try {
-            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-            days = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
-            // In favorites mode the fetch narrows server-side to the favorite
-            // locations. The takeIf guard matters: a studio-grain favorite with
-            // zero active locations must NOT become an empty `location_id=`
-            // param — the server treats empty as no-filter anyway, so we simply
-            // don't send it (show-all is correct: the favorite matches nothing).
-            val favoriteLocationIds: List<Int>? = if (favoritesMode) {
-                favoritesRepository.favorites.value
-                    ?.expandedLocationIds()
-                    ?.takeIf { it.isNotEmpty() }
-            } else {
-                null
-            }
-            val sessions = api.fetchSchedule(
-                from = today,
-                to = today.plus(WINDOW_DAYS - 1, DateTimeUnit.DAY),
-                locationIds = favoriteLocationIds,
-                availableOnly = filters.availableOnly,
-            )
-            unfilteredCache = sessions
+    /** Refresh just the "already booked" pills — called when the member lands
+     *  back on the Schedule (e.g. popping back from ClassDetail after booking
+     *  or cancelling). Best-effort and non-blocking: republishes over the
+     *  existing Success so a stale pill clears without flashing the loader, and
+     *  a bookings outage leaves the list untouched. */
+    fun refreshBookings() {
+        viewModelScope.launch {
+            refreshBookedSessions()
+            if (_uiState.value is ScheduleUiState.Success) publish()
+        }
+    }
+
+    /** Switch the visible day. The chip rail is already populated from the
+     *  overview, so a day tap NEVER refetches the overview — it only pulls
+     *  page 1 of that day if it isn't cached for the current filter set. */
+    fun selectDay(date: LocalDate) {
+        if (date != selectedDate) {
+            selectedDate = date
             publish()
-        } catch (e: ResponseException) {
-            val code = e.response.status.value
-            logWarning("ScheduleViewModel", e.message ?: "HTTP $code")
-            // On a refresh failure keep whatever's already on screen rather than
-            // replacing good content with a full-screen error.
-            if (_uiState.value !is ScheduleUiState.Success) {
-                _uiState.value = ScheduleUiState.Error("server error $code")
-            }
-        } catch (e: Exception) {
-            logWarning("ScheduleViewModel", e.message ?: "Unknown error")
-            if (_uiState.value !is ScheduleUiState.Success) {
-                _uiState.value = ScheduleUiState.Error("server error")
+        }
+        // Falls through on a same-day re-tap too: that's the natural retry
+        // gesture after a failed page-1 fetch. ensureSelectedDayLoaded
+        // no-ops when the day is already cached or in flight.
+        ensureSelectedDayLoaded()
+    }
+
+    /** Fetch the next page of the selected day. Guarded: needs a loaded page 1,
+     *  a non-null cursor, and no page already in flight — the screen may call
+     *  this freely from its scroll trigger. */
+    fun loadMore() {
+        val date = selectedDate
+        val day = dayStates[date] ?: return
+        if (!day.loaded || day.nextCursor == null || day.loadingMore) return
+        dayStates = dayStates + (date to day.copy(loadingMore = true))
+        publish()
+        val generation = fetchGeneration
+        viewModelScope.launch {
+            try {
+                val page = api.fetchSessionsPage(
+                    date = date,
+                    studioSlugs = effectiveStudioSlugs(),
+                    locationIds = effectiveLocationIds(),
+                    availableOnly = filters.availableOnly,
+                    cursor = day.nextCursor,
+                )
+                // Stale guard: a filter refetch or refresh landed while this
+                // page was in flight — its rows belong to a dead filter set.
+                if (generation != fetchGeneration) return@launch
+                val current = dayStates[date] ?: return@launch
+                dayStates = dayStates + (date to current.copy(
+                    // distinctBy: the screen keys rows on session id and
+                    // LazyColumn CRASHES on duplicate keys — one line of
+                    // insurance against a server-side cursor-overlap bug.
+                    sessions = (current.sessions + page.toSessions()).distinctBy { it.id },
+                    nextCursor = page.nextCursor,
+                    loadingMore = false,
+                ))
+                publish()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logWarning("ScheduleViewModel", e.message ?: "loadMore failed")
+                if (generation == fetchGeneration) {
+                    dayStates[date]?.let {
+                        dayStates = dayStates + (date to it.copy(loadingMore = false))
+                        publish()
+                    }
+                }
             }
         }
     }
 
     /** Re-enter favorites mode (the FAVORITES chip). No-op unless the member
      *  actually has favorites. Clears explicit studio/location filters — the
-     *  favorites narrow happens server-side, so this re-fetches. */
+     *  favorites narrow happens server-side via the refetch pipeline. */
     fun enterFavoritesMode() {
-        if (favoritesMode) return // already active — don't flash a pointless reload
+        if (favoritesMode) return // already active — don't schedule a pointless refetch
         val favorites = favoritesRepository.favorites.value
         if (favorites == null || favorites.isEmpty()) return
         favoritesMode = true
         filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-        reload()
+        onFiltersChanged()
     }
 
-    /** Toggle a studio in/out of the chip filter. Re-renders client-side; no network.
-     *  Always clears any tier-2 location selection — locations only make sense
-     *  when exactly one brand is soloed, and the user's brand-toggle has just
-     *  invalidated that assumption.
+    /** Toggle a studio in/out of the chip filter. Always clears any tier-2
+     *  location selection — locations only make sense when exactly one brand
+     *  is soloed, and the user's brand-toggle has just invalidated that.
      *
-     *  From favorites mode, tapping a studio chip exits the mode and solos that
-     *  studio: the cache only holds favorite locations, so this re-fetches the
-     *  full window rather than refiltering client-side. */
+     *  From favorites mode, tapping a studio chip exits the mode and solos
+     *  that studio. */
     fun toggleStudio(slug: String) {
         if (favoritesMode) {
             favoritesMode = false
             filters = ScheduleFilters(studioSlugs = setOf(slug), availableOnly = filters.availableOnly)
-            reload()
-            return
+        } else {
+            val next = filters.studioSlugs.toMutableSet().apply {
+                if (!add(slug)) remove(slug)
+            }
+            filters = filters.copy(studioSlugs = next, locationIds = emptySet())
         }
-        val next = filters.studioSlugs.toMutableSet().apply {
-            if (!add(slug)) remove(slug)
-        }
-        filters = filters.copy(studioSlugs = next, locationIds = emptySet())
-        publish()
+        onFiltersChanged()
     }
 
     /** Clear all studio + location selections (the "ALL" chip behavior).
-     *  From favorites mode this exits the mode — the cache only holds the
-     *  favorites-narrowed window, so showing "all" needs a re-fetch. */
+     *  From favorites mode this exits the mode. */
     fun clearStudios() {
         if (favoritesMode) {
             favoritesMode = false
             filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-            reload()
+            onFiltersChanged()
             return
         }
         if (filters.studioSlugs.isEmpty() && filters.locationIds.isEmpty()) return
         filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-        publish()
+        onFiltersChanged()
     }
 
     /** Toggle a location in/out of the tier-2 sub-filter. No-op unless exactly
@@ -293,106 +378,240 @@ class ScheduleViewModel(
             if (!add(id)) remove(id)
         }
         filters = filters.copy(locationIds = next)
-        publish()
+        onFiltersChanged()
     }
 
     /** Clear all location selections (the tier-2 "ALL" chip). */
     fun clearLocations() {
         if (filters.locationIds.isEmpty()) return
         filters = filters.copy(locationIds = emptySet())
-        publish()
+        onFiltersChanged()
     }
 
-    /** Toggle `available_only`. Re-fetches because the server applies this filter. */
+    /** Toggle `available_only` — server-side like everything else now. */
     fun toggleAvailableOnly() {
         filters = filters.copy(availableOnly = !filters.availableOnly)
-        reload()
+        onFiltersChanged()
+    }
+
+    /** Every filter mutation funnels here: the chips (and the dim) update
+     *  instantly, while the actual refetch rides the debounced pipeline so
+     *  rapid toggling coalesces into one settled overview + page-1 pair. */
+    private fun onFiltersChanged() {
+        refreshingFilters = true
+        // Only republish over existing content — on a cold start (or from the
+        // Error screen) there is nothing to dim; the pipeline's refetch will
+        // establish the state.
+        if (_uiState.value is ScheduleUiState.Success) publish()
+        filterEpoch.value += 1
     }
 
     /**
-     * Build the Success state from the cached fetch + current filters.
-     *
-     * - Studio + location chips filter client-side from `unfilteredCache`.
-     * - `availableOnly` is already applied server-side at fetch time.
-     * - `totalCountByDay` is computed from the unfiltered cache so the day
-     *   banner can show "N of M classes" even when filters are active.
-     * - Tier-2 location chips are only populated when exactly one brand is
-     *   soloed — otherwise the screen hides the sub-row entirely.
+     * The settled refetch: overview + page 1 of the selected day, in parallel,
+     * with the current filter scope. On success the WHOLE Success is rebuilt
+     * and assigned once — collectLatest may cancel this mid-flight, and a
+     * half-applied state must be impossible. All other days' caches drop
+     * (they were fetched under the old filters) and the generation bumps so
+     * stale in-flight page fetches discard themselves.
      */
-    private fun publish() {
-        val tz = TimeZone.currentSystemDefault()
-
-        // Chip rail studios: prefer the full Partner directory so every active
-        // Partner gets a chip even when the current fetch is favorites-narrowed
-        // (or a Partner simply has no sessions in the window). Fall back to the
-        // cache-derived list if the directory fetch failed.
-        val knownStudios = if (studioDirectory.isNotEmpty()) {
-            studioDirectory
-                .sortedBy { it.name }
-                .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
-        } else {
-            unfilteredCache
-                .map { it.location.studio }
-                .distinctBy { it.slug }
-                .sortedBy { it.name }
-                .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
+    private suspend fun refetchForFilters() {
+        val generation = ++fetchGeneration
+        try {
+            val today = Clock.System.todayIn(ScheduleTimeZone)
+            val newDays = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
+            val targetDate = if (selectedDate in newDays) selectedDate else today
+            val studioSlugs = effectiveStudioSlugs()
+            val locationIds = effectiveLocationIds()
+            val availableOnly = filters.availableOnly
+            val (overview, page) = coroutineScope {
+                val overviewDeferred = async {
+                    api.fetchOverview(
+                        from = newDays.first(),
+                        to = newDays.last(),
+                        studioSlugs = studioSlugs,
+                        locationIds = locationIds,
+                        availableOnly = availableOnly,
+                    )
+                }
+                val pageDeferred = async {
+                    api.fetchSessionsPage(
+                        date = targetDate,
+                        studioSlugs = studioSlugs,
+                        locationIds = locationIds,
+                        availableOnly = availableOnly,
+                    )
+                }
+                overviewDeferred.await() to pageDeferred.await()
+            }
+            // Stale-result guard: refresh() invokes this OUTSIDE the
+            // collectLatest pipeline, so a chip tap during a slow
+            // pull-to-refresh can run a newer refetch to completion first.
+            // If the generation moved while we awaited, these results are
+            // stale — drop them rather than overwriting the newer state.
+            if (generation != fetchGeneration) return
+            // ── Atomic apply: no suspension below this line. ──
+            days = newDays
+            if (selectedDate !in newDays) selectedDate = today
+            overviewStudios = overview.studios
+            dayStates = mapOf(
+                targetDate to DayState(
+                    sessions = page.toSessions(),
+                    nextCursor = page.nextCursor,
+                    loaded = true,
+                ),
+            )
+            refreshingFilters = false
+            publish()
+            // If the member switched days while this refetch was in flight,
+            // the page we fetched isn't the selected one — pull it now (under
+            // the new generation).
+            if (dayStates[selectedDate]?.loaded != true) ensureSelectedDayLoaded()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ResponseException) {
+            val code = e.response.status.value
+            logWarning("ScheduleViewModel", e.message ?: "HTTP $code")
+            // Same staleness rule as the success path: a stale refetch's
+            // failure must not clear a newer mutation's dim or emit Error
+            // over newer state.
+            if (generation == fetchGeneration) applyRefetchFailure("server error $code")
+        } catch (e: Exception) {
+            logWarning("ScheduleViewModel", e.message ?: "Unknown error")
+            if (generation == fetchGeneration) applyRefetchFailure("server error")
         }
+    }
+
+    /** Cold-start (or error-retry) failure → full-screen Error; failure with
+     *  content already on screen → keep the content, just stop the dim. */
+    private fun applyRefetchFailure(message: String) {
+        if (_uiState.value is ScheduleUiState.Success) {
+            refreshingFilters = false
+            publish()
+        } else {
+            _uiState.value = ScheduleUiState.Error(message)
+        }
+    }
+
+    /** Page-1 fetch for the selected day if it isn't cached (or already in
+     *  flight) under the current filter set. */
+    private fun ensureSelectedDayLoaded() {
+        val date = selectedDate
+        if (dayStates[date]?.loaded == true) return
+        if (!loadingDays.add(date)) return
+        val generation = fetchGeneration
+        viewModelScope.launch {
+            try {
+                val page = api.fetchSessionsPage(
+                    date = date,
+                    studioSlugs = effectiveStudioSlugs(),
+                    locationIds = effectiveLocationIds(),
+                    availableOnly = filters.availableOnly,
+                )
+                // Filters/refresh moved on while this was in flight — the
+                // settled refetch owns the day caches now.
+                if (generation != fetchGeneration) return@launch
+                dayStates = dayStates + (date to DayState(
+                    sessions = page.toSessions(),
+                    nextCursor = page.nextCursor,
+                    loaded = true,
+                ))
+                publish()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Keep whatever's on screen; the tapped day simply stays in
+                // its loading placeholder until a retry path (refresh/filter).
+                logWarning("ScheduleViewModel", e.message ?: "day page fetch failed")
+            } finally {
+                loadingDays.remove(date)
+            }
+        }
+    }
+
+    /** In favorites mode the fetches narrow server-side to the favorite
+     *  locations. The takeIf guard matters: a studio-grain favorite with zero
+     *  active locations must NOT become an empty `location_id=` param — the
+     *  server treats empty as no-filter anyway, so we simply don't send it
+     *  (show-all is correct: the favorite matches nothing). */
+    private fun effectiveLocationIds(): List<Int>? = if (favoritesMode) {
+        favoritesRepository.favorites.value
+            ?.expandedLocationIds()
+            ?.takeIf { it.isNotEmpty() }
+    } else {
+        filters.locationIds.toList().takeIf { it.isNotEmpty() }
+    }
+
+    private fun effectiveStudioSlugs(): List<String>? =
+        if (favoritesMode) null else filters.studioSlugs.toList().takeIf { it.isNotEmpty() }
+
+    /** Best-effort fetch of the member's live bookings into [bookedSessions]
+     *  (sessionId → status), for the row "already booked" pill. TOLERATES
+     *  FAILURE: on any non-cancellation error we log and KEEP the prior map —
+     *  a bookings outage must never break or empty the schedule. The schedule
+     *  fetch never awaits this (it runs in its own init job + on refresh), so
+     *  a slow bookings call can't delay the list from rendering. */
+    private suspend fun refreshBookedSessions() {
+        try {
+            val bookings = bookingApi.myBookings()
+            bookedSessions = bookings.upcoming.associate { it.session.id to it.status }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Keep whatever map we had; the pill simply stays as-is until a
+            // later refresh succeeds.
+            logWarning("ScheduleViewModel", e.message ?: "myBookings fetch failed")
+        }
+    }
+
+    /** Snapshot the source-of-truth fields into one Success assignment. */
+    private fun publish() {
+        // Chip rail studios: the overview's `studios` block covers every
+        // Partner with a location in the window regardless of the active
+        // narrowing — chips never vanish as filters change.
+        val knownStudios = overviewStudios
+            .sortedBy { it.name }
+            .map { StudioChipData(slug = it.slug, name = it.name, primaryColor = it.primaryColor) }
 
         // Tier-2 location chips: only when one brand is soloed.
         val knownLocationsForBrand: List<LocationChipData> = if (filters.studioSlugs.size == 1) {
-            val soloed = filters.studioSlugs.single()
-            unfilteredCache
-                .map { it.location }
-                .filter { it.studio.slug == soloed }
-                .distinctBy { it.id }
-                .sortedBy { it.name }
-                .map { LocationChipData(id = it.id, shortLabel = it.shortLabel()) }
+            val soloedSlug = filters.studioSlugs.single()
+            overviewStudios.firstOrNull { it.slug == soloedSlug }
+                ?.let { studio ->
+                    studio.locations
+                        .sortedBy { it.name }
+                        .map { LocationChipData(id = it.id, shortLabel = locationShortLabel(studio.name, it.name)) }
+                }
+                .orEmpty()
         } else {
             emptyList()
         }
 
-        val filtered = unfilteredCache.filter { s ->
-            (filters.studioSlugs.isEmpty() || s.location.studio.slug in filters.studioSlugs) &&
-                (filters.locationIds.isEmpty() || s.location.id in filters.locationIds)
-        }
-
-        // Hide sessions that have already started. On the "today" column a class
-        // whose start time is in the past is non-actionable — there's no use case
-        // for opening it, and the detail fetch errors for a session that's already
-        // begun. Applied to both the count and the list so the day banner's
-        // "N classes" and the rail's dots reflect only what's still bookable.
-        // Future days are unaffected: the 14-day window starts at today, so no
-        // session on a later day can be before `now`.
-        val now = Clock.System.now()
-        fun ScheduleSessionDto.isUpcoming(): Boolean = Instant.parse(startAt) >= now
-
-        // Pre-bucket both unfiltered and filtered sessions by day so the
-        // screen can read counts in O(1) for the banner.
-        val totalByDay: Map<LocalDate, Int> = days.associateWith { date ->
-            unfilteredCache.count { it.isUpcoming() && Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
-        }
-        val byDay: Map<LocalDate, List<ScheduleSessionDto>> = days.associateWith { date ->
-            filtered.filter { it.isUpcoming() && Instant.parse(it.startAt).toLocalDateTime(tz).date == date }
-        }
-
-        val siteCount = unfilteredCache.map { it.location.id }.toSet().size
-
         _uiState.value = ScheduleUiState.Success(
             days = days,
-            sessionsByDay = byDay,
-            totalCountByDay = totalByDay,
+            selectedDate = selectedDate,
+            dayStates = dayStates,
+            refreshingFilters = refreshingFilters,
             knownStudios = knownStudios,
-            siteCount = siteCount,
             knownLocationsForBrand = knownLocationsForBrand,
             filters = filters,
             favoritesMode = favoritesMode,
             hasFavorites = favoritesRepository.favorites.value?.isEmpty() == false,
             favoritesKnown = favoritesRepository.favorites.value != null,
+            bookedSessions = bookedSessions,
         )
     }
 
     companion object {
         /** Matches the server's 14-day max window (spec §3.1). */
         const val WINDOW_DAYS: Int = 14
+
+        /** Quiet window after the last chip tap before the settled refetch fires. */
+        const val FILTER_DEBOUNCE_MS: Long = 250L
+
+        /** Mirrors `arcana-server/classes/filters.py`'s `DEFAULT_TZ`: the beta
+         *  is NYC-only, so the `today` anchor (and the server's day-window
+         *  boundaries) is America/New_York regardless of device timezone —
+         *  keeps the mobile day rail agreeing with the server's window. */
+        val ScheduleTimeZone: TimeZone = TimeZone.of("America/New_York")
     }
 }

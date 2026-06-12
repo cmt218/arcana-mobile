@@ -1,8 +1,11 @@
 package org.arcana.mobile.schedule
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,15 +31,18 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -43,11 +50,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.datetime.IllegalTimeZoneException
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
-import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
@@ -69,10 +78,12 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
+import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.StatusPill
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
@@ -84,21 +95,38 @@ private val FALLBACK_STUDIO_COLOR = Moss
 /** Sessions with <= 2 remaining spots are visually marked as "scarce". */
 private const val SCARCE_THRESHOLD = 2
 
-/** ISO-string Saver for LocalDate so the selected day survives navigation
- *  to a detail screen and back (and process death). The auto-saver in
- *  rememberSaveable only handles primitives + Strings, so non-primitive
- *  state types need an explicit Saver. */
-private val LocalDateSaver: Saver<LocalDate, String> = Saver(
-    save = { it.toString() },
-    restore = { LocalDate.parse(it) },
-)
+/** Fetch the next page once the user scrolls within this many items of the
+ *  bottom — early enough that pages usually land before the footer loader
+ *  is even visible. */
+private const val LOAD_MORE_LOOKAHEAD = 10
+
+/** Minimum horizontal drag distance to flip days via a swipe. */
+private val DAY_SWIPE_THRESHOLD = 56.dp
+
+/** Class-list fade on day change: start alpha + duration. */
+private const val DAY_FADE_FROM = 0.4f
+private const val DAY_FADE_MS = 200
+
+/**
+ * The day a horizontal swipe lands on, or null at the window's edges.
+ * `forward` (a left swipe) advances one day; otherwise steps back one. Pure
+ * so the bounds logic is unit-testable without the gesture plumbing.
+ */
+internal fun dayAfterSwipe(
+    days: List<LocalDate>,
+    selected: LocalDate,
+    forward: Boolean,
+): LocalDate? {
+    val idx = days.indexOf(selected)
+    if (idx < 0) return null
+    return days.getOrNull(if (forward) idx + 1 else idx - 1)
+}
 
 // ── Display helpers -----------------------------------------------------------
 
 private fun titleCase(name: String): String =
     name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
-private fun Month.abbr(): String = name.take(3)
 private fun LocalDate.weekdayAbbr(): String = dayOfWeek.name.take(3)
 
 /** "06:15" from a LocalTime — commonMain-safe (no String.format dependency). */
@@ -121,6 +149,20 @@ private fun parseHexColor(hex: String): Color? {
 
 private fun studioColorFor(primaryColor: String): Color =
     parseHexColor(primaryColor) ?: FALLBACK_STUDIO_COLOR
+
+/**
+ * Resolve a session's location timezone for display: a class shows its own
+ * local wall-clock (a 6 PM Williamsburg class reads "18:00" wherever the
+ * device is). Server timezone strings are IANA ids, but `TimeZone.of` throws
+ * on an unknown id — fall back to the schedule's anchor timezone rather than
+ * crash the screen on a bad row. Top-level + internal so it's unit-testable
+ * from commonTest.
+ */
+internal fun sessionTimeZone(id: String): TimeZone = try {
+    TimeZone.of(id)
+} catch (_: IllegalTimeZoneException) {
+    ScheduleViewModel.ScheduleTimeZone
+}
 
 // ── Capacity tier -------------------------------------------------------------
 
@@ -191,6 +233,14 @@ fun ScheduleScreen(
     val state by viewModel.uiState.collectAsState()
     val refreshing by viewModel.isRefreshing.collectAsState()
 
+    // Re-fetch the "already booked" pills each time the Schedule returns to the
+    // foreground — including popping back from ClassDetail after booking or
+    // cancelling — so a just-cancelled pill clears without a manual refresh.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshBookings()
+        onPauseOrDispose { }
+    }
+
     PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = viewModel::refresh,
@@ -214,7 +264,9 @@ fun ScheduleScreen(
 
 @Composable
 private fun LoadingPlaceholder() {
-    val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
+    // Same anchor tz as the VM so the month header can't disagree with the
+    // day rail that replaces it (device tz could differ near a month flip).
+    val today = remember { Clock.System.todayIn(ScheduleViewModel.ScheduleTimeZone) }
     Column(modifier = Modifier.fillMaxSize()) {
         Display(
             text = "${titleCase(today.month.name)}.",
@@ -268,31 +320,31 @@ private fun SuccessContent(
     onOpenClassDetail: (Int) -> Unit,
     onManageFavorites: () -> Unit = {},
 ) {
-    val tz = remember { TimeZone.currentSystemDefault() }
-    val today = remember { Clock.System.todayIn(tz) }
-    // rememberSaveable (vs plain remember) so the selected day survives
-    // navigation into ClassDetail and back — NavController preserves the
-    // saved-state bundle for each entry on the back stack.
-    var selectedDate by rememberSaveable(stateSaver = LocalDateSaver) {
-        mutableStateOf(today)
-    }
+    // Day selection lives in the ViewModel: it survives navigation via the
+    // session-scoped store, and the debounced refetch pipeline needs it.
+    val selectedDate = state.selectedDate
     // Session-scoped dismissal of the "choose favorites" nudge — survives
     // navigation away and back, resets on process restart. Fine for a nudge.
     var nudgeDismissed by rememberSaveable { mutableStateOf(false) }
 
-    val sessionsForSelected = state.sessionsByDay[selectedDate].orEmpty()
+    val dayState = state.dayStates[selectedDate]
+    val dayLoaded = dayState?.loaded == true
+    val sessionsForSelected = dayState?.sessions.orEmpty()
     // Recompute the time-of-day bucketing only when the selected day's
     // session list actually changes (otherwise every recomposition reparses).
+    // Bucketing uses each session's own location timezone — see
+    // [sessionTimeZone].
     val byBand: Map<TimeBand, List<ScheduleSessionDto>> = remember(sessionsForSelected) {
         sessionsForSelected.groupBy {
-            Instant.parse(it.startAt).toLocalDateTime(tz).time.timeBand()
+            Instant.parse(it.startAt)
+                .toLocalDateTime(sessionTimeZone(it.location.timezone))
+                .time.timeBand()
         }
     }
     val activeBands = remember(byBand) {
         TimeBand.values().filter { byBand[it]?.isNotEmpty() == true }
     }
 
-    val totalForSelected = state.totalCountByDay[selectedDate] ?: sessionsForSelected.size
     // The soloed brand drives the tier-2 sub-row's accent color (hairline + pin).
     val soloedStudio = remember(state.filters.studioSlugs, state.knownStudios) {
         if (state.filters.studioSlugs.size == 1) {
@@ -301,8 +353,65 @@ private fun SuccessContent(
         } else null
     }
 
+    // A quick fade-in of the class list whenever the day changes (swipe or
+    // chip tap) — a lightweight cue that the content swapped. Applied to the
+    // list items only, so the rail/chips never flicker.
+    val dayFade = remember { Animatable(1f) }
+    LaunchedEffect(state.selectedDate) {
+        dayFade.snapTo(DAY_FADE_FROM)
+        dayFade.animateTo(1f, tween(durationMillis = DAY_FADE_MS))
+    }
+
+    // Stale-while-refetch: from a chip tap until the debounced refetch settles
+    // the class-list portion dims (rail/chips stay full-opacity and
+    // interactive) and a compact loader pins between the chips and the list.
+    // Composed with the day-change fade so both effects coexist on the list.
+    val listAlpha = (if (state.refreshingFilters) 0.6f else 1f) * dayFade.value
+
+    // Load-more trigger: when the user scrolls within LOAD_MORE_LOOKAHEAD
+    // items of the bottom, ask for the next page. The VM fully guards
+    // loadMore() (loaded page 1, non-null cursor, none in flight), so
+    // over-calling from here is safe. Keyed on selectedDate so a day switch
+    // restarts the collector against the new list shape.
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, state.selectedDate) {
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to
+                listState.layoutInfo.totalItemsCount
+        }
+            .distinctUntilChanged()
+            .collect { (lastVisible, totalCount) ->
+                if (lastVisible != null && lastVisible >= totalCount - LOAD_MORE_LOOKAHEAD) {
+                    viewModel.loadMore()
+                }
+            }
+    }
+
+    // Side-to-side swipe over the list body navigates days. The horizontal
+    // rails (day chips, filter chips) are deeper in the tree and consume their
+    // own horizontal drags first; vertical drags go to the LazyColumn — so this
+    // only fires on a clear horizontal swipe over the class list. Keyed on the
+    // selected day so the closure always sees the current position.
+    val daySwipe = Modifier.pointerInput(state.days, state.selectedDate) {
+        val thresholdPx = DAY_SWIPE_THRESHOLD.toPx()
+        var accumulated = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { accumulated = 0f },
+            onDragCancel = { accumulated = 0f },
+            onDragEnd = {
+                val forward = accumulated <= -thresholdPx
+                val backward = accumulated >= thresholdPx
+                if (forward || backward) {
+                    dayAfterSwipe(state.days, state.selectedDate, forward)
+                        ?.let(viewModel::selectDay)
+                }
+            },
+        ) { _, dragAmount -> accumulated += dragAmount }
+    }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        modifier = Modifier.fillMaxSize().then(daySwipe),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item("title") {
@@ -324,38 +433,13 @@ private fun SuccessContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 state.days.forEachIndexed { i, date ->
-                    val count = state.sessionsByDay[date]?.size ?: 0
                     DayChip(
                         date = date,
                         label = if (i == 0) "TODAY" else "",
-                        count = count,
                         active = date == selectedDate,
-                        onClick = { selectedDate = date },
+                        onClick = { viewModel.selectDay(date) },
                     )
                 }
-            }
-        }
-
-        item("day-banner") {
-            Spacer(Modifier.height(20.dp))
-            Row(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Heading2(text = titleCase(selectedDate.dayOfWeek.name), size = 22, color = Ink)
-                // "5 of 10 classes" when filters narrow the day; just "10 classes"
-                // when nothing's filtered out. Totals come from the unfiltered cache
-                // so the second number doesn't tick down as the user toggles chips.
-                val countText = if (sessionsForSelected.size != totalForSelected) {
-                    "${sessionsForSelected.size} of $totalForSelected classes"
-                } else {
-                    "$totalForSelected classes"
-                }
-                Overline(
-                    text = "${selectedDate.day} ${selectedDate.month.abbr()} · $countText",
-                    size = 12, color = Ash,
-                )
             }
         }
 
@@ -461,11 +545,44 @@ private fun SuccessContent(
             }
         }
 
+        // Pinned between the chips and the list while a debounced filter
+        // refetch is in flight — pairs with the list dim below.
+        if (state.refreshingFilters) {
+            item("refreshing-filters") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DotMatrixLoaderCompact()
+                }
+            }
+        }
+
         item("filter-trailing-space") { Spacer(Modifier.height(16.dp)) }
 
-        if (sessionsForSelected.isEmpty()) {
+        if (!dayLoaded) {
+            // Page 1 of this day hasn't landed under the current filter set —
+            // loader in the list area only (header/rail/banner/chips stay).
+            item("day-loading") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 64.dp)
+                        .alpha(listAlpha),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    DotMatrixLoader()
+                }
+            }
+        } else if (sessionsForSelected.isEmpty()) {
             item("empty") {
-                Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(start = 24.dp, end = 24.dp, top = 16.dp)
+                        .alpha(listAlpha),
+                ) {
                     BodyText(
                         text = "No classes match your filters for this day.",
                         size = 14, color = Ash,
@@ -475,7 +592,11 @@ private fun SuccessContent(
         } else {
             activeBands.forEachIndexed { bandIdx, band ->
                 item("band-header-$band") {
-                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .alpha(listAlpha),
+                    ) {
                         if (bandIdx > 0) Spacer(Modifier.height(24.dp))
                         SectionRule(label = band.label)
                         Spacer(Modifier.height(8.dp))
@@ -485,15 +606,71 @@ private fun SuccessContent(
                     items = byBand[band].orEmpty(),
                     key = { session -> "row-${session.id}" },
                 ) { session ->
-                    Box(modifier = Modifier.padding(horizontal = 24.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .alpha(listAlpha),
+                    ) {
                         ClassRow(
-                            session, tz,
+                            session,
                             onClick = { onOpenClassDetail(session.id) },
+                            bookedStatus = state.bookedSessions[session.id],
                         )
                     }
                 }
             }
+            // Footer loader — present while more pages exist for this day.
+            // The scroll trigger above usually fetches before this scrolls
+            // into view, so it mostly reads as "the page is arriving".
+            if (dayState.nextCursor != null) {
+                item("load-more") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp)
+                            .alpha(listAlpha),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DotMatrixLoaderCompact()
+                    }
+                }
+            } else {
+                // The full day is loaded — a quiet brand full-stop so the
+                // bottom of the list reads as "that's all", not "still loading".
+                item("end-of-day") {
+                    EndOfDayMarker(
+                        weekday = titleCase(selectedDate.dayOfWeek.name),
+                        modifier = Modifier.alpha(listAlpha),
+                    )
+                }
+            }
         }
+    }
+}
+
+/** End-of-list footer for a fully-loaded day: three dots (center lit) over a
+ *  caption. The dot is the brand's repeating gesture — a centered triad reads
+ *  as a deliberate full-stop. */
+@Composable
+private fun EndOfDayMarker(weekday: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 28.dp, bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(3) { i ->
+                Box(
+                    Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(if (i == 1) Lime else Mist)
+                )
+            }
+        }
+        Overline(text = "That's everything for $weekday", size = 10, color = Ash)
     }
 }
 
@@ -503,13 +680,12 @@ private fun SuccessContent(
 private fun DayChip(
     date: LocalDate,
     label: String,
-    count: Int,
     active: Boolean,
     onClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
-            .size(width = 56.dp, height = 76.dp)
+            .size(width = 56.dp, height = 64.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(if (active) Moss else Paper)
             .border(1.dp, if (active) Moss else Mist, RoundedCornerShape(16.dp))
@@ -540,16 +716,6 @@ private fun DayChip(
                 color = if (active) Stone else Ink,
             ),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(minOf(count, 5)) {
-                Box(
-                    Modifier
-                        .size(4.dp)
-                        .clip(CircleShape)
-                        .background((if (active) Lime else MossLight).copy(alpha = if (active) 1f else 0.6f))
-                )
-            }
-        }
     }
 }
 
@@ -678,10 +844,17 @@ private fun LocationChip(
 @Composable
 private fun ClassRow(
     session: ScheduleSessionDto,
-    tz: TimeZone,
     onClick: () -> Unit = {},
+    /** Live booking status for this session (requested/confirmed/…), or null
+     *  when the member holds no booking on it. Non-null ⇒ a status pill on the
+     *  title line. */
+    bookedStatus: String? = null,
 ) {
-    val time = Instant.parse(session.startAt).toLocalDateTime(tz).time
+    // Display the class's local wall-clock — the session's own location
+    // timezone, not the device's (see [sessionTimeZone]).
+    val time = Instant.parse(session.startAt)
+        .toLocalDateTime(sessionTimeZone(session.location.timezone))
+        .time
     val studio = session.location.studio
     val sc = studioColorFor(studio.primaryColor)
     val available = session.arcanaSpotsAvailable
@@ -743,13 +916,26 @@ private fun ClassRow(
                 studioColor = sc,
             )
             Spacer(Modifier.height(4.dp))
-            BodyText(
-                text = session.template.name,
-                size = 16,
-                color = if (isFull) Ash else Ink,
-                weight = FontWeight.Medium,
+            // Title line. When the member already holds a live booking on this
+            // session we tuck a compact status pill in beside the title so the
+            // row reads "I'm in this one" at a glance. The title keeps weight(1f)
+            // so its own ellipsis behavior is unchanged; the pill stays intrinsic.
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BodyText(
+                    text = session.template.name,
+                    size = 16,
+                    color = if (isFull) Ash else Ink,
+                    weight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (bookedStatus != null) {
+                    StatusPill(bookedStatus)
+                }
+            }
             // Instructor on its own row. Previously it shared the meta line with
             // brand · location and was the first to ellipsize when the location
             // ran long; a dedicated line guarantees it always reads in full.

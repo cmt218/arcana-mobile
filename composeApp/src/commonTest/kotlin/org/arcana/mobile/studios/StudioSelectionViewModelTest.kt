@@ -135,12 +135,12 @@ class StudioSelectionViewModelTest {
     fun `save passes exactly the current selection to the api`() = runTest {
         val api = FakeApi(studios = listOf(solidcore, yobk))
         val viewModel = vm(api)
-        viewModel.toggleStudio("solidcore")
-        viewModel.toggleLocation("yo-bk", 7)
+        viewModel.toggleStudio("yo-bk")            // whole-Partner (studio grain)
+        viewModel.toggleLocation("solidcore", 41)  // one of two → partial (location grain)
         viewModel.save()
         val (slugs, locationIds) = api.updateCalls.single()
-        assertEquals(setOf("solidcore"), slugs.toSet())
-        assertEquals(setOf(7), locationIds.toSet())
+        assertEquals(setOf("yo-bk"), slugs.toSet())
+        assertEquals(setOf(41), locationIds.toSet())
         val s = ready(viewModel)
         assertTrue(s.saved)
         assertFalse(s.saving)
@@ -164,5 +164,32 @@ class StudioSelectionViewModelTest {
         val api = FakeApi(failFetch = true)
         val viewModel = vm(api)
         assertTrue(viewModel.uiState.value is StudioSelectionUiState.Error)
+    }
+
+    @Test
+    fun `selecting the only location of a single-location studio promotes to whole-Partner`() = runTest {
+        val api = FakeApi(studios = listOf(yobk))
+        val viewModel = vm(api)
+        viewModel.toggleLocation("yo-bk", 7)
+        val s = ready(viewModel)
+        assertEquals(setOf("yo-bk"), s.selectedStudioSlugs)
+        assertEquals(emptySet(), s.selectedLocationIds)
+    }
+
+    @Test
+    fun `selecting the last location of a multi-location studio promotes to whole-Partner`() = runTest {
+        val api = FakeApi(studios = listOf(solidcore))
+        val viewModel = vm(api)
+        viewModel.toggleLocation("solidcore", 41)
+        // One of two selected — still a partial, location-grain selection.
+        ready(viewModel).let {
+            assertEquals(emptySet(), it.selectedStudioSlugs)
+            assertEquals(setOf(41), it.selectedLocationIds)
+        }
+        viewModel.toggleLocation("solidcore", 42)
+        // The set is complete → promote, dropping the explicit picks.
+        val s = ready(viewModel)
+        assertEquals(setOf("solidcore"), s.selectedStudioSlugs)
+        assertEquals(emptySet(), s.selectedLocationIds)
     }
 }

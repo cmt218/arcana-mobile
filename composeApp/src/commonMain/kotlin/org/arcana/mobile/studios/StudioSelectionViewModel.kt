@@ -80,9 +80,17 @@ class StudioSelectionViewModel(
         }
     }
 
-    /** Individual-location toggle. Tapping a location while the whole Partner
-     *  is selected narrows: Partner off, just this location on. */
+    /** Individual-location toggle.
+     *
+     *  - Tapping a location while the whole Partner is selected narrows:
+     *    Partner off, just this location on.
+     *  - Tapping the last unselected location PROMOTES to a whole-Partner
+     *    selection — "all locations" is visually and semantically identical to
+     *    favoriting the Partner (and should pick up future locations too), so
+     *    we store it that way rather than as N individual picks. This is what
+     *    gives a single-location Partner the full treatment from one tap. */
     fun toggleLocation(studioSlug: String, locationId: Int) = update { s ->
+        val studio = s.studios.firstOrNull { it.slug == studioSlug } ?: return@update s
         if (studioSlug in s.selectedStudioSlugs) {
             s.copy(
                 selectedStudioSlugs = s.selectedStudioSlugs - studioSlug,
@@ -91,7 +99,18 @@ class StudioSelectionViewModel(
         } else if (locationId in s.selectedLocationIds) {
             s.copy(selectedLocationIds = s.selectedLocationIds - locationId)
         } else {
-            s.copy(selectedLocationIds = s.selectedLocationIds + locationId)
+            val allLocationIds = studio.locations.map { it.id }.toSet()
+            val withAdded = s.selectedLocationIds + locationId
+            if (allLocationIds.isNotEmpty() && allLocationIds.all { it in withAdded }) {
+                // Completed the set → promote to whole-Partner, dropping the
+                // now-redundant explicit picks for this studio.
+                s.copy(
+                    selectedStudioSlugs = s.selectedStudioSlugs + studioSlug,
+                    selectedLocationIds = withAdded - allLocationIds,
+                )
+            } else {
+                s.copy(selectedLocationIds = withAdded)
+            }
         }
     }
 
