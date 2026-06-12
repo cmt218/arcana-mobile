@@ -78,7 +78,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * Row labels for the "Your Partners" section: whole-Partner favorites first
+ * Row labels for the "Your favorites" section: whole-Studio favorites first
  * (by name), then location-grain favorites as "STUDIO — LOCATION" with the
  * brand prefix stripped from the location name (mirrors `shortLabel()` in
  * ScheduleViewModel).
@@ -146,7 +146,7 @@ fun ProfileScreen(
         // Profile hero — full-bleed ink that extends behind the status bar.
         item { ProfileHero(state) }
 
-        // YOUR PARTNERS header
+        // YOUR FAVORITES header
         stoneItem {
             Row(
                 modifier = Modifier
@@ -490,8 +490,8 @@ private fun StatCell(value: String?, label: String, modifier: Modifier = Modifie
 }
 
 /**
- * A single favorite in the "Your Partners" section. [label] is the
- * pre-formatted row text from [favoriteRowLabels] (Partner name, or
+ * A single favorite in the "Your favorites" section. [label] is the
+ * pre-formatted row text from [favoriteRowLabels] (Studio name, or
  * "STUDIO — LOCATION" for location-grain favorites); [idx] is the 1-based
  * position rendered in the Moss number badge.
  */

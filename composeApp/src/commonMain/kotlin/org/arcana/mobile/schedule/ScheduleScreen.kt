@@ -34,16 +34,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +89,8 @@ import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StatusPill
 import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.StudioAccordionCard
+import org.arcana.mobile.ui.StudioLocationRow
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -345,14 +351,6 @@ private fun SuccessContent(
         TimeBand.values().filter { byBand[it]?.isNotEmpty() == true }
     }
 
-    // The soloed brand drives the tier-2 sub-row's accent color (hairline + pin).
-    val soloedStudio = remember(state.filters.studioSlugs, state.knownStudios) {
-        if (state.filters.studioSlugs.size == 1) {
-            val slug = state.filters.studioSlugs.single()
-            state.knownStudios.firstOrNull { it.slug == slug }
-        } else null
-    }
-
     // A quick fade-in of the class list whenever the day changes (swipe or
     // chip tap) — a lightweight cue that the content swapped. Applied to the
     // list items only, so the rail/chips never flicker.
@@ -443,59 +441,11 @@ private fun SuccessContent(
             }
         }
 
-        // Tier 1: brand chips. Each carries a leading studio-color dot + a
-        // small caret hinting it's drillable into the tier-2 sub-row.
-        item("filter-chips") {
+        // Collapsed-by-default filter section: a summary bar that expands the
+        // studio accordion in place (replaces the old two-tier chip rails).
+        item("filter-section") {
             Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (state.hasFavorites) {
-                    BrandFilterChip(
-                        label = "FAVORITES",
-                        active = state.favoritesMode,
-                        onClick = { viewModel.enterFavoritesMode() },
-                    )
-                }
-                BrandFilterChip(
-                    label = "ALL",
-                    active = !state.favoritesMode && state.filters.studioSlugs.isEmpty(),
-                    onClick = { viewModel.clearStudios() },
-                )
-                state.knownStudios.forEach { studio ->
-                    BrandFilterChip(
-                        label = studio.name.uppercase(),
-                        active = studio.slug in state.filters.studioSlugs,
-                        dotColor = studioColorFor(studio.primaryColor),
-                        showCaret = true,
-                        onClick = { viewModel.toggleStudio(studio.slug) },
-                    )
-                }
-                BrandFilterChip(
-                    label = "AVAILABLE",
-                    active = state.filters.availableOnly,
-                    onClick = { viewModel.toggleAvailableOnly() },
-                )
-            }
-        }
-
-        // Tier 2: location sub-row. Only renders when exactly one brand is
-        // soloed — outside that window the chip set is empty and the row
-        // collapses out of the LazyColumn entirely.
-        if (state.knownLocationsForBrand.isNotEmpty() && soloedStudio != null) {
-            item("location-subrow") {
-                Spacer(Modifier.height(10.dp))
-                LocationSubRow(
-                    brandColor = studioColorFor(soloedStudio.primaryColor),
-                    locations = state.knownLocationsForBrand,
-                    activeLocationIds = state.filters.locationIds,
-                    onClickAll = { viewModel.clearLocations() },
-                    onToggleLocation = { id -> viewModel.toggleLocation(id) },
-                )
-            }
+            ScheduleFilterSection(state = state, viewModel = viewModel)
         }
 
         // Nudge banner: members with no favorites yet get a one-tap path into
@@ -517,7 +467,7 @@ private fun SuccessContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         BodyText(
-                            text = "Make it yours — save your favorite Partners.",
+                            text = "Make it yours — save your favorite Studios.",
                             size = 13, color = Ink,
                         )
                         // Padding inside the clickable so the CTA's hit area
@@ -531,7 +481,7 @@ private fun SuccessContent(
                         )
                     }
                     // 40dp tap target around the 14dp glyph (house pattern —
-                    // see PartnerCard's chevron in StudioSelectionScreen).
+                    // see StudioAccordionCard's chevron).
                     Box(
                         modifier = Modifier
                             .size(40.dp)
@@ -719,15 +669,138 @@ private fun DayChip(
     }
 }
 
-// ── Brand filter chip (tier 1) ------------------------------------------------
+// ── Filter section (collapsed bar → expandable studio accordion) ─────────────
 
 @Composable
-private fun BrandFilterChip(
+private fun ScheduleFilterSection(
+    state: ScheduleUiState.Success,
+    viewModel: ScheduleViewModel,
+) {
+    // Presentational expansion state. rememberSaveable survives the LazyColumn
+    // disposing this item when it scrolls off-screen (and process death).
+    var panelExpanded by rememberSaveable { mutableStateOf(false) }
+    val expandedSlugs = rememberSaveable(
+        saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
+    ) { mutableStateListOf<String>() }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Collapsed summary bar — funnel · summary · chevron.
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, Mist, RoundedCornerShape(16.dp))
+                .clickable { panelExpanded = !panelExpanded }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            StrokeIcon(icon = ArcanaIcons.Filter, size = 16.dp, tint = Moss)
+            Text(
+                text = state.filterSummary,
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.display,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    letterSpacing = 0.04.em,
+                    color = Ink,
+                ),
+            )
+            StrokeIcon(
+                icon = ArcanaIcons.ChevronDown,
+                size = 16.dp,
+                tint = Ash2,
+                modifier = Modifier.rotate(if (panelExpanded) 180f else 0f),
+            )
+        }
+
+        if (panelExpanded) {
+            Spacer(Modifier.height(12.dp))
+            // Mode pills — exactly one active. Favorites and All Studios apply
+            // immediately and dismiss the panel; only Filter keeps it open to
+            // reveal the studio accordion below.
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (state.hasFavorites) {
+                    FilterPill(
+                        label = "FAVORITES",
+                        active = state.filterMode == FilterMode.Favorites,
+                        onClick = { viewModel.useMyFavorites(); panelExpanded = false },
+                    )
+                }
+                FilterPill(
+                    label = "ALL STUDIOS",
+                    active = state.filterMode == FilterMode.AllStudios,
+                    onClick = { viewModel.showAllStudios(); panelExpanded = false },
+                )
+                FilterPill(
+                    label = "FILTER",
+                    active = state.filterMode == FilterMode.Custom,
+                    onClick = { viewModel.enterFilterMode() },
+                )
+            }
+
+            // Only Filter (Custom) mode reveals the accordion — every studio,
+            // collapsed; expand to its locations and pick as many as you like.
+            if (state.filterMode == FilterMode.Custom) {
+                Spacer(Modifier.height(12.dp))
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.filterStudios.forEach { studio ->
+                        val chosen = studio.slug in state.filters.studioSlugs
+                        val expanded = studio.slug in expandedSlugs
+                        Column {
+                            StudioAccordionCard(
+                                name = studio.name,
+                                locationCount = studio.locations.size,
+                                chosen = chosen,
+                                expanded = expanded,
+                                selectedLocationCount = studio.locations.count { it.id in state.filters.locationIds },
+                                onToggle = { viewModel.toggleStudioWhole(studio.slug) },
+                                onToggleExpanded = {
+                                    if (studio.slug in expandedSlugs) expandedSlugs.remove(studio.slug)
+                                    else expandedSlugs.add(studio.slug)
+                                },
+                            )
+                            if (expanded) {
+                                Column(
+                                    modifier = Modifier.padding(start = 32.dp, top = 12.dp, bottom = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    studio.locations.forEach { location ->
+                                        StudioLocationRow(
+                                            label = location.label,
+                                            checked = location.id in state.filters.locationIds || chosen,
+                                            implied = chosen,
+                                            onTap = { viewModel.toggleLocation(studio.slug, location.id) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Small pill toggle for the filter panel header (Favorites / All Studios /
+ *  Filter). Ink-filled when active, hairline otherwise. */
+@Composable
+private fun FilterPill(
     label: String,
-    active: Boolean = false,
-    dotColor: Color? = null,
-    showCaret: Boolean = false,
-    onClick: () -> Unit = {},
+    active: Boolean,
+    onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -737,11 +810,7 @@ private fun BrandFilterChip(
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (dotColor != null) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(dotColor))
-        }
         Text(
             text = label,
             maxLines = 1, softWrap = false,
@@ -749,89 +818,6 @@ private fun BrandFilterChip(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                letterSpacing = 0.10.em,
-                color = if (active) Stone else Ink,
-            ),
-        )
-        if (showCaret) {
-            StrokeIcon(
-                icon = ArcanaIcons.ChevronDown,
-                size = 12.dp,
-                tint = if (active) Stone.copy(alpha = 0.75f) else Ash2,
-            )
-        }
-    }
-}
-
-// ── Location sub-row (tier 2) -------------------------------------------------
-
-/** Tier-2 location drill-down. Hairline + pin on the left chain it visually
- *  back to the soloed brand chip above. Location chips are filled with the
- *  brand color when active (not Ink) — continues the visual hierarchy from
- *  brand-chip (ink) → location-chip (brand-tinted). */
-@Composable
-private fun LocationSubRow(
-    brandColor: Color,
-    locations: List<LocationChipData>,
-    activeLocationIds: Set<Int>,
-    onClickAll: () -> Unit,
-    onToggleLocation: (Int) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // Hairline + pin lead-in — anchors the row to the soloed brand.
-        Box(
-            Modifier
-                .width(20.dp)
-                .height(1.dp)
-                .background(brandColor),
-        )
-        StrokeIcon(icon = ArcanaIcons.Pin, size = 14.dp, tint = brandColor)
-        LocationChip(
-            label = "ALL",
-            active = activeLocationIds.isEmpty(),
-            brandColor = brandColor,
-            onClick = onClickAll,
-        )
-        locations.forEach { loc ->
-            LocationChip(
-                label = loc.shortLabel,
-                active = loc.id in activeLocationIds,
-                brandColor = brandColor,
-                onClick = { onToggleLocation(loc.id) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun LocationChip(
-    label: String,
-    active: Boolean,
-    brandColor: Color,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (active) brandColor else Color.Transparent)
-            .border(1.dp, if (active) brandColor else Mist, CircleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            maxLines = 1, softWrap = false,
-            style = TextStyle(
-                fontFamily = Arcana.fonts.display,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
                 letterSpacing = 0.10.em,
                 color = if (active) Stone else Ink,
             ),

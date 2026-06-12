@@ -52,7 +52,7 @@ class StudioSelectionViewModel(
             throw e
         } catch (e: Exception) {
             logWarning("StudioSelectionViewModel", e.message ?: "load failed")
-            _uiState.value = StudioSelectionUiState.Error("Couldn't load Partners.")
+            _uiState.value = StudioSelectionUiState.Error("Couldn't load Studios.")
         }
     }
 
@@ -65,7 +65,7 @@ class StudioSelectionViewModel(
         _uiState.value = block(current)
     }
 
-    /** Whole-Partner toggle. Selecting a Partner implies every location, so
+    /** Whole-Studio toggle. Selecting a Studio implies every location, so
      *  any individual location picks for it are dropped as redundant. */
     fun toggleStudio(slug: String) = update { s ->
         val studio = s.studios.firstOrNull { it.slug == slug } ?: return@update s
@@ -82,13 +82,13 @@ class StudioSelectionViewModel(
 
     /** Individual-location toggle.
      *
-     *  - Tapping a location while the whole Partner is selected narrows:
-     *    Partner off, just this location on.
-     *  - Tapping the last unselected location PROMOTES to a whole-Partner
+     *  - Tapping a location while the whole Studio is selected narrows:
+     *    Studio off, just this location on.
+     *  - Tapping the last unselected location PROMOTES to a whole-Studio
      *    selection — "all locations" is visually and semantically identical to
-     *    favoriting the Partner (and should pick up future locations too), so
+     *    favoriting the Studio (and should pick up future locations too), so
      *    we store it that way rather than as N individual picks. This is what
-     *    gives a single-location Partner the full treatment from one tap. */
+     *    gives a single-location Studio the full treatment from one tap. */
     fun toggleLocation(studioSlug: String, locationId: Int) = update { s ->
         val studio = s.studios.firstOrNull { it.slug == studioSlug } ?: return@update s
         if (studioSlug in s.selectedStudioSlugs) {
@@ -102,7 +102,7 @@ class StudioSelectionViewModel(
             val allLocationIds = studio.locations.map { it.id }.toSet()
             val withAdded = s.selectedLocationIds + locationId
             if (allLocationIds.isNotEmpty() && allLocationIds.all { it in withAdded }) {
-                // Completed the set → promote to whole-Partner, dropping the
+                // Completed the set → promote to whole-Studio, dropping the
                 // now-redundant explicit picks for this studio.
                 s.copy(
                     selectedStudioSlugs = s.selectedStudioSlugs + studioSlug,

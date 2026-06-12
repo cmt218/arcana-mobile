@@ -66,7 +66,7 @@ class ScheduleViewModelPagingTest {
         assertEquals(today, state.selectedDate)
         assertEquals(ScheduleViewModel.WINDOW_DAYS, state.days.size)
         assertEquals(today, state.days.first())
-        assertEquals(listOf("solidcore"), state.knownStudios.map { it.slug })
+        assertEquals(listOf("solidcore"), state.filterStudios.map { it.slug })
         val dayState = state.dayStates.getValue(today)
         assertTrue(dayState.loaded)
         assertEquals(listOf(1, 2), dayState.sessions.map { it.id })
@@ -184,7 +184,7 @@ class ScheduleViewModelPagingTest {
         val vm = vm(api)
 
         vm.loadMore() // suspends on the gate
-        vm.toggleAvailableOnly()
+        vm.enterFilterMode()
         settleFilters() // refetch lands: generation bumped, fresh page 1
 
         gate.complete(Unit) // the stale loadMore finally returns
@@ -200,15 +200,16 @@ class ScheduleViewModelPagingTest {
 
     @Test fun `rapid filter toggles coalesce into one refetch and drop other day caches`() = runTest {
         val api = FakeScheduleApi()
+        api.overviewResult = { overviewOf(overviewStudio("x", "X", locationIds = listOf(7))) }
         api.pageResult = { pageOf(1) }
         val vm = vm(api)
         vm.selectDay(tomorrow) // cache a second day
         assertEquals(2, api.pageCalls.size)
         assertEquals(setOf(today, tomorrow), vm.success().dayStates.keys)
 
-        vm.toggleAvailableOnly()
-        vm.toggleAvailableOnly()
-        vm.toggleAvailableOnly() // settled value: availableOnly = true
+        vm.toggleStudioWhole("x")
+        vm.toggleStudioWhole("x")
+        vm.toggleStudioWhole("x") // settled value: studio "x" selected
 
         // Inside the debounce window: stale content stays mounted + dimmed,
         // nothing has hit the network yet.
@@ -220,37 +221,15 @@ class ScheduleViewModelPagingTest {
 
         assertEquals(2, api.overviewCalls.size) // ONE settled overview refetch
         assertEquals(3, api.pageCalls.size) // ONE settled page-1 refetch
-        assertTrue(api.overviewCalls[1].availableOnly)
-        assertTrue(api.pageCalls[2].availableOnly)
+        assertEquals(listOf(7), api.overviewCalls[1].locationIds) // x expanded to its locations
+        assertEquals(listOf(7), api.pageCalls[2].locationIds)
         assertEquals(tomorrow, api.pageCalls[2].date) // page 1 of the SELECTED day
         assertNull(api.pageCalls[2].cursor)
 
         val state = vm.success()
         assertFalse(state.refreshingFilters)
-        assertTrue(state.filters.availableOnly)
+        assertEquals(setOf("x"), state.filters.studioSlugs)
         assertEquals(setOf(tomorrow), state.dayStates.keys) // other day caches dropped
-    }
-
-    // ── 6. availableOnly through the pipeline ──────────────────────────────
-
-    @Test fun `availableOnly flows through the pipeline onto both fetches`() = runTest {
-        val api = FakeScheduleApi()
-        val vm = vm(api)
-        assertFalse(api.overviewCalls.single().availableOnly)
-        assertFalse(api.pageCalls.single().availableOnly)
-
-        vm.toggleAvailableOnly()
-        settleFilters()
-
-        assertTrue(api.overviewCalls[1].availableOnly)
-        assertTrue(api.pageCalls[1].availableOnly)
-        assertTrue(vm.success().filters.availableOnly)
-
-        vm.toggleAvailableOnly()
-        settleFilters()
-
-        assertFalse(api.overviewCalls[2].availableOnly)
-        assertFalse(api.pageCalls[2].availableOnly)
     }
 
     // ── 7. Favorites through the paged pipeline ────────────────────────────
@@ -271,7 +250,7 @@ class ScheduleViewModelPagingTest {
         vm.loadMore()
 
         assertEquals(listOf(11, 12), api.pageCalls[1].locationIds)
-        assertTrue(vm.success().favoritesMode)
+        assertEquals(FilterMode.Favorites, vm.success().filterMode)
     }
 
     // ── 8. Failure semantics ───────────────────────────────────────────────
@@ -291,13 +270,13 @@ class ScheduleViewModelPagingTest {
         assertEquals(listOf(1, 2), vm.success().dayStates.getValue(today).sessions.map { it.id })
 
         api.overviewResult = { throw RuntimeException("transient") }
-        vm.toggleAvailableOnly()
+        vm.enterFilterMode()
         settleFilters()
 
         val state = vm.success() // still Success — content kept, no Error flash
         assertEquals(listOf(1, 2), state.dayStates.getValue(today).sessions.map { it.id })
         assertFalse(state.refreshingFilters)
-        assertTrue(state.filters.availableOnly)
+        assertEquals(FilterMode.Custom, state.filterMode)
     }
 
     // ── Pull-to-refresh ────────────────────────────────────────────────────
@@ -337,7 +316,7 @@ class ScheduleViewModelPagingTest {
         // …while a chip tap runs a NEWER refetch to completion.
         api.overviewResult = { overviewOf() }
         api.pageResult = { pageOf(42) }
-        vm.toggleAvailableOnly()
+        vm.enterFilterMode()
         settleFilters()
         assertEquals(listOf(42), vm.success().dayStates.getValue(today).sessions.map { it.id })
 
@@ -351,26 +330,22 @@ class ScheduleViewModelPagingTest {
 
     // ── 10. Favorites-exit filter carry-over ──────────────────────────────
 
-    @Test fun `toggleStudio exiting favorites mode preserves availableOnly`() = runTest {
+    @Test fun `entering filter and selecting a studio after favorites scopes to its locations`() = runTest {
         val api = FakeScheduleApi()
+        api.overviewResult = { overviewOf(overviewStudio("barrys", "Barry's", locationIds = listOf(1, 2))) }
         val favoritesApi = FakeFavoritesApi(
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11)))),
         )
         val vm = vm(api, favoritesApi)
-        vm.toggleAvailableOnly()
-        settleFilters()
-        assertTrue(api.overviewCalls.last().availableOnly)
-        assertEquals(listOf(11), api.overviewCalls.last().locationIds)
+        assertEquals(listOf(11), api.overviewCalls.last().locationIds) // favorites scope
 
-        vm.toggleStudio("barrys")
+        vm.enterFilterMode()
+        vm.toggleStudioWhole("barrys")
         settleFilters()
 
         val call = api.overviewCalls.last()
-        assertTrue(call.availableOnly) // carried through the favorites exit
-        assertEquals(listOf("barrys"), call.studioSlugs)
-        assertNull(call.locationIds)
-        val state = vm.success()
-        assertFalse(state.favoritesMode)
-        assertTrue(state.filters.availableOnly)
+        assertNull(call.studioSlugs)                 // always null now
+        assertEquals(listOf(1, 2), call.locationIds) // barrys expanded to its locations
+        assertEquals(FilterMode.Custom, vm.success().filterMode)
     }
 }

@@ -34,7 +34,7 @@ class ProfileViewModel(
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
     val uiState: StateFlow<ProfileUiState> = _uiState
 
-    /** Member favorites for the "Your Partners" section. `null` = not loaded
+    /** Member favorites for the "Your favorites" section. `null` = not loaded
      *  yet; an empty [FavoritesDto] = loaded, member has none. */
     val favorites: StateFlow<FavoritesDto?> = favoritesRepository.favorites
 

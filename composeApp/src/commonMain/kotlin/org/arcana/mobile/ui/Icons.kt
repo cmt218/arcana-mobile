@@ -20,6 +20,7 @@ import arcana.composeapp.generated.resources.icon_chevron_down
 import arcana.composeapp.generated.resources.icon_chevron_right
 import arcana.composeapp.generated.resources.icon_clock
 import arcana.composeapp.generated.resources.icon_close
+import arcana.composeapp.generated.resources.icon_filter
 import arcana.composeapp.generated.resources.icon_home
 import arcana.composeapp.generated.resources.icon_logout
 import arcana.composeapp.generated.resources.icon_pin
@@ -53,6 +54,7 @@ object ArcanaIcons {
     val Close: DrawableResource get() = Res.drawable.icon_close
     val ChevronDown: DrawableResource get() = Res.drawable.icon_chevron_down
     val ChevronRight: DrawableResource get() = Res.drawable.icon_chevron_right
+    val Filter: DrawableResource get() = Res.drawable.icon_filter
     val Bell: DrawableResource get() = Res.drawable.icon_bell
     val Card: DrawableResource get() = Res.drawable.icon_card
     val Refresh: DrawableResource get() = Res.drawable.icon_refresh

@@ -8,21 +8,17 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.arcana.mobile.data.FavoritesDto
-import org.arcana.mobile.data.OverviewLocationDto
-import org.arcana.mobile.data.OverviewStudioDto
-import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Favorites scoping + chip behavior on the paged (Phase 2) pipeline. Every
- *  refetch is now an overview + page-1 pair; filter mutations are debounced
- *  ([settleFilters] advances virtual time past the debounce window). */
+/** Filter-mode scoping (Favorites / All Studios / Custom) on the paged
+ *  pipeline. Filter mutations are debounced ([settleFilters] advances past the
+ *  debounce). */
 class ScheduleViewModelFavoritesTest {
     private val dispatcher = UnconfinedTestDispatcher()
     @BeforeTest fun setup() { Dispatchers.setMain(dispatcher) }
@@ -39,7 +35,13 @@ class ScheduleViewModelFavoritesTest {
         bookingApi = bookingApi,
     )
 
-    @Test fun `favorites present - both first fetches carry expanded location ids`() = runTest {
+    /** Overview carrying barrys (3 locations) + yo-bk (2 locations). */
+    private fun catalogOverview() = overviewOf(
+        overviewStudio("barrys", "Barry's", locationIds = listOf(1, 2, 3)),
+        overviewStudio("yo-bk", "YO BK", locationIds = listOf(10, 11)),
+    )
+
+    @Test fun `favorites present - first fetches carry expanded location ids in Favorites mode`() = runTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(
             favoritesResult = FavoritesDto(
@@ -49,223 +51,179 @@ class ScheduleViewModelFavoritesTest {
         )
         val vm = vm(scheduleApi, favoritesApi)
 
-        assertEquals(1, scheduleApi.overviewCalls.size)
-        assertEquals(1, scheduleApi.pageCalls.size)
         assertEquals(listOf(11, 12, 31), scheduleApi.overviewCalls.single().locationIds)
         assertEquals(listOf(11, 12, 31), scheduleApi.pageCalls.single().locationIds)
-        assertNull(scheduleApi.pageCalls.single().cursor)
+        assertNull(scheduleApi.overviewCalls.single().studioSlugs)
         val state = vm.success()
-        assertTrue(state.favoritesMode)
+        assertEquals(FilterMode.Favorites, state.filterMode)
         assertTrue(state.hasFavorites)
+        assertEquals("Favorites", state.filterSummary)
     }
 
-    @Test fun `favorites empty - first fetches have no location ids and mode stays off`() = runTest {
+    @Test fun `favorites empty - first fetches have no location ids in All Studios mode`() = runTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
         val vm = vm(scheduleApi, favoritesApi)
 
-        assertEquals(1, scheduleApi.overviewCalls.size)
         assertNull(scheduleApi.overviewCalls.single().locationIds)
         assertNull(scheduleApi.pageCalls.single().locationIds)
         val state = vm.success()
-        assertFalse(state.favoritesMode)
-        assertFalse(state.hasFavorites)
+        assertEquals(FilterMode.AllStudios, state.filterMode)
+        assertEquals("All Studios", state.filterSummary)
     }
 
-    @Test fun `studio-grain favorite with zero locations - no empty location param but mode is on`() = runTest {
+    @Test fun `entering filter mode and selecting a studio scopes to its locations`() = runTest {
         val scheduleApi = FakeScheduleApi()
+        scheduleApi.overviewResult = { catalogOverview() }
         val favoritesApi = FakeFavoritesApi(
-            favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = emptyList()))),
+            favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(99)))),
         )
         val vm = vm(scheduleApi, favoritesApi)
+        assertEquals(FilterMode.Favorites, vm.success().filterMode)
 
-        assertEquals(1, scheduleApi.overviewCalls.size)
-        assertNull(scheduleApi.overviewCalls.single().locationIds)
-        assertNull(scheduleApi.pageCalls.single().locationIds)
-        val state = vm.success()
-        assertTrue(state.favoritesMode)
-        assertTrue(state.hasFavorites)
-    }
-
-    @Test fun `toggleStudio in favoritesMode exits mode and solos the studio server-side`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        val favoritesApi = FakeFavoritesApi(
-            favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11)))),
-        )
-        val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(1, scheduleApi.overviewCalls.size)
-
-        vm.toggleStudio("barrys")
-
-        // Chips update instantly; the refetch waits out the debounce.
-        val pending = vm.success()
-        assertFalse(pending.favoritesMode)
-        assertEquals(setOf("barrys"), pending.filters.studioSlugs)
-        assertTrue(pending.refreshingFilters)
-        assertEquals(1, scheduleApi.overviewCalls.size)
-
+        vm.enterFilterMode()
+        vm.toggleStudioWhole("barrys")
         settleFilters()
 
-        assertEquals(2, scheduleApi.overviewCalls.size)
-        assertEquals(2, scheduleApi.pageCalls.size)
-        assertEquals(listOf("barrys"), scheduleApi.overviewCalls[1].studioSlugs)
-        assertNull(scheduleApi.overviewCalls[1].locationIds)
-        assertEquals(listOf("barrys"), scheduleApi.pageCalls[1].studioSlugs)
-        assertNull(scheduleApi.pageCalls[1].locationIds)
+        // Whole-studio barrys → its catalog location ids; studio_slug null.
+        val call = scheduleApi.overviewCalls.last()
+        assertNull(call.studioSlugs)
+        assertEquals(listOf(1, 2, 3), call.locationIds)
         val state = vm.success()
-        assertFalse(state.favoritesMode)
-        assertTrue(state.hasFavorites)
-        assertFalse(state.refreshingFilters)
+        assertEquals(FilterMode.Custom, state.filterMode)
         assertEquals(setOf("barrys"), state.filters.studioSlugs)
+        assertEquals("BARRY'S", state.filterSummary)
     }
 
-    @Test fun `enterFavoritesMode after exiting re-fetches with the favorite ids and clears filters`() = runTest {
+    @Test fun `useMyFavorites after a manual selection re-applies favorites`() = runTest {
         val scheduleApi = FakeScheduleApi()
+        scheduleApi.overviewResult = { catalogOverview() }
         val favoritesApi = FakeFavoritesApi(
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12)))),
         )
         val vm = vm(scheduleApi, favoritesApi)
-        vm.toggleStudio("barrys")
+        vm.enterFilterMode()
+        vm.toggleStudioWhole("barrys")
         settleFilters()
-        assertEquals(2, scheduleApi.overviewCalls.size)
+        assertEquals(FilterMode.Custom, vm.success().filterMode)
 
-        vm.enterFavoritesMode()
+        vm.useMyFavorites()
         settleFilters()
 
-        assertEquals(3, scheduleApi.overviewCalls.size)
-        assertEquals(3, scheduleApi.pageCalls.size)
-        assertEquals(listOf(11, 12), scheduleApi.overviewCalls[2].locationIds)
-        assertNull(scheduleApi.overviewCalls[2].studioSlugs)
-        assertEquals(listOf(11, 12), scheduleApi.pageCalls[2].locationIds)
+        val call = scheduleApi.overviewCalls.last()
+        assertEquals(listOf(11, 12), call.locationIds)
+        assertNull(call.studioSlugs)
         val state = vm.success()
-        assertTrue(state.favoritesMode)
+        assertEquals(FilterMode.Favorites, state.filterMode)
         assertTrue(state.filters.studioSlugs.isEmpty())
         assertTrue(state.filters.locationIds.isEmpty())
     }
 
-    @Test fun `saving favorites in the manager re-enters favorites mode and refetches`() = runTest {
+    @Test fun `selecting all locations of a studio promotes to whole-studio`() = runTest {
+        val scheduleApi = FakeScheduleApi()
+        scheduleApi.overviewResult = { catalogOverview() }
+        val vm = vm(scheduleApi, FakeFavoritesApi())
+
+        vm.toggleLocation("yo-bk", 10)
+        vm.toggleLocation("yo-bk", 11) // completes the set → promote
+        settleFilters()
+
+        val state = vm.success()
+        assertEquals(FilterMode.Custom, state.filterMode)
+        assertEquals(setOf("yo-bk"), state.filters.studioSlugs)
+        assertTrue(state.filters.locationIds.isEmpty())
+        // Expanded back to its locations for the fetch.
+        assertEquals(listOf(10, 11), scheduleApi.overviewCalls.last().locationIds)
+    }
+
+    @Test fun `showAllStudios resets to all studios`() = runTest {
+        val scheduleApi = FakeScheduleApi()
+        scheduleApi.overviewResult = { catalogOverview() }
+        val vm = vm(scheduleApi, FakeFavoritesApi())
+        vm.toggleStudioWhole("barrys")
+        settleFilters()
+
+        vm.showAllStudios()
+        settleFilters()
+
+        assertNull(scheduleApi.overviewCalls.last().locationIds)
+        val state = vm.success()
+        assertEquals(FilterMode.AllStudios, state.filterMode)
+        assertTrue(state.filters.studioSlugs.isEmpty())
+        assertEquals("All Studios", state.filterSummary)
+    }
+
+    @Test fun `saving favorites in the manager from empty applies favorites`() = runTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
         val repository = FavoritesRepository(favoritesApi)
         val vm = vm(scheduleApi, favoritesApi, repository)
-        assertEquals(1, scheduleApi.overviewCalls.size)
         assertNull(scheduleApi.overviewCalls.single().locationIds)
 
-        // The favorites manager saves a new set while this VM sits on the
-        // back stack — the repository StateFlow is the change signal.
         favoritesApi.favoritesResult =
             FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12))))
         repository.save(studioSlugs = listOf("barrys"), locationIds = emptyList())
         settleFilters()
 
-        assertEquals(2, scheduleApi.overviewCalls.size)
-        assertEquals(listOf(11, 12), scheduleApi.overviewCalls[1].locationIds)
-        assertEquals(listOf(11, 12), scheduleApi.pageCalls[1].locationIds)
+        assertEquals(listOf(11, 12), scheduleApi.overviewCalls.last().locationIds)
         val state = vm.success()
-        assertTrue(state.favoritesMode)
+        assertEquals(FilterMode.Favorites, state.filterMode)
         assertTrue(state.hasFavorites)
     }
 
-    @Test fun `clearing favorites in the manager exits favorites mode and refetches`() = runTest {
+    @Test fun `clearing favorites in the manager exits to all studios`() = runTest {
         val scheduleApi = FakeScheduleApi()
         val favoritesApi = FakeFavoritesApi(
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11)))),
         )
         val repository = FavoritesRepository(favoritesApi)
         val vm = vm(scheduleApi, favoritesApi, repository)
-        assertEquals(1, scheduleApi.overviewCalls.size)
         assertEquals(listOf(11), scheduleApi.overviewCalls.single().locationIds)
 
         favoritesApi.favoritesResult = FavoritesDto()
         repository.save(studioSlugs = emptyList(), locationIds = emptyList())
         settleFilters()
 
-        assertEquals(2, scheduleApi.overviewCalls.size)
-        assertNull(scheduleApi.overviewCalls[1].locationIds)
-        assertNull(scheduleApi.pageCalls[1].locationIds)
+        assertNull(scheduleApi.overviewCalls.last().locationIds)
         val state = vm.success()
-        assertFalse(state.favoritesMode)
-        assertFalse(state.hasFavorites)
+        assertEquals(FilterMode.AllStudios, state.filterMode)
+        assertTrue(!state.hasFavorites)
     }
 
-    @Test fun `enterFavoritesMode is a no-op when already active`() = runTest {
+    @Test fun `editing favorites does not clobber an active custom selection`() = runTest {
         val scheduleApi = FakeScheduleApi()
-        val favoritesApi = FakeFavoritesApi(
-            favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11)))),
-        )
-        val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(1, scheduleApi.overviewCalls.size)
-
-        vm.enterFavoritesMode()
-        settleFilters()
-
-        assertEquals(1, scheduleApi.overviewCalls.size) // no redundant refetch
-        assertEquals(1, scheduleApi.pageCalls.size)
-        assertTrue(vm.success().favoritesMode)
-    }
-
-    @Test fun `enterFavoritesMode is a no-op when the member has no favorites`() = runTest {
-        val scheduleApi = FakeScheduleApi()
+        scheduleApi.overviewResult = { catalogOverview() }
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
-        val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(1, scheduleApi.overviewCalls.size)
-
-        vm.enterFavoritesMode()
+        val repository = FavoritesRepository(favoritesApi)
+        val vm = vm(scheduleApi, favoritesApi, repository)
+        vm.enterFilterMode()
+        vm.toggleStudioWhole("barrys") // Custom selection active
         settleFilters()
 
-        assertEquals(1, scheduleApi.overviewCalls.size)
-        assertFalse(vm.success().favoritesMode)
+        favoritesApi.favoritesResult =
+            FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12))))
+        repository.save(studioSlugs = listOf("yo-bk"), locationIds = emptyList())
+        settleFilters()
+
+        // Custom selection preserved; favorites NOT auto-applied.
+        val state = vm.success()
+        assertEquals(FilterMode.Custom, state.filterMode)
+        assertEquals(setOf("barrys"), state.filters.studioSlugs)
     }
 
-    @Test fun `knownStudios comes from the overview studios block sorted by name`() = runTest {
+    @Test fun `filterStudios comes from the overview studios block sorted by name`() = runTest {
         val scheduleApi = FakeScheduleApi()
         scheduleApi.overviewResult = {
-            ScheduleOverviewDto(
-                studios = listOf(
-                    OverviewStudioDto(id = 2, slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A"),
-                    OverviewStudioDto(id = 1, slug = "barrys", name = "Barry's", primaryColor = "#F65713"),
-                ),
+            overviewOf(
+                overviewStudio("yo-bk", "YO BK", locationIds = listOf(45, 44)),
+                overviewStudio("barrys", "Barry's", locationIds = listOf(1)),
             )
         }
         val vm = vm(scheduleApi, FakeFavoritesApi())
 
         val state = vm.success()
-        assertEquals(
-            listOf(
-                StudioChipData(slug = "barrys", name = "Barry's", primaryColor = "#F65713"),
-                StudioChipData(slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A"),
-            ),
-            state.knownStudios,
-        )
-    }
-
-    @Test fun `tier-2 location chips derive from the soloed overview studio`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = {
-            ScheduleOverviewDto(
-                studios = listOf(
-                    OverviewStudioDto(
-                        id = 2, slug = "yo-bk", name = "YO BK", primaryColor = "#3C5D1A",
-                        locations = listOf(
-                            OverviewLocationDto(id = 45, name = "YO BK Williamsburg", timezone = "America/New_York"),
-                            OverviewLocationDto(id = 44, name = "YO BK Cobble Hill", timezone = "America/New_York"),
-                        ),
-                    ),
-                ),
-            )
-        }
-        val vm = vm(scheduleApi, FakeFavoritesApi())
-        assertTrue(vm.success().knownLocationsForBrand.isEmpty()) // nothing soloed yet
-
-        vm.toggleStudio("yo-bk")
-
-        // Sorted by full name; labels are brand-prefix-stripped + uppercased.
-        assertEquals(
-            listOf(
-                LocationChipData(id = 44, shortLabel = "COBBLE HILL"),
-                LocationChipData(id = 45, shortLabel = "WILLIAMSBURG"),
-            ),
-            vm.success().knownLocationsForBrand,
-        )
+        assertEquals(listOf("barrys", "yo-bk"), state.filterStudios.map { it.slug })
+        // Locations sorted by name; overviewStudio names them "loc<id>".
+        assertEquals(listOf(44, 45), state.filterStudios.last().locations.map { it.id })
     }
 }

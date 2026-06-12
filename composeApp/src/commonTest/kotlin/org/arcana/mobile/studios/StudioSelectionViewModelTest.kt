@@ -110,7 +110,7 @@ class StudioSelectionViewModelTest {
         viewModel.toggleStudio("solidcore")
         val s = ready(viewModel)
         assertEquals(setOf("solidcore"), s.selectedStudioSlugs)
-        // 41 dropped as redundant; the other Partner's pick (7) untouched.
+        // 41 dropped as redundant; the other Studio's pick (7) untouched.
         assertEquals(setOf(7), s.selectedLocationIds)
     }
 
@@ -135,7 +135,7 @@ class StudioSelectionViewModelTest {
     fun `save passes exactly the current selection to the api`() = runTest {
         val api = FakeApi(studios = listOf(solidcore, yobk))
         val viewModel = vm(api)
-        viewModel.toggleStudio("yo-bk")            // whole-Partner (studio grain)
+        viewModel.toggleStudio("yo-bk")            // whole-Studio (studio grain)
         viewModel.toggleLocation("solidcore", 41)  // one of two → partial (location grain)
         viewModel.save()
         val (slugs, locationIds) = api.updateCalls.single()
@@ -167,7 +167,7 @@ class StudioSelectionViewModelTest {
     }
 
     @Test
-    fun `selecting the only location of a single-location studio promotes to whole-Partner`() = runTest {
+    fun `selecting the only location of a single-location studio promotes to whole-Studio`() = runTest {
         val api = FakeApi(studios = listOf(yobk))
         val viewModel = vm(api)
         viewModel.toggleLocation("yo-bk", 7)
@@ -177,7 +177,7 @@ class StudioSelectionViewModelTest {
     }
 
     @Test
-    fun `selecting the last location of a multi-location studio promotes to whole-Partner`() = runTest {
+    fun `selecting the last location of a multi-location studio promotes to whole-Studio`() = runTest {
         val api = FakeApi(studios = listOf(solidcore))
         val viewModel = vm(api)
         viewModel.toggleLocation("solidcore", 41)
