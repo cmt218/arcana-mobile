@@ -21,3 +21,11 @@ expect fun getPlatform(): Platform
 expect fun defaultBaseUrl(): String
 
 expect fun logWarning(tag: String, message: String)
+
+/**
+ * The app's user-facing version string, sourced from each platform's own build
+ * config so it always reflects the actual installed build:
+ * - Android → `BuildConfig.VERSION_NAME` (the `versionName` in `build.gradle.kts`).
+ * - iOS → `CFBundleShortVersionString` from the app's Info.plist.
+ */
+expect fun appVersionName(): String

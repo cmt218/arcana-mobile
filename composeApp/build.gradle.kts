@@ -76,6 +76,11 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    // Generate BuildConfig so the app version (versionName) is readable at
+    // runtime via BuildConfig.VERSION_NAME (see Platform.android.kt).
+    buildFeatures {
+        buildConfig = true
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

@@ -16,3 +16,5 @@ actual fun defaultBaseUrl(): String = "https://api.arcana.fit"
 actual fun logWarning(tag: String, message: String) {
     Log.w(tag, message)
 }
+
+actual fun appVersionName(): String = BuildConfig.VERSION_NAME

@@ -1,5 +1,6 @@
 package org.arcana.mobile
 
+import platform.Foundation.NSBundle
 import platform.UIKit.UIDevice
 
 class IOSPlatform: Platform {
@@ -15,3 +16,6 @@ actual fun defaultBaseUrl(): String = "https://api.arcana.fit"
 actual fun logWarning(tag: String, message: String) {
     println("W/$tag: $message")
 }
+
+actual fun appVersionName(): String =
+    NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String ?: ""

@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import org.arcana.mobile.appVersionName
 import org.arcana.mobile.data.FavoriteLocationDto
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.networking.ArcanaApiClient
@@ -65,7 +66,6 @@ import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotField
-import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
@@ -116,10 +116,11 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) { vm.load() }
 
+    // Membership row shows the member's tier name (e.g. "Alpha Tester").
+    // Not clickable for now — see the Stripe-link note in the design discussion.
+    val tierLabel = (state as? ProfileUiState.Success)?.tierName.orEmpty()
     val accountItems = listOf(
-        AccountItem(ArcanaIcons.Bell, "Notifications", "ON · 06:00", Ash),
-        AccountItem(ArcanaIcons.Card, "Membership", "$540 / MO", Ash),
-        AccountItem(ArcanaIcons.Support, "Concierge", "LIVE · 24/7", Ash),
+        AccountItem(ArcanaIcons.Card, "Membership", tierLabel, Ash),
     )
 
     // The body Stone fills everything; an Ink strip sits behind the top of
@@ -192,15 +193,6 @@ fun ProfileScreen(
                 }
             }
         }
-        stoneItem {
-            BodyText(
-                text = "Favorites shape your schedule. Change anytime.",
-                size = 12,
-                color = Ash,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp),
-            )
-        }
-
         // ACCOUNT section
         stoneItem {
             SectionRule(
@@ -241,7 +233,7 @@ fun ProfileScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 AccentText(text = "Earned, never given.", size = 18, color = Ash)
-                Overline(text = "Arcana · v2.4.0", size = 10, color = Ash2)
+                Overline(text = "Arcana · v${appVersionName()}", size = 10, color = Ash2)
             }
         }
         }
@@ -293,13 +285,11 @@ private fun ProfileHero(state: ProfileUiState) {
                 .safeContentPadding()
                 .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
         ) {
-            // Top bar within hero
+            // Top bar within hero — member number (shimmer while loading).
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Member number — shimmer while loading
                 if (success != null) {
                     val memberLabel = if (success.memberNumber != null)
                         "Member · No. ${success.memberNumber}"
@@ -314,13 +304,6 @@ private fun ProfileHero(state: ProfileUiState) {
                         shape = RoundedCornerShape(4.dp),
                     )
                 }
-                IconCircle(
-                    icon = ArcanaIcons.Settings,
-                    diameter = 36,
-                    iconSize = 16,
-                    borderColor = StoneAlpha18,
-                    contentColor = Stone,
-                )
             }
 
             Spacer(Modifier.height(16.dp))
@@ -391,23 +374,6 @@ private fun ProfileHero(state: ProfileUiState) {
                         shape = RoundedCornerShape(6.dp),
                     )
                 }
-
-                // Membership line: tier name + title-cased status — shimmer while loading
-                if (success != null) {
-                    val statusLabel = success.status.replaceFirstChar { it.uppercase() }
-                    Overline(
-                        text = "${success.tierName} · $statusLabel",
-                        size = 10,
-                        color = StoneAlpha55,
-                    )
-                } else {
-                    ShimmerBox(
-                        modifier = Modifier
-                            .width(120.dp)
-                            .height(10.dp),
-                        shape = RoundedCornerShape(4.dp),
-                    )
-                }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -426,7 +392,7 @@ private fun ProfileHero(state: ProfileUiState) {
                 )
                 Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
                 StatCell(
-                    value = success?.weekStreak?.let { it.toString().padStart(2, '0') },
+                    value = success?.weekStreak?.toString(),
                     label = "Week streak",
                     modifier = Modifier.weight(1f),
                 )
@@ -553,7 +519,10 @@ private fun AccountRow(item: AccountItem, modifier: Modifier = Modifier) {
         }
         BodyText(text = item.label, size = 16, color = Ink, modifier = Modifier.weight(1f))
         Overline(text = item.right, size = 10, color = item.rightColor)
-        StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
+        // Caret only when the row is actually tappable.
+        if (item.onClick != null) {
+            StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
+        }
     }
 }
 
