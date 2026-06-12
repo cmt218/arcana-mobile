@@ -20,8 +20,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,15 +47,19 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.booking.BookCta
 import org.arcana.mobile.booking.BookingSheet
 import org.arcana.mobile.booking.BookingSubmit
 import org.arcana.mobile.booking.BookingViewModel
+import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Clay
+import org.arcana.mobile.theme.ClayDeep
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
@@ -67,9 +73,15 @@ import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
+import org.arcana.mobile.ui.CircleMonogram
+import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Display
+import org.arcana.mobile.ui.DotMatrixLoader
+import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.Heading2
+import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.Overline
+import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.safeBottomBarPadding
@@ -161,9 +173,14 @@ fun ClassDetailScreen(
 @Composable
 private fun LoadingBlock(onClose: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
-        TopBar(onClose = onClose, onShare = {}, onBookmark = {})
-        Row(modifier = Modifier.padding(horizontal = 24.dp)) {
-            Overline(text = "LOADING…", size = 12, color = Ash)
+        TopBar(onClose = onClose)
+        // Centered dot loader — mirrors Schedule's LoadingPlaceholder so the
+        // brand's pulsing-dot gesture reads as the focal point while we fetch.
+        Box(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            DotMatrixLoader()
         }
     }
 }
@@ -171,7 +188,7 @@ private fun LoadingBlock(onClose: () -> Unit) {
 @Composable
 private fun ErrorBlock(message: String, onClose: () -> Unit, onRetry: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
-        TopBar(onClose = onClose, onShare = {}, onBookmark = {})
+        TopBar(onClose = onClose)
         Column(modifier = Modifier.padding(24.dp)) {
             Heading2(text = "Couldn't load class", size = 22, color = Ink)
             Spacer(Modifier.height(8.dp))
@@ -219,7 +236,16 @@ private fun SuccessBlock(
     val selectedSpot by bookingVm.selectedSpot.collectAsState()
     val credits by bookingVm.creditsRemaining.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
-    val bookedStatus by bookingVm.bookedStatus.collectAsState()
+    val existing by bookingVm.existingBooking.collectAsState()
+    val loaded by bookingVm.loaded.collectAsState()
+    val cancelSheetOpen by bookingVm.cancelSheetOpen.collectAsState()
+    val cancelState by bookingVm.cancelState.collectAsState()
+
+    // While the VM is still fetching /me + /bookings, show a neutral spinner on
+    // the CTA instead of the default "NOT AVAILABLE" flash. Past classes resolve
+    // independently (isPast) once loaded.
+    val ctaLoading = !loaded && submit is BookingSubmit.Idle
+    val hasLiveBooking = existing != null
 
     // Scrollable list under a sticky CTA. The LazyColumn pads its bottom by
     // ~140dp so the last content can scroll out from behind the CTA without
@@ -238,7 +264,7 @@ private fun SuccessBlock(
             contentPadding = PaddingValues(bottom = 140.dp),
         ) {
             item("topbar") {
-                TopBar(onClose = onClose, onShare = {}, onBookmark = {})
+                TopBar(onClose = onClose)
             }
             item("hero") {
                 HeroCard(
@@ -331,13 +357,23 @@ private fun SuccessBlock(
                 label = when {
                     isPast -> "CLASS ENDED"
                     submit is BookingSubmit.Booked -> "REQUESTED ✓"
-                    bookedStatus == "confirmed" -> "CONFIRMED ✓"
-                    bookedStatus == "requested" -> "REQUESTED"
-                    bookedStatus != null -> bookedStatus!!.uppercase()
+                    existing?.status == "confirmed" -> "CONFIRMED ✓"
+                    existing?.status == "requested" -> "REQUESTED"
+                    existing?.status != null -> existing!!.status.uppercase()
                     else -> cta.label
                 },
-                enabled = !isPast && cta.enabled,
-                onClick = { if (!isPast) bookingVm.openSheet() },
+                loading = ctaLoading,
+                // Tappable when there's a live booking (→ cancel) or the class is
+                // bookable; while loading the CTA is inert and shows a spinner.
+                enabled = !isPast && !ctaLoading && (hasLiveBooking || cta.enabled),
+                onClick = {
+                    when {
+                        ctaLoading || isPast -> {}
+                        hasLiveBooking -> bookingVm.openCancelSheet()
+                        cta == BookCta.Bookable -> bookingVm.openSheet()
+                        else -> {}
+                    }
+                },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -351,8 +387,18 @@ private fun SuccessBlock(
             creditsRemaining = credits,
             onSelectSpot = bookingVm::selectSpot,
             confirmEnabled = bookingVm.canConfirm,
+            submitting = submit is BookingSubmit.Submitting,
             onConfirm = bookingVm::confirmBooking,
             onDismiss = bookingVm::dismissSheet,
+        )
+    }
+    if (cancelSheetOpen) {
+        CancelBookingSheet(
+            className = session.template.name,
+            willForfeitCredit = existing?.cancelPolicy?.willForfeitCredit == true,
+            cancelState = cancelState,
+            onConfirm = bookingVm::confirmCancel,
+            onDismiss = bookingVm::dismissCancelSheet,
         )
     }
     (submit as? BookingSubmit.Failed)?.let { f ->
@@ -360,22 +406,70 @@ private fun SuccessBlock(
     }
 }
 
+// ── Cancel booking sheet ------------------------------------------------------
+
+/**
+ * Confirmation sheet for cancelling an existing booking from the detail page.
+ * Mirrors BookingSheet's Stone-container structure. The forfeit warning is
+ * driven by the booking's cancel policy: past the studio cutoff the credit is
+ * lost (Warning), otherwise it's refunded (Moss).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CancelBookingSheet(
+    className: String,
+    willForfeitCredit: Boolean,
+    cancelState: CancelState,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val submitting = cancelState is CancelState.Submitting
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Stone) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Heading3("Cancel booking?", size = 20, color = Ink)
+            Spacer(Modifier.height(8.dp))
+            BodyText(className, size = 16, color = Ink)
+            Spacer(Modifier.height(16.dp))
+            if (willForfeitCredit) {
+                BodyText(
+                    "Cancelling now forfeits this class's credit — you're past the studio's cutoff.",
+                    size = 13, color = Warning,
+                )
+            } else {
+                BodyText("You'll get your credit back.", size = 13, color = Moss)
+            }
+            Spacer(Modifier.height(20.dp))
+            PrimaryCta(
+                label = if (submitting) "CANCELLING…" else "CANCEL BOOKING",
+                onClick = onConfirm,
+                enabled = !submitting,
+                containerColor = Clay,
+                accentColor = ClayDeep,
+                trailing = if (submitting) {
+                    { CtaSpinner() }
+                } else null,
+            )
+            if (cancelState is CancelState.Failed) {
+                Spacer(Modifier.height(12.dp))
+                Caption("Couldn't cancel — please try again.", size = 13, color = BurntNectar)
+            }
+        }
+    }
+}
+
 // ── Top bar -------------------------------------------------------------------
 
 @Composable
-private fun TopBar(onClose: () -> Unit, onShare: () -> Unit, onBookmark: () -> Unit) {
+private fun TopBar(onClose: () -> Unit) {
+    // Bookmark + share are post-beta follow-ups; just the close affordance now.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         CircleIconButton(icon = ArcanaIcons.Close, onClick = onClose)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircleIconButton(icon = ArcanaIcons.Bookmark, onClick = onBookmark)
-            CircleIconButton(icon = ArcanaIcons.Share, onClick = onShare)
-        }
     }
 }
 
@@ -601,10 +695,10 @@ private fun VerticalHairline() {
 
 // ── Instructor row ------------------------------------------------------------
 
-/** Single-instructor row with avatar circle (initials), "TAUGHT BY / NAME"
- *  block, and trailing chevron implying tap-into-profile (Phase 5). Lineage
- *  and years are intentionally omitted — those fields don't exist on
- *  [org.arcana.mobile.data.InstructorBriefDto] today. */
+/** Single-instructor row with avatar circle (initials) and a "TAUGHT BY / NAME"
+ *  block. Lineage and years are intentionally omitted — those fields don't
+ *  exist on [org.arcana.mobile.data.InstructorBriefDto] today. Instructor
+ *  profiles are a post-beta follow-up, so the row is non-interactive for now. */
 @Composable
 private fun InstructorRow(
     name: String,
@@ -612,9 +706,7 @@ private fun InstructorRow(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = { /* Phase 5 — instructor profile */ }),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -626,15 +718,11 @@ private fun InstructorRow(
                 .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
+            CircleMonogram(
                 text = initialsOf(name),
-                style = TextStyle(
-                    fontFamily = Arcana.fonts.display,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
-                    letterSpacing = 0.04.em,
-                    color = studioColor,
-                ),
+                fontSize = 16,
+                color = studioColor,
+                fontWeight = FontWeight.SemiBold,
             )
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -642,7 +730,6 @@ private fun InstructorRow(
             Spacer(Modifier.height(4.dp))
             Display(text = name, size = 18, color = Ink)
         }
-        StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 18.dp, tint = Ash2)
     }
 }
 
@@ -785,24 +872,6 @@ private fun LocationCard(
                     BodyText(text = address, size = 12, color = Ash)
                 }
             }
-            Spacer(Modifier.width(12.dp))
-            // DIRECTIONS link — Phase 5 will hand this off to a maps deep link.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = "DIRECTIONS",
-                    style = TextStyle(
-                        fontFamily = Arcana.fonts.display,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 11.sp,
-                        letterSpacing = 0.10.em,
-                        color = studioColor,
-                    ),
-                )
-                StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 14.dp, tint = studioColor)
-            }
         }
     }
 }
@@ -828,11 +897,14 @@ private fun StickyReserveCta(
     modifier: Modifier = Modifier,
     label: String? = null,
     enabled: Boolean = true,
+    loading: Boolean = false,
 ) {
     val pillColor = when {
+        loading -> Graphite
         !enabled -> Graphite
-        capacity == DetailCapacity.Scarce -> Warning
         capacity == DetailCapacity.Full -> Graphite
+        // Scarce stays green like Open — scarcity reads from the "only N left"
+        // label + availability block, not a yellow button.
         else -> Moss
     }
     val arrowWellColor = if (capacity == DetailCapacity.Full || !enabled) Stone else Lime
@@ -866,49 +938,64 @@ private fun StickyReserveCta(
                 .background(Stone)
                 .padding(horizontal = 24.dp, vertical = 8.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(pillColor)
-                    .clickable(enabled = enabled, onClick = onClick)
-                    .padding(start = 20.dp, end = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = primaryLabel,
-                        maxLines = 1,
-                        style = TextStyle(
-                            fontFamily = Arcana.fonts.display,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp,
-                            letterSpacing = 0.10.em,
-                            color = Stone,
-                        ),
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "$timeStamp · $dayStamp",
-                        maxLines = 1,
-                        style = TextStyle(
-                            fontFamily = Arcana.fonts.body,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 9.sp,
-                            letterSpacing = 0.10.em,
-                            color = Stone.copy(alpha = 0.67f),
-                        ),
-                    )
-                }
+            if (loading) {
+                // Neutral pill with a centered compact dot loader while the VM
+                // resolves eligibility — no label, no arrow well, inert.
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(arrowWellColor),
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(pillColor),
                     contentAlignment = Alignment.Center,
                 ) {
-                    StrokeIcon(icon = arrowIcon, size = 18.dp, tint = Ink)
+                    DotMatrixLoaderCompact()
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(pillColor)
+                        .clickable(enabled = enabled, onClick = onClick)
+                        .padding(start = 20.dp, end = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = primaryLabel,
+                            maxLines = 1,
+                            style = TextStyle(
+                                fontFamily = Arcana.fonts.display,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                letterSpacing = 0.10.em,
+                                color = Stone,
+                            ),
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "$timeStamp · $dayStamp",
+                            maxLines = 1,
+                            style = TextStyle(
+                                fontFamily = Arcana.fonts.body,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 9.sp,
+                                letterSpacing = 0.10.em,
+                                color = Stone.copy(alpha = 0.67f),
+                            ),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(arrowWellColor),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        StrokeIcon(icon = arrowIcon, size = 18.dp, tint = Ink)
+                    }
                 }
             }
         }

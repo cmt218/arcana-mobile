@@ -471,8 +471,14 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
                             "${(e - s).inWholeMinutes}min"
                         } catch (_: Exception) { "" }
                     }
+                    // STUDIO · LOCATION · DURATION — location only when present.
+                    val metaLine = buildString {
+                        append(session.studio)
+                        session.location?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+                        if (durationMin.isNotEmpty()) append(" · ").append(durationMin)
+                    }
                     BodyText(
-                        text = if (durationMin.isNotEmpty()) "${session.studio} · $durationMin" else session.studio,
+                        text = metaLine,
                         size = 12,
                         color = StoneAlpha65,
                     )
@@ -562,6 +568,10 @@ private fun UpcomingRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Overline(text = session.studio, size = 10, color = Moss)
+                    session.location?.takeIf { it.isNotBlank() }?.let { loc ->
+                        Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
+                        Overline(text = loc, size = 10, color = Ash)
+                    }
                     booking.spot?.let { spot ->
                         Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
                         Overline(text = spot.label, size = 10, color = Ash)

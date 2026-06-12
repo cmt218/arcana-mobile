@@ -136,8 +136,9 @@ private fun formatBookingDateTime(startAt: String): String {
 @Composable
 private fun BookingRow(b: BookingDto, onCancel: (() -> Unit)?, onClick: () -> Unit) {
     val dateTimeLabel = remember(b.session.startAt) { formatBookingDateTime(b.session.startAt) }
+    val locationSuffix = b.session.location?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
     val spotSuffix = b.spot?.let { " · ${it.label}" } ?: ""
-    val studioSpot = "${b.session.studio}$spotSuffix"
+    val studioSpot = "${b.session.studio}$locationSuffix$spotSuffix"
 
     Row(
         modifier = Modifier

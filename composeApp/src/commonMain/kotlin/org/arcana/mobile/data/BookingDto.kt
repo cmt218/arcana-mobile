@@ -21,6 +21,7 @@ data class SessionBriefDto(
     @SerialName("end_at") val endAt: String,
     val name: String,
     val studio: String,
+    val location: String? = null,
     val instructor: String? = null,
 )
 

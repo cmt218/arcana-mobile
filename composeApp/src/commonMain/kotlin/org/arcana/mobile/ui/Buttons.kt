@@ -44,13 +44,15 @@ fun PrimaryCta(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    containerColor: Color = Moss,
+    accentColor: Color = Lime,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(CircleShape)
-            .background(if (enabled) Moss else Ash2)
+            .background(if (enabled) containerColor else Ash2)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(start = 24.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -73,7 +75,7 @@ fun PrimaryCta(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(if (enabled) Lime else Stone.copy(alpha = 0.25f)),
+                    .background(if (enabled) accentColor else Stone.copy(alpha = 0.25f)),
                 contentAlignment = Alignment.Center,
             ) {
                 StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 18.dp, tint = Ink)

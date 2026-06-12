@@ -20,6 +20,7 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
+import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
@@ -33,6 +34,7 @@ fun BookingSheet(
     creditsRemaining: Int?,
     onSelectSpot: (SpotDto) -> Unit,
     confirmEnabled: Boolean,
+    submitting: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -59,7 +61,14 @@ fun BookingSheet(
                 color = Graphite,
             )
             Spacer(Modifier.height(20.dp))
-            PrimaryCta(label = "CONFIRM", onClick = onConfirm, enabled = confirmEnabled)
+            PrimaryCta(
+                label = if (submitting) "BOOKING…" else "CONFIRM",
+                onClick = onConfirm,
+                enabled = if (submitting) false else confirmEnabled,
+                trailing = if (submitting) {
+                    { CtaSpinner() }
+                } else null,
+            )
         }
     }
 }

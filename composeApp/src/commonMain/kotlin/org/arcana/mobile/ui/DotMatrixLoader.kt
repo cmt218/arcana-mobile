@@ -7,8 +7,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -92,4 +95,21 @@ fun DotMatrixLoader(
 @Composable
 fun DotMatrixLoaderCompact(modifier: Modifier = Modifier) {
     DotMatrixLoader(modifier = modifier, columns = 5, rows = 1, dotSize = 5.dp, pitch = 11.dp)
+}
+
+/**
+ * Compact loader sized to a [PrimaryCta]'s 40dp arrow well, for use as the
+ * button's `trailing` slot while submitting. Keeps the pill at its resolved
+ * height — the bare compact loader is only ~10dp tall and would otherwise
+ * collapse the button when it replaces the arrow. The trailing inset gives the
+ * dots breathing room from the pill's edge instead of butting against it.
+ */
+@Composable
+fun CtaSpinner(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.padding(end = 12.dp).size(40.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        DotMatrixLoaderCompact()
+    }
 }

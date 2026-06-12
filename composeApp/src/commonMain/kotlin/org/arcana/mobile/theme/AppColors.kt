@@ -40,6 +40,8 @@ val Mist2       = Color(0xFFEBEADA) // subtle fills
 // ---- Functional ----
 val Danger      = Color(0xFFB23A2A)
 val Warning     = Color(0xFFD89B2A)
+val Clay        = Color(0xFFB5503F) // destructive-action red, gentle not alarm
+val ClayDeep    = Color(0xFF8F3D2F) // destructive-action red, gentle not alarm (arrow well)
 val Success     = Lime
 val Info        = MossLight
 

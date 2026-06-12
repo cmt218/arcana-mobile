@@ -3,7 +3,9 @@
 package org.arcana.mobile.booking
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -31,16 +33,22 @@ class BookingViewModelTest {
 
     private class FakeApi(
         val meResult: MembershipMeDto,
-        val upcoming: List<BookingDto> = emptyList(),
+        var upcoming: List<BookingDto> = emptyList(),
         val createResult: () -> BookingDto = { throw IllegalStateException() },
+        val cancelResult: () -> CancelBookingResponse = { CancelBookingResponse("cancelled", true, false) },
     ) : BookingApi, MembershipApi {
         var created: Pair<Int, Int?>? = null
+        var cancelledId: Int? = null
+        var cancelCalls: Int = 0
+        var createCalls: Int = 0
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(upcoming, emptyList())
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto {
-            created = sessionId to requestedSpotId; return createResult()
+            created = sessionId to requestedSpotId; createCalls++; return createResult()
         }
-        override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+        override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse {
+            cancelledId = bookingId; cancelCalls++; return cancelResult()
+        }
     }
 
     @Test fun `loads eligibility - bookable`() = runTest {
@@ -56,7 +64,8 @@ class BookingViewModelTest {
         val vm = BookingViewModel(482, 5, false, api, api)
         vm.load()
         assertEquals(BookCta.AlreadyBooked, vm.ctaState.value)
-        assertEquals("requested", vm.bookedStatus.value)
+        assertEquals(17, vm.existingBooking.value?.id)
+        assertEquals("requested", vm.existingBooking.value?.status)
     }
 
     @Test fun `booked status reflects a confirmed booking`() = runTest {
@@ -64,16 +73,113 @@ class BookingViewModelTest {
         val api = FakeApi(me(), upcoming = listOf(confirmed))
         val vm = BookingViewModel(482, 5, false, api, api)
         vm.load()
-        assertEquals("confirmed", vm.bookedStatus.value)
+        assertEquals("confirmed", vm.existingBooking.value?.status)
     }
 
-    @Test fun `submit success transitions to Booked`() = runTest {
-        val api = FakeApi(me(), createResult = { booking() })
+    @Test fun `submit success transitions to Booked and sets existingBooking`() = runTest {
+        val created = booking(id = 99, sessionId = 482).copy(status = "requested")
+        val api = FakeApi(me(), createResult = { created })
         val vm = BookingViewModel(482, 5, false, api, api)
         vm.load()
         vm.confirmBooking()
         assertEquals(482 to null, api.created)
         assertTrue(vm.submitState.value is BookingSubmit.Booked)
+        assertEquals(99, vm.existingBooking.value?.id)
+    }
+
+    // ── loaded flag (Item 2) --------------------------------------------------
+
+    @Test fun `loaded is false before load and true after`() = runTest {
+        val api = FakeApi(me())
+        val vm = BookingViewModel(482, 5, false, api, api)
+        assertFalse(vm.loaded.value)
+        vm.load()
+        assertTrue(vm.loaded.value)
+    }
+
+    // ── cancel (Item 4) -------------------------------------------------------
+
+    @Test fun `openCancelSheet no-ops without an existing booking, opens with one`() = runTest {
+        val api = FakeApi(me())
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.openCancelSheet()
+        assertFalse(vm.cancelSheetOpen.value)
+
+        val booked = FakeApi(me(), upcoming = listOf(booking(sessionId = 482)))
+        val vm2 = BookingViewModel(482, 5, false, booked, booked)
+        vm2.load()
+        vm2.openCancelSheet()
+        assertTrue(vm2.cancelSheetOpen.value)
+    }
+
+    @Test fun `confirmCancel cancels, clears booking, closes sheet, reloads`() = runTest {
+        val api = FakeApi(me(), upcoming = listOf(booking(id = 17, sessionId = 482)))
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.openCancelSheet()
+        assertTrue(vm.cancelSheetOpen.value)
+        // After the cancel call, the reload's myBookings must no longer carry it.
+        api.upcoming = emptyList()
+        vm.confirmCancel()
+        assertEquals(17, api.cancelledId)
+        assertEquals(1, api.cancelCalls)
+        assertFalse(vm.cancelSheetOpen.value)
+        assertNull(vm.existingBooking.value)
+        assertTrue(vm.cancelState.value is CancelState.Idle)
+        // Reload re-derived the CTA back to bookable.
+        assertEquals(BookCta.Bookable, vm.ctaState.value)
+    }
+
+    @Test fun `confirmCancel failure surfaces Failed, keeps sheet and booking`() = runTest {
+        val api = FakeApi(
+            me(),
+            upcoming = listOf(booking(id = 17, sessionId = 482)),
+            cancelResult = { throw RuntimeException("boom") },
+        )
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.openCancelSheet()
+        vm.confirmCancel()
+        val s = vm.cancelState.value
+        assertTrue(s is CancelState.Failed)
+        assertEquals("cancel_failed", (s as CancelState.Failed).code)
+        assertTrue(vm.cancelSheetOpen.value)
+        assertEquals(17, vm.existingBooking.value?.id)
+    }
+
+    @Test fun `confirmBooking is guarded against double-submit`() = runTest {
+        // StandardTestDispatcher keeps the first launch suspended (Submitting)
+        // until we advance, so the second synchronous call hits the guard.
+        val sched = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(sched)
+        try {
+            val api = FakeApi(me(), createResult = { booking() })
+            val vm = BookingViewModel(482, 5, false, api, api)
+            vm.load(); advanceUntilIdle()
+            vm.confirmBooking()   // launches, parks in Submitting
+            vm.confirmBooking()   // blocked by the Submitting guard
+            advanceUntilIdle()
+            assertEquals(1, api.createCalls)
+        } finally {
+            Dispatchers.setMain(dispatcher)
+        }
+    }
+
+    @Test fun `confirmCancel is guarded against double-submit`() = runTest {
+        val sched = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(sched)
+        try {
+            val api = FakeApi(me(), upcoming = listOf(booking(id = 17, sessionId = 482)))
+            val vm = BookingViewModel(482, 5, false, api, api)
+            vm.load(); advanceUntilIdle()
+            vm.confirmCancel()   // launches, parks in Submitting
+            vm.confirmCancel()   // blocked by the Submitting guard
+            advanceUntilIdle()
+            assertEquals(1, api.cancelCalls)
+        } finally {
+            Dispatchers.setMain(dispatcher)
+        }
     }
 
     @Test fun `submit maps BookingError code to message`() = runTest {
