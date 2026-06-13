@@ -202,9 +202,15 @@ fun ProfileScreen(
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp, bottom = 8.dp),
             )
         }
-        items(items = accountItems) { item ->
+        itemsIndexed(items = accountItems) { index, item ->
             StoneWrap {
-                AccountRow(item, modifier = Modifier.padding(horizontal = 24.dp))
+                // The last row skips its divider — Sign Out's top rule is the
+                // single separator below the account list (avoids a double line).
+                AccountRow(
+                    item,
+                    showDivider = index < accountItems.lastIndex,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
             }
         }
 
@@ -512,12 +518,12 @@ private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) 
 }
 
 @Composable
-private fun AccountRow(item: AccountItem, modifier: Modifier = Modifier) {
+private fun AccountRow(item: AccountItem, showDivider: Boolean = true, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .then(if (item.onClick != null) Modifier.clickable(onClick = item.onClick) else Modifier)
-            .drawBottomRule()
+            .then(if (showDivider) Modifier.drawBottomRule() else Modifier)
             .padding(vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
