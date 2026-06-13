@@ -397,13 +397,25 @@ private fun ProfileHero(state: ProfileUiState) {
                     modifier = Modifier.weight(1f),
                 )
                 Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
-                // Credits label: "Cap" when we have period data, otherwise "Credits".
-                val creditsLabel = if (success?.creditsGranted != null) "Cap" else "Credits"
+                // Credits cell: neutral label — the membership tier is shown
+                // once, in the Account → Membership row below.
                 val creditsValue = success?.creditsRemaining?.toString()
                 StatCell(
                     value = creditsValue,
-                    label = creditsLabel,
+                    label = "Credits",
                     modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Next-period wallet — shown only when a beta member also holds next
+            // month's wallet while still in the current month (labelled by month).
+            success?.upcomingCredits?.let { upc ->
+                Spacer(Modifier.height(8.dp))
+                BodyText(
+                    text = "Next: ${success.upcomingMonth ?: "upcoming"} · $upc credits",
+                    size = 12,
+                    color = StoneAlpha55,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
 

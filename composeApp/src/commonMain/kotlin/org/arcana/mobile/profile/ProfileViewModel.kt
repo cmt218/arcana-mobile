@@ -21,6 +21,10 @@ sealed interface ProfileUiState {
         val tierName: String,
         val creditsRemaining: Int?,
         val creditsGranted: Int?,
+        // The next-month wallet (month + credits), set only when a member holds
+        // next month's wallet while still in the current month. Null otherwise.
+        val upcomingMonth: String?,
+        val upcomingCredits: Int?,
         val lifetimeSessions: Int,
         val weekStreak: Int,
     ) : ProfileUiState
@@ -75,6 +79,8 @@ class ProfileViewModel(
                 tierName = me.membership.tier.name,
                 creditsRemaining = me.currentPeriod?.creditsRemaining,
                 creditsGranted = me.currentPeriod?.creditsGranted,
+                upcomingMonth = me.upcomingPeriod?.monthName,
+                upcomingCredits = me.upcomingPeriod?.creditsRemaining,
                 lifetimeSessions = me.member.lifetimeSessions,
                 weekStreak = me.member.weekStreak,
             )

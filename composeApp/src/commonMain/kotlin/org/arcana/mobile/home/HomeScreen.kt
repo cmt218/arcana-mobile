@@ -274,6 +274,8 @@ fun HomeScreen(
                 item {
                     ManifestoCard(
                         creditsRemaining = s.creditsRemaining,
+                        upcomingMonth = s.upcomingMonth,
+                        upcomingCredits = s.upcomingCredits,
                         weekStreak = s.weekStreak,
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
@@ -595,14 +597,11 @@ private fun UpcomingRow(
 @Composable
 private fun ManifestoCard(
     creditsRemaining: Int?,
+    upcomingMonth: String?,
+    upcomingCredits: Int?,
     weekStreak: Int,
     modifier: Modifier = Modifier,
 ) {
-    val tz = remember { TimeZone.currentSystemDefault() }
-    val today = remember(tz) { Clock.System.todayIn(tz) }
-    val weekNum = (today.day + today.month.ordinal * 30) / 7 + 1
-    val weekLabel = "Week $weekNum · ${today.year}"
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -614,13 +613,22 @@ private fun ManifestoCard(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Overline(text = weekLabel, size = 10, color = Lime)
-            val creditsLine = if (creditsRemaining != null) {
-                "$creditsRemaining credits remaining."
+            if (creditsRemaining == null) {
+                // No live wallet — explicit, calm empty state (lapsed member or
+                // a between-cohorts / pre-rolling lull).
+                Heading2(text = "No active membership.", size = 26, color = Stone)
             } else {
-                "Track your progress."
+                Heading2(text = "$creditsRemaining classes remaining.", size = 26, color = Stone)
+                // The "next period" wallet appears only when the member has bought
+                // next month while still in the current month — labelled by month.
+                if (upcomingCredits != null) {
+                    BodyText(
+                        text = "Next: ${upcomingMonth ?: "upcoming"} · $upcomingCredits credits",
+                        size = 12,
+                        color = StoneAlpha65,
+                    )
+                }
             }
-            Heading2(text = creditsLine, size = 26, color = Stone)
             val streakLine = if (weekStreak > 0) "$weekStreak-week streak. Keep it going." else "Build your streak."
             BodyText(
                 text = streakLine,

@@ -14,6 +14,11 @@ sealed interface HomeUiState {
     data class Success(
         val displayName: String,
         val creditsRemaining: Int?,
+        // The next-month wallet (month name + credits) — set only when a member
+        // has bought next month while still in the current month. Drives the
+        // "Next: August" chip; null for everyone else.
+        val upcomingMonth: String?,
+        val upcomingCredits: Int?,
         val upcoming: List<BookingDto>,
         val weekStreak: Int,
     ) : HomeUiState
@@ -58,6 +63,8 @@ class HomeViewModel(
             _uiState.value = HomeUiState.Success(
                 displayName = me.member.displayName ?: me.member.email.substringBefore("@"),
                 creditsRemaining = me.currentPeriod?.creditsRemaining,
+                upcomingMonth = me.upcomingPeriod?.monthName,
+                upcomingCredits = me.upcomingPeriod?.creditsRemaining,
                 upcoming = upcoming,
                 weekStreak = me.member.weekStreak,
             )
