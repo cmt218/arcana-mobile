@@ -1,6 +1,8 @@
 package org.arcana.mobile.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,20 +35,17 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.WordmarkLogo
-import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaTextField
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
-import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.settings.DeveloperSettingsScreen
 
@@ -60,11 +59,11 @@ fun AuthScreen(
     viewModel: AuthViewModel,
     modifier: Modifier = Modifier,
 ) {
-    // Developer Settings is reachable from here as a full-screen overlay so
-    // testers stuck at login (because the default API URL doesn't work for
-    // them) can swap the base URL without first authenticating. Same screen
-    // is also reachable post-login from Profile.
+    // Developer Settings (API base-URL override — dev/testing only) is hidden
+    // behind a deliberate gesture: 10 taps on the wordmark below. It has NO
+    // visible entry point, so it isn't discoverable in a public App Store build.
     var showDeveloperSettings by remember { mutableStateOf(false) }
+    var devTapCount by remember { mutableStateOf(0) }
     if (showDeveloperSettings) {
         DeveloperSettingsScreen(onClose = { showDeveloperSettings = false })
         return
@@ -106,7 +105,23 @@ fun AuthScreen(
                 verticalArrangement = Arrangement.spacedBy(40.dp),
             ) {
                 Spacer(Modifier.height(8.dp))
-                WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+                // Hidden entry to Developer Settings: 10 taps on the wordmark.
+                // indication = null keeps it invisible (no ripple) to users.
+                WordmarkLogo(
+                    modifier = Modifier
+                        .height(24.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            devTapCount++
+                            if (devTapCount >= 10) {
+                                devTapCount = 0
+                                showDeveloperSettings = true
+                            }
+                        },
+                    tint = Moss,
+                )
                 HeaderBlock()
                 val errorState = uiState as? AuthUiState.Error
                 FormBlock(
@@ -122,10 +137,7 @@ fun AuthScreen(
                     onSubmit = onSubmit,
                 )
                 Spacer(Modifier.weight(1f))
-                Footer(
-                    onDeveloperSettings = { showDeveloperSettings = true },
-                    modifier = Modifier.padding(bottom = 24.dp),
-                )
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -206,24 +218,3 @@ private fun CtaBlock(
     }
 }
 
-@Composable
-private fun Footer(
-    onDeveloperSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        // Pre-launch only: lets testers swap the API base URL before login,
-        // for environments where the default URL isn't reachable.
-        TextLink(
-            label = "Developer settings",
-            onClick = onDeveloperSettings,
-            color = Ash,
-            underline = false,
-            icon = ArcanaIcons.Settings,
-        )
-    }
-}

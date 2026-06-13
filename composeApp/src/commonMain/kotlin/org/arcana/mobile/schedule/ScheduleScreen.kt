@@ -462,16 +462,18 @@ private fun SuccessContent(
                         .clip(RoundedCornerShape(16.dp))
                         .background(Paper)
                         .border(1.dp, Mist, RoundedCornerShape(16.dp))
-                        // No bottom padding: the CTA's own 12dp bottom padding
-                        // provides the lower whitespace, keeping the text block
-                        // vertically centered in the cell (12dp top / 12dp bottom).
-                        .padding(start = 16.dp, top = 12.dp, end = 4.dp),
+                        // Keep both the top and bottom whitespace INSIDE the column
+                        // (BodyText top pad + CTA bottom pad) so the column's vertical
+                        // midpoint matches the card's — that's what keeps the dismiss
+                        // X (centered against the row) reading as centered in the cell.
+                        .padding(start = 16.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         BodyText(
                             text = "Make it yours. Save your favorite Studios.",
                             size = 13, color = Ink,
+                            modifier = Modifier.padding(top = 12.dp),
                         )
                         // Padding inside the clickable so the CTA's hit area
                         // clears the 40dp minimum despite the 11sp label.

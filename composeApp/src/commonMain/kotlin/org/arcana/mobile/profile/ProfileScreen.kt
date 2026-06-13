@@ -22,13 +22,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,6 +119,9 @@ fun ProfileScreen(
     val state by vm.uiState.collectAsState()
     val refreshing by vm.isRefreshing.collectAsState()
     val favorites by vm.favorites.collectAsState()
+    val deleteVm = koinViewModel<DeleteAccountViewModel>()
+    val deleteState by deleteVm.state.collectAsState()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.load() }
 
@@ -218,7 +226,7 @@ fun ProfileScreen(
         stoneItem {
             Row(
                 modifier = Modifier
-                    .padding(start = 24.dp, end = 24.dp, top = 32.dp)
+                    .padding(start = 24.dp, end = 24.dp, top = 8.dp)
                     .fillMaxWidth()
                     .drawTopRule()
                     .clickable { apiClient.logout() }
@@ -228,6 +236,23 @@ fun ProfileScreen(
             ) {
                 StrokeIcon(ArcanaIcons.Logout, size = 16.dp, tint = Danger)
                 Overline(text = "Sign out", size = 12, color = Danger)
+            }
+        }
+
+        // DELETE ACCOUNT — required for App Store review (Guideline 5.1.1(v)).
+        // Initiates deletion in-app; the request flows through the concierge
+        // pipeline and the founders complete it manually within 30 days.
+        stoneItem {
+            Row(
+                modifier = Modifier
+                    .padding(start = 24.dp, end = 24.dp, top = 4.dp)
+                    .fillMaxWidth()
+                    .clickable { showDeleteConfirm = true }
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Overline(text = "Delete account", size = 11, color = Ash2)
             }
         }
 
@@ -245,6 +270,54 @@ fun ProfileScreen(
             }
         }
         }
+        }
+
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text("Delete account?") },
+                text = {
+                    Text(
+                        "Are you sure you want to delete your account? This permanently " +
+                            "removes your account and associated data.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteConfirm = false
+                        deleteVm.submit()
+                    }) { Text("Delete", color = Danger) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                },
+            )
+        }
+        when (deleteState) {
+            is DeleteAccountState.Sent -> AlertDialog(
+                onDismissRequest = { deleteVm.reset() },
+                title = { Text("Request received") },
+                text = {
+                    Text(
+                        "We've received your request to delete your account. It will be " +
+                            "permanently deleted within 30 days.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { deleteVm.reset() }) { Text("OK") }
+                },
+            )
+            is DeleteAccountState.Failed -> AlertDialog(
+                onDismissRequest = { deleteVm.reset() },
+                title = { Text("Couldn't submit") },
+                text = {
+                    Text("Something went wrong submitting your request. Please try again.")
+                },
+                confirmButton = {
+                    TextButton(onClick = { deleteVm.reset() }) { Text("OK") }
+                },
+            )
+            else -> {}
         }
     }
 }
