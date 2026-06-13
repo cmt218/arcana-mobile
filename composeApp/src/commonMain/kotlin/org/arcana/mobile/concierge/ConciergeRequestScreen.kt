@@ -87,7 +87,7 @@ fun ConciergeRequestScreen(
         Heading2("Reach the founders", size = 26, color = Wood)
         Spacer(Modifier.height(14.dp))
         BodyText(
-            text = "Having an issue, or want to reach Cole and Felicia directly? " +
+            text = "Having an issue, or want to reach the founders directly? " +
                 "Tell us what's going on and we'll be in touch.",
             size = 15,
             color = Ash,
@@ -159,7 +159,7 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
             Display(text = "Message\nsent.", size = 44, color = Ink)
             Spacer(Modifier.height(16.dp))
             BodyText(
-                text = "We've got it. Cole or Felicia will reach out to you directly.",
+                text = "We've got it. The founders will reach out to you directly.",
                 size = 15,
                 color = Ash,
             )

@@ -462,12 +462,15 @@ private fun SuccessContent(
                         .clip(RoundedCornerShape(16.dp))
                         .background(Paper)
                         .border(1.dp, Mist, RoundedCornerShape(16.dp))
-                        .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                        // No bottom padding: the CTA's own 12dp bottom padding
+                        // provides the lower whitespace, keeping the text block
+                        // vertically centered in the cell (12dp top / 12dp bottom).
+                        .padding(start = 16.dp, top = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         BodyText(
-                            text = "Make it yours — save your favorite Studios.",
+                            text = "Make it yours. Save your favorite Studios.",
                             size = 13, color = Ink,
                         )
                         // Padding inside the clickable so the CTA's hit area
