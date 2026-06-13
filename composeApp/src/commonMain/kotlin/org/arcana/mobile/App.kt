@@ -43,6 +43,7 @@ import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
 import org.arcana.mobile.signup.PendingTokenSource
 import org.arcana.mobile.booking.MyBookingsScreen
+import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.signup.SignupCompletionScreen
 import org.arcana.mobile.signup.SignupCompletionViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
@@ -242,6 +243,7 @@ private fun MainScaffold() {
             composable<ArcanaDestination.Profile> {
                 ProfileScreen(
                     onManageStudios = { navController.navigate(ArcanaDestination.StudioSelection) },
+                    onOpenConcierge = { navController.navigate(ArcanaDestination.ConciergeRequest) },
                 )
             }
             composable<ArcanaDestination.StudioSelection> {
@@ -252,6 +254,9 @@ private fun MainScaffold() {
                     onClose = { navController.popBackStack() },
                     onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
                 )
+            }
+            composable<ArcanaDestination.ConciergeRequest> {
+                ConciergeRequestScreen(onClose = { navController.popBackStack() })
             }
             composable<ArcanaDestination.ClassDetail> { backStackEntry ->
                 val args = backStackEntry.toRoute<ArcanaDestination.ClassDetail>()

@@ -5,6 +5,7 @@ import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.MyBookingsViewModel
+import org.arcana.mobile.concierge.ConciergeRequestViewModel
 import org.arcana.mobile.defaultBaseUrl
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.home.HomeViewModel
@@ -12,6 +13,7 @@ import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.networking.BaseUrlProvider
 import org.arcana.mobile.networking.BookingApi
+import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
 import org.arcana.mobile.networking.ScheduleApi
@@ -36,12 +38,14 @@ val appModule = module {
     single<MembershipApi> { get<ArcanaApiClient>() }
     single<FavoritesApi> { get<ArcanaApiClient>() }
     single<ScheduleApi> { get<ArcanaApiClient>() }
+    single<ConciergeApi> { get<ArcanaApiClient>() }
     single { FavoritesRepository(get()) }
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
     viewModel { AuthViewModel(get()) }
     viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
     viewModel { ProfileViewModel(api = get(), favoritesRepository = get()) }
     viewModel { MyBookingsViewModel(api = get()) }
+    viewModel { ConciergeRequestViewModel(conciergeApi = get()) }
     viewModel { ScheduleViewModel(get(), get(), get()) }
     viewModel { StudioSelectionViewModel(get(), get()) }
     viewModel { DeveloperSettingsViewModel(get()) }

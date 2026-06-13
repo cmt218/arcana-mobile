@@ -30,6 +30,8 @@ import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CompleteSignupRequest
 import org.arcana.mobile.data.CompleteSignupResponse
+import org.arcana.mobile.data.CreateConciergeRequest
+import org.arcana.mobile.data.CreateConciergeResponse
 import org.arcana.mobile.data.CreateBookingRequest
 import org.arcana.mobile.data.CreateBookingResponse
 import org.arcana.mobile.data.FavoritesDto
@@ -46,10 +48,14 @@ import org.arcana.mobile.data.TokenResponse
 import org.arcana.mobile.data.UpdateFavoritesRequest
 import org.arcana.mobile.signup.CompleteSignupResult
 
+/** Raised by [ArcanaApiClient.login] for a non-2xx token response. [statusCode]
+ * is the HTTP status — 401 means the email/password didn't match. */
+class LoginError(val statusCode: Int) : Exception("login_failed_$statusCode")
+
 class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
-) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -101,10 +107,18 @@ class ArcanaApiClient(
     }
 
     suspend fun login(email: String, password: String) {
-        val tokens = client.post(v1("auth/token/")) {
+        val response = client.post(v1("auth/token/")) {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(email, password))
-        }.body<TokenResponse>()
+        }
+        // expectSuccess is false, so a non-2xx response never throws here — and
+        // calling .body<TokenResponse>() on a 401 would fail deserializing the
+        // error body, surfacing as a generic "couldn't connect". Inspect the
+        // status explicitly so bad credentials are reported as such.
+        if (response.status != HttpStatusCode.OK) {
+            throw LoginError(response.status.value)
+        }
+        val tokens = response.body<TokenResponse>()
         tokenStorage.accessToken = tokens.access
         tokenStorage.refreshToken = tokens.refresh
         clearBearerTokenCache()
@@ -115,11 +129,12 @@ class ArcanaApiClient(
         token: String,
         password: String,
         displayName: String,
+        phoneNumber: String,
     ): CompleteSignupResult {
         return try {
             val response = client.post(v1("auth/complete-signup")) {
                 contentType(ContentType.Application.Json)
-                setBody(CompleteSignupRequest(token, password, displayName))
+                setBody(CompleteSignupRequest(token, password, displayName, phoneNumber))
             }
             when (response.status) {
                 HttpStatusCode.OK -> {
@@ -272,6 +287,24 @@ class ArcanaApiClient(
 
     override suspend fun membershipMe(): MembershipMeDto =
         client.get(v1("memberships/me")).body()
+
+    override suspend fun createConciergeRequest(message: String): Int {
+        val response = client.post(v1("concierge-requests/")) {
+            contentType(ContentType.Application.Json)
+            setBody(CreateConciergeRequest(message))
+        }
+        if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
+            return response.body<CreateConciergeResponse>().id
+        }
+        // Non-2xx: the server returns {"error": "<reason_code>"} (or DRF field
+        // errors). Surface a code; the screen maps it to friendly copy.
+        val code = try {
+            response.body<Map<String, String>>()["error"]
+        } catch (_: Exception) {
+            null
+        } ?: "concierge_failed"
+        throw ConciergeError(code)
+    }
 
     fun logout() {
         tokenStorage.clear()

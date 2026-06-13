@@ -106,6 +106,7 @@ private data class AccountItem(
 @Composable
 fun ProfileScreen(
     onManageStudios: () -> Unit,
+    onOpenConcierge: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val apiClient = koinInject<ArcanaApiClient>()
@@ -121,6 +122,7 @@ fun ProfileScreen(
     val tierLabel = (state as? ProfileUiState.Success)?.tierName.orEmpty()
     val accountItems = listOf(
         AccountItem(ArcanaIcons.Card, "Membership", tierLabel, Ash),
+        AccountItem(ArcanaIcons.Support, "Concierge", "", Moss, onClick = onOpenConcierge),
     )
 
     // The body Stone fills everything; an Ink strip sits behind the top of

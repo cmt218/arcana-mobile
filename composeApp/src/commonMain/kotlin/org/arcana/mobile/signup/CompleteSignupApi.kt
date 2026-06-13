@@ -15,7 +15,12 @@ sealed interface CompleteSignupResult {
  * against a fake without an HttpClient.
  */
 interface CompleteSignupCallable {
-    suspend fun complete(token: String, password: String, displayName: String): CompleteSignupResult
+    suspend fun complete(
+        token: String,
+        password: String,
+        displayName: String,
+        phoneNumber: String,
+    ): CompleteSignupResult
 }
 
 /**
@@ -26,6 +31,11 @@ interface CompleteSignupCallable {
 class CompleteSignupApi(
     private val apiClient: ArcanaApiClient,
 ) : CompleteSignupCallable {
-    override suspend fun complete(token: String, password: String, displayName: String): CompleteSignupResult =
-        apiClient.completeSignup(token, password, displayName)
+    override suspend fun complete(
+        token: String,
+        password: String,
+        displayName: String,
+        phoneNumber: String,
+    ): CompleteSignupResult =
+        apiClient.completeSignup(token, password, displayName, phoneNumber)
 }

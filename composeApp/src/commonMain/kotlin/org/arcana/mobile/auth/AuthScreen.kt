@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
@@ -107,10 +108,12 @@ fun AuthScreen(
                 Spacer(Modifier.height(8.dp))
                 WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
                 HeaderBlock()
+                val errorState = uiState as? AuthUiState.Error
                 FormBlock(
                     email = email, onEmailChange = { email = it },
                     password = password, onPasswordChange = { password = it },
-                    error = (uiState as? AuthUiState.Error)?.message,
+                    errorMessage = errorState?.message,
+                    isCredentialError = errorState?.isCredentialError == true,
                     onSubmit = onSubmit,
                     onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
                 )
@@ -142,7 +145,8 @@ private fun FormBlock(
     onEmailChange: (String) -> Unit,
     password: String,
     onPasswordChange: (String) -> Unit,
-    error: String?,
+    errorMessage: String?,
+    isCredentialError: Boolean,
     onSubmit: () -> Unit,
     onEmailNext: () -> Unit,
 ) {
@@ -155,6 +159,7 @@ private fun FormBlock(
             keyboardType = KeyboardType.Email,
             imeAction = ImeAction.Next,
             onImeAction = onEmailNext,
+            contentType = ContentType.EmailAddress,
         )
         ArcanaTextField(
             label = "Password",
@@ -165,9 +170,13 @@ private fun FormBlock(
             keyboardType = KeyboardType.Password,
             imeAction = ImeAction.Done,
             onImeAction = onSubmit,
+            contentType = ContentType.Password,
+            // A wrong email/password shows inline on the field; network/server
+            // failures fall through to the general line below.
+            error = if (isCredentialError) errorMessage else null,
         )
-        if (error != null) {
-            BodyText(text = error, size = 14, color = Danger)
+        if (errorMessage != null && !isCredentialError) {
+            BodyText(text = errorMessage, size = 14, color = Danger)
         }
     }
 }

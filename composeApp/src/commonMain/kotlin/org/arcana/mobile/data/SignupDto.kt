@@ -7,6 +7,7 @@ data class CompleteSignupRequest(
     val token: String,
     val password: String,
     val display_name: String,
+    val phone_number: String,
 )
 
 @Serializable

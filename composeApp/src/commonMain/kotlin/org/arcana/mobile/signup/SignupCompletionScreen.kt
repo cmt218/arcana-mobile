@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -24,14 +25,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
@@ -46,7 +50,6 @@ import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.StrokeIcon
-import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
 
 /**
@@ -78,6 +81,7 @@ fun SignupCompletionScreen(
             lockedEmail = lockedEmail,
             onFirstNameChange = viewModel::updateFirstName,
             onLastNameChange = viewModel::updateLastName,
+            onPhoneNumberChange = viewModel::updatePhoneNumber,
             onPasswordChange = viewModel::updatePassword,
             onConfirmPasswordChange = viewModel::updateConfirmPassword,
             onSubmit = viewModel::submit,
@@ -89,7 +93,6 @@ fun SignupCompletionScreen(
         is SignupCompletionState.Error -> ErrorState(
             error = s,
             onNavigateToLogin = onNavigateToLogin,
-            onRetry = viewModel::reset,
             modifier = modifier,
         )
     }
@@ -102,6 +105,7 @@ private fun EditingForm(
     lockedEmail: String?,
     onFirstNameChange: (String) -> Unit,
     onLastNameChange: (String) -> Unit,
+    onPhoneNumberChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onConfirmPasswordChange: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -140,6 +144,13 @@ private fun EditingForm(
                 Spacer(Modifier.height(14.dp))
                 Display(text = "Claim\nyour\nname.", size = 52, color = Ink)
 
+                // Non-field failures (network / server / unrecognized) surface
+                // here so the member keeps everything they typed.
+                if (editing.formError != null) {
+                    Spacer(Modifier.height(20.dp))
+                    FormErrorBanner(message = editing.formError)
+                }
+
                 Spacer(Modifier.height(32.dp))
                 // Fields (and the locked email row when present), gap ~26.
                 Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -153,6 +164,8 @@ private fun EditingForm(
                         placeholder = "Your first name",
                         imeAction = ImeAction.Next,
                         onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        capitalization = KeyboardCapitalization.Words,
+                        contentType = ContentType.PersonFirstName,
                     )
                     ArcanaTextField(
                         label = "Last name",
@@ -161,6 +174,19 @@ private fun EditingForm(
                         placeholder = "Your last name",
                         imeAction = ImeAction.Next,
                         onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        capitalization = KeyboardCapitalization.Words,
+                        contentType = ContentType.PersonLastName,
+                    )
+                    ArcanaTextField(
+                        label = "Phone number",
+                        value = editing.phoneNumber,
+                        onValueChange = onPhoneNumberChange,
+                        placeholder = "(555) 123-4567",
+                        keyboardType = KeyboardType.Phone,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.PhoneNumber,
+                        error = editing.phoneError,
                     )
                     ArcanaTextField(
                         label = "Password",
@@ -171,6 +197,8 @@ private fun EditingForm(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Next,
                         onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.NewPassword,
+                        error = editing.passwordError,
                     )
                     ArcanaTextField(
                         label = "Confirm password",
@@ -180,6 +208,7 @@ private fun EditingForm(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                         onImeAction = onSubmit,
+                        contentType = ContentType.NewPassword,
                     )
                 }
 
@@ -289,17 +318,38 @@ private fun SuccessLoader(modifier: Modifier = Modifier) {
 }
 
 /**
- * Error — centered, brand-aligned. TokenExpired routes to login ("already signed
- * up, log in instead"); the remaining kinds offer a retry that resets the form
- * back to a fresh Editing state.
+ * A Danger-toned banner for non-field failures (network / server / unrecognized
+ * 400). Sits above the form fields so the member never loses what they typed.
+ */
+@Composable
+private fun FormErrorBanner(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Danger.copy(alpha = 0.10f))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        BodyText(text = message, size = 14, color = Danger)
+    }
+}
+
+/**
+ * Terminal error — centered, brand-aligned. Both kinds mean the form can't
+ * proceed (the link is dead, or an account already exists), so each routes the
+ * member to log in. Recoverable validation failures never reach here; they're
+ * shown inline on the editing form instead.
  */
 @Composable
 private fun ErrorState(
     error: SignupCompletionState.Error,
     onNavigateToLogin: () -> Unit,
-    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val body = when (error.kind) {
+        SignupErrorKind.TokenExpired -> "Looks like this link's already been used."
+        SignupErrorKind.AlreadyHasAccount -> "You already have an account with this email."
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -312,52 +362,13 @@ private fun ErrorState(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.Start,
         ) {
-            if (error.kind == SignupErrorKind.TokenExpired) {
-                Overline(text = "Already signed up", color = Moss)
-                Spacer(Modifier.height(14.dp))
-                Display(text = "Log in\ninstead.", size = 44, color = Ink)
-                Spacer(Modifier.height(18.dp))
-                BodyText(
-                    text = "Looks like this link's already been used.",
-                    size = 15,
-                    color = Ash,
-                )
-                Spacer(Modifier.height(32.dp))
-                PrimaryCta(label = "Log in", onClick = onNavigateToLogin)
-            } else {
-                Overline(text = "Something went wrong", color = Moss)
-                Spacer(Modifier.height(14.dp))
-                Display(text = "Let's try\nagain.", size = 44, color = Ink)
-                Spacer(Modifier.height(18.dp))
-                BodyText(
-                    text = defaultMessage(error.kind),
-                    size = 15,
-                    color = Ash,
-                )
-                Spacer(Modifier.height(32.dp))
-                PrimaryCta(label = "Try again", onClick = onRetry, trailing = {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Lime),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        StrokeIcon(icon = ArcanaIcons.Refresh, size = 18.dp, tint = Ink)
-                    }
-                })
-                Spacer(Modifier.height(20.dp))
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TextLink(label = "Log in", onClick = onNavigateToLogin, color = Ash)
-                }
-            }
+            Overline(text = "Already signed up", color = Moss)
+            Spacer(Modifier.height(14.dp))
+            Display(text = "Log in\ninstead.", size = 44, color = Ink)
+            Spacer(Modifier.height(18.dp))
+            BodyText(text = body, size = 15, color = Ash)
+            Spacer(Modifier.height(32.dp))
+            PrimaryCta(label = "Log in", onClick = onNavigateToLogin)
         }
     }
-}
-
-private fun defaultMessage(kind: SignupErrorKind): String = when (kind) {
-    SignupErrorKind.Network -> "Could not connect to the server. Check your connection and try again."
-    SignupErrorKind.Server -> "Something went wrong on our end. Give it another shot."
-    SignupErrorKind.BadRequest -> "We couldn't complete your signup. Please review your details and try again."
-    SignupErrorKind.TokenExpired -> "This link is no longer valid."
 }
