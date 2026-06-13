@@ -1,5 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -8,6 +10,24 @@ plugins {
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
 }
+
+// Release signing credentials, resolved in priority order:
+//   1. composeApp/keystore.properties  (gitignored — local release builds)
+//   2. Gradle/env property               (CI: e.g. -PARCANA_UPLOAD_STORE_FILE or env var)
+// When no keystore is configured (fresh clone, debug-only CI), the release
+// build type stays unsigned so `assembleDebug` and dev builds keep working.
+val keystoreProperties = Properties().apply {
+    val f = file("keystore.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+
+fun signingProp(fileKey: String, gradleOrEnvKey: String): String? =
+    keystoreProperties.getProperty(fileKey)
+        ?: (project.findProperty(gradleOrEnvKey) as String?)
+        ?: System.getenv(gradleOrEnvKey)
+
+val hasReleaseKeystore: Boolean =
+    signingProp("storeFile", "ARCANA_UPLOAD_STORE_FILE") != null
 
 kotlin {
     androidTarget {
@@ -86,9 +106,22 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(signingProp("storeFile", "ARCANA_UPLOAD_STORE_FILE")!!)
+                storePassword = signingProp("storePassword", "ARCANA_UPLOAD_STORE_PASSWORD")
+                keyAlias = signingProp("keyAlias", "ARCANA_UPLOAD_KEY_ALIAS")
+                keyPassword = signingProp("keyPassword", "ARCANA_UPLOAD_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
