@@ -196,20 +196,6 @@ private fun EditingForm(
                 }
 
                 Spacer(Modifier.weight(1f))
-                // Footer — weight-pushed to the fold.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 24.dp, bottom = 28.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    BodyText(
-                        text = "Completing accepts the Member Code.",
-                        size = 12,
-                        color = Ash,
-                        textAlign = TextAlign.Center,
-                    )
-                }
             }
         }
     }

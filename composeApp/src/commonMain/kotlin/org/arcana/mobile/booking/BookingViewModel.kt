@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.SpotDto
+import org.arcana.mobile.data.coveredMonthsPhrase
+import org.arcana.mobile.data.periodForClass
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.BookingError
 import org.arcana.mobile.networking.MembershipApi
@@ -31,6 +33,9 @@ class BookingViewModel(
     private val requiresSpot: Boolean,
     private val bookingApi: BookingApi,
     private val membershipApi: MembershipApi,
+    // ISO-8601 start of THIS class — used to pick the wallet that will pay for it
+    // (current vs the next-month beta wallet). Empty in unit tests → current wallet.
+    private val sessionStartIso: String = "",
 ) : ViewModel() {
 
     private val _ctaState = MutableStateFlow(BookCta.NotBookable)
@@ -38,6 +43,11 @@ class BookingViewModel(
 
     private val _creditsRemaining = MutableStateFlow<Int?>(null)
     val creditsRemaining: StateFlow<Int?> = _creditsRemaining
+
+    // The month(s) this member's wallet(s) cover, e.g. "July" / "July and August".
+    // Drives the concierge popup when they try to book outside their window.
+    private val _coveredMonths = MutableStateFlow<String?>(null)
+    val coveredMonths: StateFlow<String?> = _coveredMonths
 
     private val _selectedSpot = MutableStateFlow<SpotDto?>(null)
     val selectedSpot: StateFlow<SpotDto?> = _selectedSpot
@@ -72,14 +82,22 @@ class BookingViewModel(
             val existing = runCatching { bookingApi.myBookings() }
                 .getOrNull()?.upcoming?.firstOrNull { it.session.id == sessionId }
             _existingBooking.value = existing
-            _creditsRemaining.value = me?.currentPeriod?.creditsRemaining
-            _ctaState.value = bookCtaState(spotsAvailable, me?.currentPeriod, alreadyBooked = existing != null)
+            // Show the balance of the wallet that will actually pay for THIS
+            // class (current vs the next-month wallet), not just the current one.
+            val walletForClass = me?.periodForClass(sessionStartIso)
+            _creditsRemaining.value = walletForClass?.creditsRemaining
+            _coveredMonths.value = me?.coveredMonthsPhrase()
+            _ctaState.value = bookCtaState(spotsAvailable, walletForClass, alreadyBooked = existing != null)
             _loaded.value = true
         }
     }
 
     fun openSheet() { if (_ctaState.value == BookCta.Bookable) _sheetOpen.value = true }
-    fun dismissSheet() { _sheetOpen.value = false }
+    fun dismissSheet() {
+        _sheetOpen.value = false
+        // Clear a failed attempt so reopening the sheet starts clean.
+        if (_submitState.value is BookingSubmit.Failed) _submitState.value = BookingSubmit.Idle
+    }
     fun selectSpot(spot: SpotDto) { _selectedSpot.value = spot }
 
     val canConfirm: Boolean get() = !requiresSpot || _selectedSpot.value != null

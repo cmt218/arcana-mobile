@@ -59,6 +59,28 @@ class BookingViewModelTest {
         assertEquals(10, vm.creditsRemaining.value)
     }
 
+    @Test fun `two-wallet member shows the credits of the wallet that pays for THIS class`() = runTest {
+        val july = CurrentPeriodDto(
+            1, 12, 7, 5, canBrowse = true, canBook = true,
+            label = "July Beta", windowStart = "2026-07-01T04:00:00Z", windowEnd = "2026-08-01T04:00:00Z",
+        )
+        val august = CurrentPeriodDto(
+            2, 12, 0, 12, canBrowse = true, canBook = true,
+            label = "August Beta", windowStart = "2026-08-01T04:00:00Z", windowEnd = "2026-09-01T04:00:00Z",
+        )
+        val meBoth = MembershipMeDto(
+            member = MemberDto(1, "0002", "c@x.com", "Cole", "CT", "2026-05-01", 3, 2),
+            membership = MembershipBriefDto(1, "active", TierDto("std", "Standard", 12)),
+            currentPeriod = july, upcomingPeriod = august,
+        )
+        val api = FakeApi(meBoth)
+        // An August class → the August wallet (12), not July's 5.
+        val vm = BookingViewModel(482, 5, false, api, api, sessionStartIso = "2026-08-04T18:00:00Z")
+        vm.load()
+        assertEquals(12, vm.creditsRemaining.value)
+        assertEquals("July and August", vm.coveredMonths.value)
+    }
+
     @Test fun `already-booked detected from upcoming`() = runTest {
         val api = FakeApi(me(), upcoming = listOf(booking(sessionId = 482)))
         val vm = BookingViewModel(482, 5, false, api, api)

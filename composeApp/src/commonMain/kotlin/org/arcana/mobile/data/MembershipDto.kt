@@ -1,5 +1,6 @@
 package org.arcana.mobile.data
 
+import kotlinx.datetime.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -8,6 +9,10 @@ data class MembershipMeDto(
     val member: MemberDto,
     val membership: MembershipBriefDto,
     @SerialName("current_period") val currentPeriod: CurrentPeriodDto? = null,
+    // Beta-only: the next month's wallet, present only when the member has
+    // bought it while still in the current month. Always null for rolling
+    // subscriptions. When null, the app shows a single plain "credits" count.
+    @SerialName("upcoming_period") val upcomingPeriod: CurrentPeriodDto? = null,
 )
 
 @Serializable
@@ -44,4 +49,36 @@ data class CurrentPeriodDto(
     @SerialName("credits_remaining") val creditsRemaining: Int,
     @SerialName("can_browse") val canBrowse: Boolean,
     @SerialName("can_book") val canBook: Boolean,
-)
+    // Sane wallet name for beta cohorts, e.g. "July Beta" / "August Influencer".
+    // Null for rolling/cohort-less wallets (the app shows a plain "credits" count).
+    val label: String? = null,
+    @SerialName("window_start") val windowStart: String? = null,
+    @SerialName("window_end") val windowEnd: String? = null,
+) {
+    /** The wallet's calendar month for display, e.g. "July" from "July Beta". */
+    val monthName: String? get() = label?.substringBefore(' ')?.takeIf { it.isNotBlank() }
+}
+
+/** Pick the wallet whose window contains [classStartIso] (ISO-8601). Used so a
+ *  two-wallet beta member sees the balance of the wallet that will actually pay
+ *  for a specific class. Falls back to the current period. */
+fun MembershipMeDto.periodForClass(classStartIso: String): CurrentPeriodDto? {
+    val start = runCatching { Instant.parse(classStartIso) }.getOrNull() ?: return currentPeriod
+    val match = listOfNotNull(currentPeriod, upcomingPeriod).firstOrNull { p ->
+        val ws = p.windowStart?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        val we = p.windowEnd?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        ws != null && we != null && start >= ws && start < we
+    }
+    return match ?: currentPeriod
+}
+
+/** The covered month(s) phrase for the concierge popup, e.g. "July" or
+ *  "July and August". Null when the member has no live wallet. */
+fun MembershipMeDto.coveredMonthsPhrase(): String? {
+    val months = listOfNotNull(currentPeriod?.monthName, upcomingPeriod?.monthName).distinct()
+    return when (months.size) {
+        0 -> null
+        1 -> months[0]
+        else -> months.dropLast(1).joinToString(", ") + " and " + months.last()
+    }
+}

@@ -53,6 +53,7 @@ import org.arcana.mobile.booking.BookingSubmit
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
+import org.arcana.mobile.booking.outsideWindowCopy
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.BurntNectar
@@ -229,12 +230,13 @@ private fun SuccessBlock(
     }
 
     val requiresSpot = session.template.spotSelectionMode != "none"
-    val bookingVm: BookingViewModel = koinViewModel { parametersOf(session.id, session.arcanaSpotsAvailable, requiresSpot) }
+    val bookingVm: BookingViewModel = koinViewModel { parametersOf(session.id, session.arcanaSpotsAvailable, requiresSpot, session.startAt) }
     LaunchedEffect(session.id) { bookingVm.load() }
     val cta by bookingVm.ctaState.collectAsState()
     val sheetOpen by bookingVm.sheetOpen.collectAsState()
     val selectedSpot by bookingVm.selectedSpot.collectAsState()
     val credits by bookingVm.creditsRemaining.collectAsState()
+    val coveredMonths by bookingVm.coveredMonths.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
     val existing by bookingVm.existingBooking.collectAsState()
     val loaded by bookingVm.loaded.collectAsState()
@@ -380,6 +382,12 @@ private fun SuccessBlock(
     }
 
     if (sheetOpen) {
+        // A failed attempt renders inside the sheet (replacing the confirm UI)
+        // rather than as a top banner that collides with the camera punch-out.
+        val bookingError = (submit as? BookingSubmit.Failed)?.let { f ->
+            if (f.code == "session_outside_window") outsideWindowCopy(coveredMonths)
+            else bookingErrorCopy(f.code)
+        }
         BookingSheet(
             session = session,
             requiresSpot = requiresSpot,
@@ -388,6 +396,7 @@ private fun SuccessBlock(
             onSelectSpot = bookingVm::selectSpot,
             confirmEnabled = bookingVm.canConfirm,
             submitting = submit is BookingSubmit.Submitting,
+            errorMessage = bookingError,
             onConfirm = bookingVm::confirmBooking,
             onDismiss = bookingVm::dismissSheet,
         )
@@ -400,9 +409,6 @@ private fun SuccessBlock(
             onConfirm = bookingVm::confirmCancel,
             onDismiss = bookingVm::dismissCancelSheet,
         )
-    }
-    (submit as? BookingSubmit.Failed)?.let { f ->
-        BookingErrorBanner(message = bookingErrorCopy(f.code))
     }
 }
 

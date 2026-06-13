@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.SpotDto
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Clay
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
@@ -35,40 +36,54 @@ fun BookingSheet(
     onSelectSpot: (SpotDto) -> Unit,
     confirmEnabled: Boolean,
     submitting: Boolean,
+    errorMessage: String? = null,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Stone) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
-            Heading3("Confirm booking", size = 20, color = Wood)
-            Spacer(Modifier.height(8.dp))
-            BodyText(session.template.name, size = 16, color = Wood)
-            Caption(session.location.studio.name, size = 12, color = Ash)
-            if (requiresSpot) {
-                Spacer(Modifier.height(16.dp))
-                Overline("Pick your spot", size = 11, color = Graphite)
+            if (errorMessage != null) {
+                // Booking was rejected — show the reason in the sheet itself and
+                // replace the confirm controls with a single dismiss action.
+                Heading3("Can't book this class", size = 20, color = Wood)
                 Spacer(Modifier.height(8.dp))
-                SpotPicker(spots = session.spots, selected = selectedSpot, onSelect = onSelectSpot)
+                BodyText(session.template.name, size = 16, color = Wood)
+                Caption(session.location.studio.name, size = 12, color = Ash)
+                Spacer(Modifier.height(16.dp))
+                BodyText(errorMessage, size = 14, color = Clay)
+                Spacer(Modifier.height(20.dp))
+                PrimaryCta(label = "GOT IT", onClick = onDismiss, enabled = true)
+            } else {
+                Heading3("Confirm booking", size = 20, color = Wood)
+                Spacer(Modifier.height(8.dp))
+                BodyText(session.template.name, size = 16, color = Wood)
+                Caption(session.location.studio.name, size = 12, color = Ash)
+                if (requiresSpot) {
+                    Spacer(Modifier.height(16.dp))
+                    Overline("Pick your spot", size = 11, color = Graphite)
+                    Spacer(Modifier.height(8.dp))
+                    SpotPicker(spots = session.spots, selected = selectedSpot, onSelect = onSelectSpot)
+                }
+                Spacer(Modifier.height(16.dp))
+                val creditLine = creditsRemaining?.let { "This uses 1 of $it credits" } ?: "This uses 1 credit"
+                Caption(creditLine, size = 13, color = Moss)
+                Spacer(Modifier.height(8.dp))
+                BodyText(
+                    "Free to cancel until the studio's cutoff. After that, the credit's spent even if you cancel.",
+                    size = 12,
+                    color = Graphite,
+                )
+                Spacer(Modifier.height(20.dp))
+                PrimaryCta(
+                    label = if (submitting) "BOOKING…" else "CONFIRM",
+                    onClick = onConfirm,
+                    enabled = if (submitting) false else confirmEnabled,
+                    trailing = if (submitting) {
+                        { CtaSpinner() }
+                    } else null,
+                )
             }
-            Spacer(Modifier.height(16.dp))
-            val creditLine = creditsRemaining?.let { "This uses 1 of $it credits" } ?: "This uses 1 credit"
-            Caption(creditLine, size = 13, color = Moss)
-            Spacer(Modifier.height(8.dp))
-            BodyText(
-                "Free to cancel until the studio's cutoff. After that, the credit's spent even if you cancel.",
-                size = 12,
-                color = Graphite,
-            )
-            Spacer(Modifier.height(20.dp))
-            PrimaryCta(
-                label = if (submitting) "BOOKING…" else "CONFIRM",
-                onClick = onConfirm,
-                enabled = if (submitting) false else confirmEnabled,
-                trailing = if (submitting) {
-                    { CtaSpinner() }
-                } else null,
-            )
         }
     }
 }

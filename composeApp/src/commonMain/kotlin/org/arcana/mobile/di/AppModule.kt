@@ -47,7 +47,7 @@ val appModule = module {
     viewModel { DeveloperSettingsViewModel(get()) }
     viewModel { (sessionId: Int) -> ClassDetailViewModel(get(), sessionId) }
     viewModel { (token: String) -> SignupCompletionViewModel(token, get()) }
-    viewModel { (sessionId: Int, spotsAvailable: Int, requiresSpot: Boolean) ->
-        BookingViewModel(sessionId, spotsAvailable, requiresSpot, bookingApi = get(), membershipApi = get())
+    viewModel { (sessionId: Int, spotsAvailable: Int, requiresSpot: Boolean, sessionStartIso: String) ->
+        BookingViewModel(sessionId, spotsAvailable, requiresSpot, bookingApi = get(), membershipApi = get(), sessionStartIso = sessionStartIso)
     }
 }
