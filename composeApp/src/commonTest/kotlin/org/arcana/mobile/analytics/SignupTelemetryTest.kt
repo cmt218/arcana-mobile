@@ -25,12 +25,18 @@ class SignupTelemetryTest {
     @AfterTest fun tearDown() { Dispatchers.resetMain() }
 
     private class FakeApi(val behavior: () -> CompleteSignupResult) : CompleteSignupCallable {
-        override suspend fun complete(token: String, password: String, displayName: String, phoneNumber: String) = behavior()
+        override suspend fun complete(
+            token: String, password: String, displayName: String, phoneNumber: String,
+            profile: org.arcana.mobile.data.SignupProfile,
+        ) = behavior()
     }
 
     private fun SignupCompletionViewModel.fillValid() {
         updatePassword("longenough1"); updateConfirmPassword("longenough1")
         updateFirstName("Alice"); updateLastName("Smith"); updatePhoneNumber("(555) 123-4567")
+        updateGender("female"); updateBirthday("01011990")
+        updateAddressLine1("123 Main St"); updateCity("Brooklyn")
+        updateState("NY"); updatePostalCode("11211")
     }
 
     private fun success() = CompleteSignupResult.Success(
