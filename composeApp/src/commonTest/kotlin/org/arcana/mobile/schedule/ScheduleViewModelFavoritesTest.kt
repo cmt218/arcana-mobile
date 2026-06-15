@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.arcana.mobile.analytics.fakeTelemetry
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import kotlin.test.AfterTest
@@ -58,6 +59,44 @@ class ScheduleViewModelFavoritesTest {
         assertEquals(FilterMode.Favorites, state.filterMode)
         assertTrue(state.hasFavorites)
         assertEquals("Favorites", state.filterSummary)
+    }
+
+    @Test fun `favoriteEntries lists favorited studios then locations for the panel`() = runTest {
+        val favoritesApi = FakeFavoritesApi(
+            favoritesResult = FavoritesDto(
+                studios = listOf(favStudio(locationIds = listOf(1, 2))),
+                locations = listOf(favLocation(31)),
+            ),
+        )
+        val vm = vm(FakeScheduleApi(), favoritesApi)
+        val entries = vm.success().favoriteEntries
+        assertEquals(2, entries.size)
+        assertEquals("Barry's", entries[0].name)
+        assertEquals("All locations", entries[0].detail)
+        assertEquals("YO BK", entries[1].name)
+        assertEquals("Williamsburg", entries[1].detail)  // studio prefix stripped
+    }
+
+    @Test fun `favorites dropdown + manage emit telemetry`() = runTest {
+        val (telemetry, analytics, _) = fakeTelemetry()
+        val favoritesApi = FakeFavoritesApi(
+            favoritesResult = FavoritesDto(
+                studios = listOf(favStudio(locationIds = listOf(1, 2))),
+                locations = listOf(favLocation(31)),
+            ),
+        )
+        val vm = ScheduleViewModel(
+            api = FakeScheduleApi(),
+            favoritesRepository = FavoritesRepository(favoritesApi),
+            bookingApi = FakeBookingApi(),
+            telemetry = telemetry,
+        )
+        vm.onFavoritesDropdownShown()
+        vm.onManageFavoritesTapped()
+        val opened = analytics.first("favorites_dropdown_opened")!!
+        assertEquals(1, opened.properties["studio_count"])
+        assertEquals(1, opened.properties["location_count"])
+        assertTrue("favorites_manage_tapped" in analytics.names())
     }
 
     @Test fun `favorites empty - first fetches have no location ids in All Studios mode`() = runTest {

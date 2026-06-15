@@ -100,6 +100,9 @@ sealed interface ScheduleUiState {
         /** False when the favorites fetch failed (state unknown) — the nudge
          *  must not show to a member who may already have favorites. */
         val favoritesKnown: Boolean,
+        /** The member's favorites as a read-only display list (studios first,
+         *  then locations), shown in the filter panel under Favorites mode. */
+        val favoriteEntries: List<FavoriteEntry> = emptyList(),
         /** sessionId → live booking status (requested/confirmed/…) for every
          *  upcoming booking the member holds. Lets a row show an "I'm in this
          *  one" status pill. BEST-EFFORT and STALE-TOLERANT: refreshed only on
@@ -123,6 +126,11 @@ data class FilterStudio(
 /** A selectable location row in the accordion. [label] is Title-Case,
  *  studio-prefix-stripped (see [org.arcana.mobile.ui.studioLocationLabel]). */
 data class FilterLocation(val id: Int, val label: String)
+
+/** A favorited studio or location, shown read-only in the schedule filter panel
+ *  when Favorites mode is active. Whole-studio favorites read "All locations";
+ *  location favorites read the specific location. */
+data class FavoriteEntry(val name: String, val detail: String)
 
 /**
  * Display-friendly short location label. The backend names locations like
@@ -625,6 +633,14 @@ class ScheduleViewModel(
             }
 
         val favorites = favoritesRepository.favorites.value
+        // Read-only favorites list for Favorites mode: whole-studio favorites
+        // (every location) first, then specific location favorites.
+        val favoriteEntries = favorites?.let { f ->
+            f.studios.sortedBy { it.name }
+                .map { FavoriteEntry(name = it.name, detail = "All locations") } +
+                f.locations.sortedBy { it.studioName }
+                    .map { FavoriteEntry(name = it.studioName, detail = studioLocationLabel(it.studioName, it.name)) }
+        } ?: emptyList()
         val studioNamesBySlug = overviewStudios.associate { it.slug to it.name }
         val locationStudioSlugById = overviewStudios
             .flatMap { studio -> studio.locations.map { it.id to studio.slug } }
@@ -648,9 +664,22 @@ class ScheduleViewModel(
             filterMode = filterMode,
             hasFavorites = favorites?.isEmpty() == false,
             favoritesKnown = favorites != null,
+            favoriteEntries = favoriteEntries,
             bookedSessions = bookedSessions,
         )
     }
+
+    /** Fire-once when the favorites list is revealed in the filter panel. */
+    fun onFavoritesDropdownShown() {
+        val favorites = favoritesRepository.favorites.value ?: return
+        telemetry.favoritesDropdownOpened(
+            studioCount = favorites.studios.size,
+            locationCount = favorites.locations.size,
+        )
+    }
+
+    /** Member tapped "manage in Profile" from the favorites list. */
+    fun onManageFavoritesTapped() = telemetry.favoritesManageTapped()
 
     companion object {
         /** Matches the server's 14-day max window (spec §3.1). */

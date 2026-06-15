@@ -80,6 +80,7 @@ import org.arcana.mobile.theme.Warning
 import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
+import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
@@ -445,7 +446,7 @@ private fun SuccessContent(
         // studio accordion in place (replaces the old two-tier chip rails).
         item("filter-section") {
             Spacer(Modifier.height(16.dp))
-            ScheduleFilterSection(state = state, viewModel = viewModel)
+            ScheduleFilterSection(state = state, viewModel = viewModel, onManageFavorites = onManageFavorites)
         }
 
         // Nudge banner: members with no favorites yet get a one-tap path into
@@ -680,6 +681,7 @@ private fun DayChip(
 private fun ScheduleFilterSection(
     state: ScheduleUiState.Success,
     viewModel: ScheduleViewModel,
+    onManageFavorites: () -> Unit,
 ) {
     // Presentational expansion state. rememberSaveable survives the LazyColumn
     // disposing this item when it scrolls off-screen (and process death).
@@ -737,7 +739,9 @@ private fun ScheduleFilterSection(
                     FilterPill(
                         label = "FAVORITES",
                         active = state.filterMode == FilterMode.Favorites,
-                        onClick = { viewModel.useMyFavorites(); panelExpanded = false },
+                        // Keep the panel open (like Filter) so the read-only
+                        // favorites list below is revealed on selection.
+                        onClick = { viewModel.useMyFavorites() },
                     )
                 }
                 FilterPill(
@@ -795,7 +799,47 @@ private fun ScheduleFilterSection(
                     }
                 }
             }
+
+            // Favorites mode reveals the member's favorites read-only, with a
+            // one-tap path into the Profile favorites manager — so it's always
+            // clear what "Favorites" is scoping to and how to change it.
+            if (state.filterMode == FilterMode.Favorites && state.favoriteEntries.isNotEmpty()) {
+                LaunchedEffect(Unit) { viewModel.onFavoritesDropdownShown() }
+                Spacer(Modifier.height(12.dp))
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    state.favoriteEntries.forEach { entry ->
+                        FavoriteEntryRow(name = entry.name, detail = entry.detail)
+                    }
+                    Overline(
+                        text = "MANAGE IN PROFILE",
+                        size = 11, color = Moss,
+                        modifier = Modifier
+                            .clickable {
+                                viewModel.onManageFavoritesTapped()
+                                onManageFavorites()
+                            }
+                            .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
+                    )
+                }
+            }
         }
+    }
+}
+
+/** One read-only favorited studio/location in the Favorites panel. */
+@Composable
+private fun FavoriteEntryRow(name: String, detail: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        StrokeIcon(icon = ArcanaIcons.Bookmark, size = 14.dp, tint = Moss)
+        BodyText(text = name, size = 14, color = Ink, modifier = Modifier.weight(1f))
+        Caption(text = detail, size = 11, color = Ash2)
     }
 }
 
