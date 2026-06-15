@@ -6,6 +6,8 @@ import io.ktor.client.plugins.ResponseException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.ArcanaApiClient
@@ -19,6 +21,7 @@ sealed interface ClassDetailUiState {
 class ClassDetailViewModel(
     private val api: ArcanaApiClient,
     private val sessionId: Int,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ClassDetailUiState>(ClassDetailUiState.Loading)
@@ -36,7 +39,9 @@ class ClassDetailViewModel(
     fun reload() {
         viewModelScope.launch {
             _uiState.value = ClassDetailUiState.Loading
-            fetch()
+            // `isView = true` so the first load (and an error-retry) counts as a
+            // class view; pull-to-refresh below does not.
+            fetch(isView = true)
         }
     }
 
@@ -46,16 +51,33 @@ class ClassDetailViewModel(
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                fetch()
+                fetch(isView = false)
             } finally {
                 _isRefreshing.value = false
             }
         }
     }
 
-    private suspend fun fetch() {
+    private suspend fun fetch(isView: Boolean) {
+        val startedAt = Clock.System.now()
         try {
-            _uiState.value = ClassDetailUiState.Success(api.fetchClassDetail(sessionId))
+            val session = api.fetchClassDetail(sessionId)
+            _uiState.value = ClassDetailUiState.Success(session)
+            if (isView) {
+                val studio = session.location.studio
+                telemetry.classViewed(
+                    sessionId = sessionId,
+                    studioId = studio.id,
+                    studioName = studio.name,
+                    locationId = session.location.id,
+                    locationName = session.location.name,
+                    modality = session.template.modality,
+                    spotsAvailable = session.arcanaSpotsAvailable,
+                    requiresSpot = session.template.spotSelectionMode != "none",
+                    isFull = session.arcanaSpotsAvailable <= 0,
+                    loadMs = (Clock.System.now() - startedAt).inWholeMilliseconds,
+                )
+            }
         } catch (e: ResponseException) {
             val code = e.response.status.value
             logWarning("ClassDetailViewModel", e.message ?: "HTTP $code")
@@ -64,11 +86,13 @@ class ClassDetailViewModel(
             if (_uiState.value !is ClassDetailUiState.Success) {
                 _uiState.value = ClassDetailUiState.Error("server error $code")
             }
+            if (isView) telemetry.classViewFailed(sessionId, "server_$code")
         } catch (e: Exception) {
             logWarning("ClassDetailViewModel", e.message ?: "Unknown error")
             if (_uiState.value !is ClassDetailUiState.Success) {
                 _uiState.value = ClassDetailUiState.Error("server error")
             }
+            if (isView) telemetry.classViewFailed(sessionId, "network")
         }
     }
 }

@@ -26,8 +26,27 @@ fun signingProp(fileKey: String, gradleOrEnvKey: String): String? =
         ?: (project.findProperty(gradleOrEnvKey) as String?)
         ?: System.getenv(gradleOrEnvKey)
 
+// Analytics/observability keys live in a gitignored composeApp/analytics.properties
+// (same pattern as keystore.properties) so they never land in committed source.
+// CI can instead supply them as Gradle properties or env vars.
+val analyticsProperties = Properties().apply {
+    val f = file("analytics.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+
 val hasReleaseKeystore: Boolean =
     signingProp("storeFile", "ARCANA_UPLOAD_STORE_FILE") != null
+
+// Client-safe analytics/observability keys (PostHog project key, Sentry DSN).
+// Resolved from a Gradle property or env var; default empty so a fresh clone
+// still builds (SDK init no-ops when the value is blank). Provide via
+// composeApp/analytics.properties (gitignored) for local dev, or -P flags / CI
+// env vars: ARCANA_POSTHOG_API_KEY, ARCANA_POSTHOG_HOST, ARCANA_SENTRY_DSN.
+fun analyticsProp(gradleOrEnvKey: String, default: String = ""): String =
+    analyticsProperties.getProperty(gradleOrEnvKey)
+        ?: (project.findProperty(gradleOrEnvKey) as String?)
+        ?: System.getenv(gradleOrEnvKey)
+        ?: default
 
 kotlin {
     androidTarget {
@@ -53,6 +72,8 @@ kotlin {
             implementation(libs.ktor.client.android)
             implementation(libs.androidx.security.crypto)
             implementation(libs.installreferrer)
+            implementation(libs.posthog.android)
+            implementation(libs.sentry.android)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -95,6 +116,12 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+
+        // Client-safe analytics keys, embedded for runtime SDK init (see
+        // analytics/ in androidMain). Blank by default — init no-ops when empty.
+        buildConfigField("String", "POSTHOG_API_KEY", "\"${analyticsProp("ARCANA_POSTHOG_API_KEY")}\"")
+        buildConfigField("String", "POSTHOG_HOST", "\"${analyticsProp("ARCANA_POSTHOG_HOST", "https://us.i.posthog.com")}\"")
+        buildConfigField("String", "SENTRY_DSN", "\"${analyticsProp("ARCANA_SENTRY_DSN")}\"")
     }
     // Generate BuildConfig so the app version (versionName) is readable at
     // runtime via BuildConfig.VERSION_NAME (see Platform.android.kt).

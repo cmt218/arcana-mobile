@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.CancelBookingResponse
@@ -55,6 +56,7 @@ class LoginError(val statusCode: Int) : Exception("login_failed_$statusCode")
 class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
@@ -78,8 +80,7 @@ class ArcanaApiClient(
                 refreshTokens {
                     val refresh = tokenStorage.refreshToken
                         ?: run {
-                            tokenStorage.clear()
-                            _isAuthenticated.value = false
+                            forceLogout("refresh_missing")
                             return@refreshTokens null
                         }
                     try {
@@ -92,8 +93,9 @@ class ArcanaApiClient(
                         tokens.refresh?.let { tokenStorage.refreshToken = it }
                         BearerTokens(tokens.access, tokenStorage.refreshToken ?: return@refreshTokens null)
                     } catch (e: Exception) {
-                        tokenStorage.clear()
-                        _isAuthenticated.value = false
+                        // Refresh token rejected/expired or network failure during
+                        // refresh → the session is dead through no user action.
+                        forceLogout("refresh_error")
                         null
                     }
                 }
@@ -307,8 +309,20 @@ class ArcanaApiClient(
     }
 
     fun logout() {
+        telemetry.logoutManual()
+        telemetry.reset()
         tokenStorage.clear()
         clearBearerTokenCache()
+        _isAuthenticated.value = false
+    }
+
+    /** Session ended without the member pressing "sign out" — refresh-token
+     *  invalidation/expiry or a refresh network failure. Tracked distinctly from
+     *  [logout] so we can monitor unexpected sign-outs as an app-health signal. */
+    private fun forceLogout(cause: String) {
+        telemetry.forcedLogout(cause)
+        telemetry.reset()
+        tokenStorage.clear()
         _isAuthenticated.value = false
     }
 

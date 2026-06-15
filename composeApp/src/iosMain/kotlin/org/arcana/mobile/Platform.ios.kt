@@ -17,5 +17,12 @@ actual fun logWarning(tag: String, message: String) {
     println("W/$tag: $message")
 }
 
+actual fun logDebug(tag: String, message: String) {
+    println("D/$tag: $message")
+}
+
+@OptIn(kotlin.experimental.ExperimentalNativeApi::class)
+actual val isDebugBuild: Boolean = kotlin.native.Platform.isDebugBinary
+
 actual fun appVersionName(): String =
     NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String ?: ""

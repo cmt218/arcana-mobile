@@ -11,6 +11,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- Disable Sentry's auto-init ContentProvider: it runs before
+             ArcanaApplication.onCreate and would crash with "DSN is required"
+             because our DSN lives in BuildConfig (analytics.properties), not the
+             manifest. We initialize Sentry manually in analytics/AndroidTelemetry.kt. -->
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
         <activity
             android:exported="true"
             android:name=".MainActivity">

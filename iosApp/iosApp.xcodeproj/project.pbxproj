@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AD2FAA3D2FDFD42500F5419F /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = AD2FAA3C2FDFD42500F5419F /* Sentry */; };
+		AD2FAA402FDFD44800F5419F /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = AD2FAA3F2FDFD44800F5419F /* PostHog */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		E0A86998899E82508BED917F /* Arcana.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Arcana.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -41,6 +46,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD2FAA3D2FDFD42500F5419F /* Sentry in Frameworks */,
+				AD2FAA402FDFD44800F5419F /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,6 +82,7 @@
 				41677F28E51F7085122084FE /* Sources */,
 				8C496C51F021EC092FEDE0BB /* Frameworks */,
 				CBECD78B866B252A12204903 /* Resources */,
+				AD2FAA3A2FDFCFFD00F5419F /* Upload dSYMs to Sentry */,
 			);
 			buildRules = (
 			);
@@ -85,6 +93,8 @@
 			);
 			name = iosApp;
 			packageProductDependencies = (
+				AD2FAA3C2FDFD42500F5419F /* Sentry */,
+				AD2FAA3F2FDFD44800F5419F /* PostHog */,
 			);
 			productName = iosApp;
 			productReference = E0A86998899E82508BED917F /* Arcana.app */;
@@ -114,6 +124,10 @@
 			);
 			mainGroup = 43709F355653AB03A703C6DE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AD2FAA3B2FDFD42500F5419F /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+				AD2FAA3E2FDFD44800F5419F /* XCRemoteSwiftPackageReference "posthog-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4B0C7CC26C4A9EAB8B8C043C /* Products */;
 			projectDirPath = "";
@@ -153,6 +167,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/..\"\n./gradlew :composeApp:embedAndSignAppleFrameworkForXcode\n";
+		};
+		AD2FAA3A2FDFCFFD00F5419F /* Upload dSYMs to Sentry */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Upload dSYMs to Sentry";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/sentry-upload-dsyms.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -370,6 +403,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AD2FAA3B2FDFD42500F5419F /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.17.1;
+			};
+		};
+		AD2FAA3E2FDFD44800F5419F /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.60.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AD2FAA3C2FDFD42500F5419F /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AD2FAA3B2FDFD42500F5419F /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+		AD2FAA3F2FDFD44800F5419F /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AD2FAA3E2FDFD44800F5419F /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 184C0B424766D37A32D76507 /* Project object */;
 }

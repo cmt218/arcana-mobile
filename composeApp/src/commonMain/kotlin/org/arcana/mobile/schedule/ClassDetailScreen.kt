@@ -49,6 +49,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.booking.BookCta
 import org.arcana.mobile.booking.BookingSheet
+import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingSubmit
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.CancelState
@@ -230,7 +231,12 @@ private fun SuccessBlock(
     }
 
     val requiresSpot = session.template.spotSelectionMode != "none"
-    val bookingVm: BookingViewModel = koinViewModel { parametersOf(session.id, session.arcanaSpotsAvailable, requiresSpot, session.startAt) }
+    val bookingVm: BookingViewModel = koinViewModel {
+        parametersOf(
+            session.id, session.arcanaSpotsAvailable, requiresSpot, session.startAt,
+            BookingStudioContext(studio.id, studio.name, session.location.id, session.location.name),
+        )
+    }
     LaunchedEffect(session.id) { bookingVm.load() }
     val cta by bookingVm.ctaState.collectAsState()
     val sheetOpen by bookingVm.sheetOpen.collectAsState()

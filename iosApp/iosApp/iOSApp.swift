@@ -3,9 +3,16 @@ import ComposeApp
 
 @main
 struct iOSApp: App {
+    // Initialize PostHog + Sentry once at launch (before Compose loads) so crash
+    // capture is armed early; hand the instances to Kotlin via ContentView.
+    private let telemetry = TelemetryBootstrap.start()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(
+                analytics: telemetry.analytics,
+                crashReporter: telemetry.crashReporter
+            )
                 // Custom-scheme links (arcana://welcome?token=...)
                 .onOpenURL { url in
                     MainViewControllerKt.onIosDeepLink(url: url.absoluteString)

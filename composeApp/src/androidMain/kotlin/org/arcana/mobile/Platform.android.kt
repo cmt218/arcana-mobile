@@ -17,4 +17,10 @@ actual fun logWarning(tag: String, message: String) {
     Log.w(tag, message)
 }
 
+actual fun logDebug(tag: String, message: String) {
+    Log.d(tag, message)
+}
+
+actual val isDebugBuild: Boolean = BuildConfig.DEBUG
+
 actual fun appVersionName(): String = BuildConfig.VERSION_NAME

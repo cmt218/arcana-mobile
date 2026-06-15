@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.networking.LoginError
 
@@ -18,7 +19,10 @@ sealed interface AuthUiState {
     data object Success : AuthUiState
 }
 
-class AuthViewModel(private val api: ArcanaApiClient) : ViewModel() {
+class AuthViewModel(
+    private val api: ArcanaApiClient,
+    private val telemetry: Telemetry = Telemetry.Noop,
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState
@@ -26,23 +30,35 @@ class AuthViewModel(private val api: ArcanaApiClient) : ViewModel() {
     fun login(email: String, password: String) {
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
+            telemetry.loginSubmitted()
             try {
                 api.login(email.trim(), password)
+                telemetry.loginSucceeded()
                 _uiState.value = AuthUiState.Success
             } catch (e: CancellationException) {
                 throw e
             } catch (e: LoginError) {
-                _uiState.value = when {
-                    e.statusCode == 401 -> AuthUiState.Error(
-                        "That email and password don't match. Double-check and try again.",
-                        isCredentialError = true,
-                    )
-                    e.statusCode in 500..599 -> AuthUiState.Error(
-                        "Something went wrong on our end. Please try again in a moment.",
-                    )
-                    else -> AuthUiState.Error("Couldn't sign you in (error ${e.statusCode}).")
+                when {
+                    e.statusCode == 401 -> {
+                        telemetry.loginFailed("invalid_credentials", e.statusCode)
+                        _uiState.value = AuthUiState.Error(
+                            "That email and password don't match. Double-check and try again.",
+                            isCredentialError = true,
+                        )
+                    }
+                    e.statusCode in 500..599 -> {
+                        telemetry.loginFailed("server_5xx", e.statusCode)
+                        _uiState.value = AuthUiState.Error(
+                            "Something went wrong on our end. Please try again in a moment.",
+                        )
+                    }
+                    else -> {
+                        telemetry.loginFailed("other", e.statusCode)
+                        _uiState.value = AuthUiState.Error("Couldn't sign you in (error ${e.statusCode}).")
+                    }
                 }
             } catch (e: Exception) {
+                telemetry.loginFailed("network")
                 _uiState.value = AuthUiState.Error(
                     "Couldn't reach the server. Check your connection and try again.",
                 )

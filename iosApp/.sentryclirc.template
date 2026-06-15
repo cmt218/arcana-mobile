@@ -1,0 +1,13 @@
+# Copy to `.sentryclirc` (gitignored) and paste your token. Used by sentry-cli
+# for dSYM upload. The auth token IS a real secret — never commit the filled file.
+#
+# Get the token at: Sentry → Settings → Developer Settings → Organization Tokens
+# → Create New Token (org auth tokens carry the `org:ci` scope needed for
+# debug-file uploads; they look like `sntrys_...`).
+
+[auth]
+token = sntrys_PASTE_YOUR_ORG_AUTH_TOKEN_HERE
+
+[defaults]
+org = arcana-i4
+project = arcana-ios

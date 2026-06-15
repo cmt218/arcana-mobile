@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.CompleteSignupResponse
 
 sealed interface SignupCompletionState {
@@ -45,10 +46,16 @@ enum class SignupErrorKind { TokenExpired, AlreadyHasAccount }
 class SignupCompletionViewModel(
     private val token: String,
     private val api: CompleteSignupCallable,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<SignupCompletionState>(SignupCompletionState.Editing())
     val state: StateFlow<SignupCompletionState> = _state.asStateFlow()
+
+    init {
+        // One per token: the member landed on the claim screen with a valid link.
+        telemetry.signupStarted()
+    }
 
     // Synchronously maintained (NOT a stateIn-derived flow) so validation is
     // observable immediately after each field update, with no dispatcher timing.
@@ -73,6 +80,7 @@ class SignupCompletionViewModel(
         val current = _state.value as? SignupCompletionState.Editing ?: return
         if (!isValidEditing(current) || current.isSubmitting) return
         setState(current.copy(isSubmitting = true, passwordError = null, phoneError = null, formError = null))
+        telemetry.signupSubmitted()
         viewModelScope.launch {
             val result = api.complete(token, current.password, current.displayName, current.phoneNumber.trim())
             // Re-read the latest editing snapshot so any keystrokes made while the
@@ -86,11 +94,18 @@ class SignupCompletionViewModel(
         editing: SignupCompletionState.Editing,
         result: CompleteSignupResult,
     ): SignupCompletionState = when (result) {
-        is CompleteSignupResult.Success -> SignupCompletionState.Success(result.response)
-        CompleteSignupResult.TokenExpiredOrConsumed ->
+        is CompleteSignupResult.Success -> {
+            telemetry.signupCompleted()
+            SignupCompletionState.Success(result.response)
+        }
+        CompleteSignupResult.TokenExpiredOrConsumed -> {
+            telemetry.signupFailed("token_expired")
             SignupCompletionState.Error(SignupErrorKind.TokenExpired)
-        is CompleteSignupResult.NetworkError ->
+        }
+        is CompleteSignupResult.NetworkError -> {
+            telemetry.signupFailed("network")
             editing.copy(isSubmitting = false, formError = NETWORK_MESSAGE)
+        }
         is CompleteSignupResult.Other -> otherToState(editing, result)
     }
 
@@ -102,6 +117,7 @@ class SignupCompletionViewModel(
         // A 409 because the email is already registered: the form is futile, so
         // route to the "log in instead" screen.
         if (result.statusCode == 409 && parsed.errorCode == "account_exists") {
+            telemetry.signupFailed("account_exists", result.statusCode)
             return SignupCompletionState.Error(SignupErrorKind.AlreadyHasAccount)
         }
         val hasFieldError = parsed.password != null || parsed.phone != null
@@ -110,6 +126,15 @@ class SignupCompletionViewModel(
             result.statusCode >= 500 -> SERVER_MESSAGE
             else -> GENERIC_MESSAGE
         }
+        telemetry.signupFailed(
+            reason = when {
+                parsed.password != null -> "field_password"
+                parsed.phone != null -> "field_phone"
+                result.statusCode >= 500 -> "server_5xx"
+                else -> "generic"
+            },
+            statusCode = result.statusCode,
+        )
         return editing.copy(
             isSubmitting = false,
             passwordError = parsed.password,
