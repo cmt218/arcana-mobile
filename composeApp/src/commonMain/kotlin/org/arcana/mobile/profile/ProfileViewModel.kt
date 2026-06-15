@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.networking.MembershipApi
@@ -34,6 +35,7 @@ sealed interface ProfileUiState {
 class ProfileViewModel(
     private val api: MembershipApi,
     private val favoritesRepository: FavoritesRepository,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
     val uiState: StateFlow<ProfileUiState> = _uiState
@@ -70,6 +72,11 @@ class ProfileViewModel(
         favoritesRepository.refresh()
         try {
             val me = api.membershipMe()
+            // Identify on the first /me of every authenticated launch. This VM's
+            // load() runs from MainScaffold for the avatar, so it covers returning
+            // already-logged-in users and account switches — not just post-login.
+            // Telemetry dedupes per session, so calling it on each refresh is safe.
+            telemetry.identify(me.member.id.toString(), me.member.email, me.member.displayName)
             _uiState.value = ProfileUiState.Success(
                 fullName = me.member.displayName ?: me.member.email,
                 initials = me.member.avatarInitials,

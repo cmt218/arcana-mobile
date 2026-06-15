@@ -21,6 +21,8 @@ kotlinx-coroutines = "1.10.1"
 material3 = "1.10.0-alpha05"
 navigationCompose = "2.9.2"
 installreferrer = "2.2"
+posthog = "3.49.0"
+sentry = "8.43.1"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -55,6 +57,8 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 androidx-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 installreferrer = { module = "com.android.installreferrer:installreferrer", version.ref = "installreferrer" }
+posthog-android = { module = "com.posthog:posthog-android", version.ref = "posthog" }
+sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

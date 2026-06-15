@@ -19,6 +19,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.OverviewStudioDto
@@ -144,7 +145,12 @@ class ScheduleViewModel(
     private val api: ScheduleApi,
     private val favoritesRepository: FavoritesRepository,
     private val bookingApi: BookingApi,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
+
+    /** Per-day count of load-more pages fetched, for the `schedule_load_more`
+     *  scroll-depth proxy. Reset whenever the day's cache is rebuilt. */
+    private val loadMorePageByDay = mutableMapOf<LocalDate, Int>()
 
     private val _uiState = MutableStateFlow<ScheduleUiState>(ScheduleUiState.Loading)
     val uiState: StateFlow<ScheduleUiState> = _uiState
@@ -279,8 +285,15 @@ class ScheduleViewModel(
     /** Switch the visible day. The chip rail is already populated from the
      *  overview, so a day tap NEVER refetches the overview — it only pulls
      *  page 1 of that day if it isn't cached for the current filter set. */
-    fun selectDay(date: LocalDate) {
+    fun selectDay(date: LocalDate, method: String = "chip_tap") {
         if (date != selectedDate) {
+            val previous = selectedDate
+            val today = Clock.System.todayIn(ScheduleTimeZone)
+            telemetry.scheduleDayChanged(
+                method = method,
+                direction = if (date > previous) "forward" else "backward",
+                dayOffsetFromToday = (date.toEpochDays() - today.toEpochDays()).toInt(),
+            )
             selectedDate = date
             publish()
         }
@@ -320,6 +333,9 @@ class ScheduleViewModel(
                     nextCursor = page.nextCursor,
                     loadingMore = false,
                 ))
+                val pageIndex = (loadMorePageByDay[date] ?: 1) + 1
+                loadMorePageByDay[date] = pageIndex
+                telemetry.scheduleLoadMore(pageIndex = pageIndex, day = date.toString())
                 publish()
             } catch (e: CancellationException) {
                 throw e
@@ -416,6 +432,15 @@ class ScheduleViewModel(
      *  rapid toggling coalesces into one settled overview + page-1 pair. */
     private fun onFiltersChanged() {
         refreshingFilters = true
+        telemetry.scheduleFilterChanged(
+            mode = when (filterMode) {
+                FilterMode.Favorites -> "favorites"
+                FilterMode.AllStudios -> "all"
+                FilterMode.Custom -> "custom"
+            },
+            studioCount = filters.studioSlugs.size,
+            locationCount = filters.locationIds.size,
+        )
         // Only republish over existing content — on a cold start (or from the
         // Error screen) there is nothing to dim; the pipeline's refetch will
         // establish the state.

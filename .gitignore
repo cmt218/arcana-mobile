@@ -31,6 +31,12 @@ render.experimental.xml
 *.keystore
 keystore.properties
 
+# Analytics / observability keys (PostHog, Sentry) — client-safe but not committed
+analytics.properties
+Secrets.xcconfig
+# Sentry CLI auth token (real secret — dSYM upload). Never commit.
+.sentryclirc
+
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 

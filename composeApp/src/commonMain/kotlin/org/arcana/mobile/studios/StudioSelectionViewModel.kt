@@ -6,6 +6,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.arcana.mobile.analytics.Telemetry
+import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
@@ -28,6 +30,7 @@ sealed interface StudioSelectionUiState {
 class StudioSelectionViewModel(
     private val favoritesApi: FavoritesApi,
     private val repository: FavoritesRepository,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<StudioSelectionUiState>(StudioSelectionUiState.Loading)
@@ -127,6 +130,9 @@ class StudioSelectionViewModel(
     fun save() {
         val current = _uiState.value as? StudioSelectionUiState.Ready ?: return
         if (current.saving) return
+        // Snapshot the previously-saved favorites BEFORE the PUT so we can diff
+        // the delta (which studios/locations were added vs removed).
+        val previous = repository.favorites.value
         viewModelScope.launch {
             // Completion paths go through update {} (not a copy of the
             // tap-time snapshot) so toggles made during a slow PUT survive.
@@ -136,6 +142,12 @@ class StudioSelectionViewModel(
                     studioSlugs = current.selectedStudioSlugs.toList(),
                     locationIds = current.selectedLocationIds.toList(),
                 )
+                emitFavoriteDeltas(
+                    previous = previous,
+                    newStudioSlugs = current.selectedStudioSlugs,
+                    newLocationIds = current.selectedLocationIds,
+                    studios = current.studios,
+                )
                 update { it.copy(saving = false, saved = true) }
             } catch (e: CancellationException) {
                 throw e
@@ -144,5 +156,53 @@ class StudioSelectionViewModel(
                 update { it.copy(saving = false, error = "Couldn't save. Try again.") }
             }
         }
+    }
+
+    /** Emit per-studio / per-location favorite_added / favorite_removed events
+     *  for the delta vs the previously-saved set, plus a favorites_saved summary
+     *  and an updated favorite-studios person profile — so usage can be broken
+     *  down by studio and location. */
+    private fun emitFavoriteDeltas(
+        previous: FavoritesDto?,
+        newStudioSlugs: Set<String>,
+        newLocationIds: Set<Int>,
+        studios: List<StudioDto>,
+    ) {
+        val bySlug = studios.associateBy { it.slug }
+        // location id → (its studio, location name)
+        val locationOwner = studios.flatMap { studio ->
+            studio.locations.map { loc -> loc.id to (studio to loc.name) }
+        }.toMap()
+
+        val oldStudioSlugs = previous?.studios?.map { it.slug }?.toSet() ?: emptySet()
+        val oldLocationIds = previous?.locations?.map { it.id }?.toSet() ?: emptySet()
+
+        (newStudioSlugs - oldStudioSlugs).forEach { slug ->
+            val s = bySlug[slug]
+            telemetry.favoriteAdded("studio", s?.id, slug, s?.name)
+        }
+        (oldStudioSlugs - newStudioSlugs).forEach { slug ->
+            val s = bySlug[slug]
+            telemetry.favoriteRemoved("studio", s?.id, slug, s?.name ?: previous?.studios?.firstOrNull { it.slug == slug }?.name)
+        }
+        (newLocationIds - oldLocationIds).forEach { id ->
+            val owner = locationOwner[id]
+            telemetry.favoriteAdded("location", owner?.first?.id, owner?.first?.slug, owner?.first?.name, id, owner?.second)
+        }
+        (oldLocationIds - newLocationIds).forEach { id ->
+            val owner = locationOwner[id]
+            telemetry.favoriteRemoved("location", owner?.first?.id, owner?.first?.slug, owner?.first?.name, id, owner?.second)
+        }
+
+        telemetry.favoritesSaved(
+            studioCount = newStudioSlugs.size,
+            locationCount = newLocationIds.size,
+            studioSlugs = newStudioSlugs.toList(),
+            locationIds = newLocationIds.toList(),
+        )
+        telemetry.setFavoriteProfile(
+            favoriteStudioCount = newStudioSlugs.size,
+            favoriteStudios = newStudioSlugs.map { bySlug[it]?.name ?: it },
+        )
     }
 }

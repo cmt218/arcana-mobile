@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.ConciergeError
 
@@ -18,6 +19,7 @@ sealed interface ConciergeSubmit {
 
 class ConciergeRequestViewModel(
     private val conciergeApi: ConciergeApi,
+    private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
 
     private val _message = MutableStateFlow("")
@@ -42,12 +44,15 @@ class ConciergeRequestViewModel(
         viewModelScope.launch {
             try {
                 conciergeApi.createConciergeRequest(_message.value.trim())
+                telemetry.conciergeSubmitted()
                 _submitState.value = ConciergeSubmit.Sent
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ConciergeError) {
+                telemetry.conciergeFailed(e.code)
                 _submitState.value = ConciergeSubmit.Failed(e.code)
             } catch (e: Exception) {
+                telemetry.conciergeFailed("concierge_failed")
                 _submitState.value = ConciergeSubmit.Failed("concierge_failed")
             }
         }

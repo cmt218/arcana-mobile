@@ -401,7 +401,7 @@ private fun SuccessContent(
                 val backward = accumulated >= thresholdPx
                 if (forward || backward) {
                     dayAfterSwipe(state.days, state.selectedDate, forward)
-                        ?.let(viewModel::selectDay)
+                        ?.let { viewModel.selectDay(it, method = "swipe") }
                 }
             },
         ) { _, dragAmount -> accumulated += dragAmount }

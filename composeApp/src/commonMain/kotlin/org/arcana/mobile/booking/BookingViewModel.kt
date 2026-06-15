@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.SpotDto
 import org.arcana.mobile.data.coveredMonthsPhrase
@@ -27,6 +28,15 @@ sealed interface CancelState {
     data class Failed(val code: String) : CancelState
 }
 
+/** Studio/location context for booking-funnel analytics, grouped into one value
+ *  so the Koin factory stays within its 5-parameter destructuring limit. */
+data class BookingStudioContext(
+    val studioId: Int = 0,
+    val studioName: String = "",
+    val locationId: Int = 0,
+    val locationName: String = "",
+)
+
 class BookingViewModel(
     private val sessionId: Int,
     private val spotsAvailable: Int,
@@ -36,7 +46,14 @@ class BookingViewModel(
     // ISO-8601 start of THIS class — used to pick the wallet that will pay for it
     // (current vs the next-month beta wallet). Empty in unit tests → current wallet.
     private val sessionStartIso: String = "",
+    private val telemetry: Telemetry = Telemetry.Noop,
+    // Studio/location context for booking-funnel events (so bookings break down
+    // by studio + location). Default keeps unit-test construction lightweight.
+    private val studioContext: BookingStudioContext = BookingStudioContext(),
 ) : ViewModel() {
+
+    private fun studioIdOrNull() = studioContext.studioId.takeIf { it != 0 }
+    private fun locationIdOrNull() = studioContext.locationId.takeIf { it != 0 }
 
     private val _ctaState = MutableStateFlow(BookCta.NotBookable)
     val ctaState: StateFlow<BookCta> = _ctaState
@@ -92,13 +109,30 @@ class BookingViewModel(
         }
     }
 
-    fun openSheet() { if (_ctaState.value == BookCta.Bookable) _sheetOpen.value = true }
+    fun openSheet() {
+        if (_ctaState.value == BookCta.Bookable) {
+            _sheetOpen.value = true
+            telemetry.bookingSheetOpened(sessionId, studioIdOrNull(), locationIdOrNull(), requiresSpot)
+        }
+    }
     fun dismissSheet() {
+        // Fire abandonment only when the member backs out of an OPEN sheet
+        // without a completed booking (success closes the sheet directly).
+        if (_sheetOpen.value && _submitState.value !is BookingSubmit.Booked) {
+            telemetry.bookingSheetAbandoned(
+                sessionId = sessionId,
+                reachedSpotSelection = requiresSpot,
+                hadSelectedSpot = _selectedSpot.value != null,
+            )
+        }
         _sheetOpen.value = false
         // Clear a failed attempt so reopening the sheet starts clean.
         if (_submitState.value is BookingSubmit.Failed) _submitState.value = BookingSubmit.Idle
     }
-    fun selectSpot(spot: SpotDto) { _selectedSpot.value = spot }
+    fun selectSpot(spot: SpotDto) {
+        _selectedSpot.value = spot
+        telemetry.spotSelected(sessionId, spot.id, spot.label)
+    }
 
     val canConfirm: Boolean get() = !requiresSpot || _selectedSpot.value != null
 
@@ -106,6 +140,8 @@ class BookingViewModel(
         if (!canConfirm) return
         if (_submitState.value is BookingSubmit.Submitting) return
         _submitState.value = BookingSubmit.Submitting
+        val hasSpot = _selectedSpot.value != null
+        telemetry.bookingSubmitted(sessionId, hasSpot)
         viewModelScope.launch {
             try {
                 val b = bookingApi.createBooking(sessionId, _selectedSpot.value?.id)
@@ -113,15 +149,36 @@ class BookingViewModel(
                 _existingBooking.value = b
                 _ctaState.value = BookCta.AlreadyBooked
                 _sheetOpen.value = false
+                telemetry.bookingSucceeded(
+                    bookingId = b.id,
+                    status = b.status,
+                    sessionId = sessionId,
+                    studioId = studioIdOrNull(),
+                    locationId = locationIdOrNull(),
+                    hasSpot = hasSpot,
+                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: BookingError) {
+                telemetry.bookingFailed(e.code, sessionId)
                 _submitState.value = BookingSubmit.Failed(e.code)
             } catch (e: Exception) {
+                telemetry.bookingFailed("booking_failed", sessionId)
+                telemetry.recordError(e, mapOf("op" to "createBooking", "session_id" to sessionId))
                 _submitState.value = BookingSubmit.Failed("booking_failed")
             }
         }
     }
 
-    fun openCancelSheet() { if (_existingBooking.value != null) _cancelSheetOpen.value = true }
+    fun openCancelSheet() {
+        val booking = _existingBooking.value ?: return
+        _cancelSheetOpen.value = true
+        telemetry.bookingCancelStarted(
+            bookingId = booking.id,
+            sessionId = sessionId,
+            willForfeitCredit = booking.cancelPolicy.willForfeitCredit,
+        )
+    }
 
     fun dismissCancelSheet() {
         _cancelSheetOpen.value = false
@@ -134,7 +191,14 @@ class BookingViewModel(
         _cancelState.value = CancelState.Submitting
         viewModelScope.launch {
             try {
-                bookingApi.cancelBooking(booking.id)
+                val resp = bookingApi.cancelBooking(booking.id)
+                telemetry.bookingCancelled(
+                    bookingId = booking.id,
+                    creditRefunded = resp.creditRefunded,
+                    lateCancel = resp.lateCancel,
+                    studioId = studioIdOrNull(),
+                    locationId = locationIdOrNull(),
+                )
                 _cancelSheetOpen.value = false
                 _cancelState.value = CancelState.Idle
                 _existingBooking.value = null
@@ -143,6 +207,8 @@ class BookingViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                telemetry.bookingCancelFailed(booking.id)
+                telemetry.recordError(e, mapOf("op" to "cancelBooking", "booking_id" to booking.id))
                 _cancelState.value = CancelState.Failed("cancel_failed")
             }
         }

@@ -22,6 +22,15 @@ expect fun defaultBaseUrl(): String
 
 expect fun logWarning(tag: String, message: String)
 
+/** Debug-level log: Android → logcat `Log.d`, iOS → stdout (Xcode console).
+ *  Used by [org.arcana.mobile.analytics.Telemetry] to echo every event when
+ *  [isDebugBuild] is true, so analytics can be eyeballed live during QA. */
+expect fun logDebug(tag: String, message: String)
+
+/** True for debug builds (Android `BuildConfig.DEBUG`, iOS debug binary). Gates
+ *  verbose dev-only logging so release builds stay quiet. */
+expect val isDebugBuild: Boolean
+
 /**
  * The app's user-facing version string, sourced from each platform's own build
  * config so it always reflects the actual installed build:

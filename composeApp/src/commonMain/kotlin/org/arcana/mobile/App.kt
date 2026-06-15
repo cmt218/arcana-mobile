@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation.NavController
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -29,6 +30,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import kotlinx.coroutines.delay
+import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.auth.SecureStorage
@@ -74,6 +76,7 @@ fun App(
     ArcanaTheme {
         val apiClient = koinInject<ArcanaApiClient>()
         val favoritesRepository = koinInject<FavoritesRepository>()
+        val telemetry = koinInject<Telemetry>()
         val isAuthenticated by apiClient.isAuthenticated.collectAsState()
 
         var splashVisible by rememberSaveable { mutableStateOf(true) }
@@ -155,6 +158,7 @@ fun App(
                 val signupVm = koinViewModel<SignupCompletionViewModel>(key = welcome) {
                     parametersOf(welcome)
                 }
+                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP) }
                 SignupCompletionScreen(
                     viewModel = signupVm,
                     onNavigateToLogin = {
@@ -166,6 +170,7 @@ fun App(
                     // lockedEmail stays null until the server token-preview endpoint lands.
                 )
             } else {
+                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }
                 AuthScreen(viewModel = authVm)
             }
         }
@@ -184,6 +189,15 @@ private fun MainScaffold() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
+    val telemetry = koinInject<Telemetry>()
+
+    // One $screen per destination change. Keyed on the resolved name so a config
+    // change / recomposition doesn't double-fire, and ClassDetail (which carries
+    // an id arg) still reports a single stable screen name.
+    val screenName = currentScreenName(currentDestination)
+    LaunchedEffect(screenName) {
+        if (screenName != null) telemetry.screen(screenName)
+    }
 
     // Real member initials for the Profile-tab avatar (was hardcoded "FD").
     // Shares the session-scoped ProfileViewModel, so this is the same /me the
@@ -207,7 +221,10 @@ private fun MainScaffold() {
             if (selectedTab != null) {
                 ArcanaTabBar(
                     active = selectedTab,
-                    onSelect = { tab -> navController.navigateToTab(tab) },
+                    onSelect = { tab ->
+                        telemetry.tabTapped(tab.name.lowercase(), fromScreen = screenName)
+                        navController.navigateToTab(tab)
+                    },
                     avatarInitials = avatarInitials,
                 )
             }
@@ -267,6 +284,19 @@ private fun MainScaffold() {
             }
         }
     }
+}
+
+/** Canonical $screen name for the current destination (see Telemetry.Screens). */
+private fun currentScreenName(dest: NavDestination?): String? = when {
+    dest == null -> null
+    dest.hasRoute<ArcanaDestination.Home>() -> Telemetry.Screens.HOME
+    dest.hasRoute<ArcanaDestination.Schedule>() -> Telemetry.Screens.SCHEDULE
+    dest.hasRoute<ArcanaDestination.Profile>() -> Telemetry.Screens.PROFILE
+    dest.hasRoute<ArcanaDestination.StudioSelection>() -> Telemetry.Screens.STUDIO_SELECTION
+    dest.hasRoute<ArcanaDestination.MyBookings>() -> Telemetry.Screens.MY_BOOKINGS
+    dest.hasRoute<ArcanaDestination.ConciergeRequest>() -> Telemetry.Screens.CONCIERGE_REQUEST
+    dest.hasRoute<ArcanaDestination.ClassDetail>() -> Telemetry.Screens.CLASS_DETAIL
+    else -> null
 }
 
 private fun NavController.navigateToTab(tab: ArcanaTab) {
