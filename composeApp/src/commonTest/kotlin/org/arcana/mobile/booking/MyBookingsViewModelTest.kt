@@ -22,7 +22,7 @@ class MyBookingsViewModelTest {
     private class FakeApi(var data: MyBookingsDto) : BookingApi {
         var cancelled: Int? = null
         override suspend fun myBookings() = data
-        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto = throw NotImplementedError()
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?): BookingDto = throw NotImplementedError()
         override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse {
             cancelled = bookingId; return CancelBookingResponse("cancelled", true, false)
         }

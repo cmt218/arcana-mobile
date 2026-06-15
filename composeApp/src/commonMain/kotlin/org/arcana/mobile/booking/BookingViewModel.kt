@@ -69,6 +69,15 @@ class BookingViewModel(
     private val _selectedSpot = MutableStateFlow<SpotDto?>(null)
     val selectedSpot: StateFlow<SpotDto?> = _selectedSpot
 
+    // "Have you been to this studio before?" — asked once per (member, studio)
+    // at booking time. `shouldAsk` comes from the class-detail payload; the
+    // answer (null until tapped) gates confirm when the prompt is shown.
+    private val _shouldAskStudioVisit = MutableStateFlow(false)
+    val shouldAskStudioVisit: StateFlow<Boolean> = _shouldAskStudioVisit
+
+    private val _visitedBefore = MutableStateFlow<Boolean?>(null)
+    val visitedBefore: StateFlow<Boolean?> = _visitedBefore
+
     private val _sheetOpen = MutableStateFlow(false)
     val sheetOpen: StateFlow<Boolean> = _sheetOpen
 
@@ -109,10 +118,23 @@ class BookingViewModel(
         }
     }
 
+    /** Set from the class-detail payload (`should_ask_studio_visit`). */
+    fun setShouldAskStudioVisit(shouldAsk: Boolean) {
+        _shouldAskStudioVisit.value = shouldAsk
+    }
+
+    fun answerStudioVisit(visited: Boolean) {
+        _visitedBefore.value = visited
+        telemetry.studioVisitAnswered(sessionId, studioIdOrNull(), studioContext.studioName, visited)
+    }
+
     fun openSheet() {
         if (_ctaState.value == BookCta.Bookable) {
             _sheetOpen.value = true
             telemetry.bookingSheetOpened(sessionId, studioIdOrNull(), locationIdOrNull(), requiresSpot)
+            if (_shouldAskStudioVisit.value) {
+                telemetry.studioVisitPromptShown(sessionId, studioIdOrNull(), studioContext.studioName)
+            }
         }
     }
     fun dismissSheet() {
@@ -134,7 +156,11 @@ class BookingViewModel(
         telemetry.spotSelected(sessionId, spot.id, spot.label)
     }
 
-    val canConfirm: Boolean get() = !requiresSpot || _selectedSpot.value != null
+    // Confirm is gated on BOTH a picked spot (when required) AND the studio-visit
+    // answer (when the prompt is shown), so we always capture the answer first.
+    val canConfirm: Boolean get() =
+        (!requiresSpot || _selectedSpot.value != null) &&
+        (!_shouldAskStudioVisit.value || _visitedBefore.value != null)
 
     fun confirmBooking() {
         if (!canConfirm) return
@@ -144,7 +170,9 @@ class BookingViewModel(
         telemetry.bookingSubmitted(sessionId, hasSpot)
         viewModelScope.launch {
             try {
-                val b = bookingApi.createBooking(sessionId, _selectedSpot.value?.id)
+                // visitedBefore is null when the prompt wasn't shown — the server
+                // treats null as a no-op, so old/non-prompted bookings are unaffected.
+                val b = bookingApi.createBooking(sessionId, _selectedSpot.value?.id, _visitedBefore.value)
                 _submitState.value = BookingSubmit.Booked(b.id)
                 _existingBooking.value = b
                 _ctaState.value = BookCta.AlreadyBooked

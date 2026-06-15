@@ -277,10 +277,14 @@ class ArcanaApiClient(
         return client.get(v1("classes/$id/")).body()
     }
 
-    override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto {
+    override suspend fun createBooking(
+        sessionId: Int,
+        requestedSpotId: Int?,
+        studioVisitedBefore: Boolean?,
+    ): BookingDto {
         val response = client.post(v1("bookings/")) {
             contentType(ContentType.Application.Json)
-            setBody(CreateBookingRequest(sessionId, requestedSpotId))
+            setBody(CreateBookingRequest(sessionId, requestedSpotId, studioVisitedBefore))
         }
         if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
             val created = response.body<CreateBookingResponse>()

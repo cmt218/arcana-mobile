@@ -52,6 +52,10 @@ data class MyBookingsDto(
 data class CreateBookingRequest(
     @SerialName("session_id") val sessionId: Int,
     @SerialName("requested_spot_id") val requestedSpotId: Int? = null,
+    // The one-time "have you been to this studio before?" answer, when asked.
+    // Null (omitted) when not asked — the server records it on the user↔studio
+    // relationship, never on the booking.
+    @SerialName("studio_visited_before") val studioVisitedBefore: Boolean? = null,
 )
 
 @Serializable

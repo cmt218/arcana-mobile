@@ -185,6 +185,27 @@ class Telemetry(
     fun bookingSubmitted(sessionId: Int, hasSpot: Boolean) =
         track(Events.BOOKING_SUBMITTED, mapOf("session_id" to sessionId, "has_spot" to hasSpot))
 
+    /** The one-time "have you been to this studio before?" prompt was shown
+     *  (member's first booking at this brand). */
+    fun studioVisitPromptShown(sessionId: Int, studioId: Int?, studioName: String) =
+        track(
+            Events.STUDIO_VISIT_PROMPT_SHOWN,
+            mapOf("session_id" to sessionId, "studio_id" to studioId, "studio_name" to studioName),
+        )
+
+    /** Member answered the studio-visit prompt — `visitedBefore` is the
+     *  explore-vs-return signal. */
+    fun studioVisitAnswered(sessionId: Int, studioId: Int?, studioName: String, visitedBefore: Boolean) =
+        track(
+            Events.STUDIO_VISIT_ANSWERED,
+            mapOf(
+                "session_id" to sessionId,
+                "studio_id" to studioId,
+                "studio_name" to studioName,
+                "visited_before" to visitedBefore,
+            ),
+        )
+
     fun bookingSucceeded(
         bookingId: Int,
         status: String,
@@ -340,6 +361,8 @@ class Telemetry(
         const val CLASS_VIEW_FAILED = "class_view_failed"
         const val BOOKING_SHEET_OPENED = "booking_sheet_opened"
         const val SPOT_SELECTED = "spot_selected"
+        const val STUDIO_VISIT_PROMPT_SHOWN = "studio_visit_prompt_shown"
+        const val STUDIO_VISIT_ANSWERED = "studio_visit_answered"
         const val BOOKING_SUBMITTED = "booking_submitted"
         const val BOOKING_SUCCEEDED = "booking_succeeded"
         const val BOOKING_FAILED = "booking_failed"

@@ -96,11 +96,14 @@ fun Overline(
     modifier: Modifier = Modifier,
     size: Int = 11,
     color: Color = Ash,
+    // Defaults to a single line (the stamp/label use). Raise it (e.g. Int.MAX_VALUE)
+    // for longer label text that should wrap to new lines instead of truncating.
+    maxLines: Int = 1,
 ) {
     Text(
         text = text.uppercase(),
         modifier = modifier,
-        maxLines = 1,
+        maxLines = maxLines,
         style = TextStyle(
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Bold,

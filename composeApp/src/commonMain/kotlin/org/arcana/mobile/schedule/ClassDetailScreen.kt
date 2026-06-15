@@ -238,9 +238,14 @@ private fun SuccessBlock(
         )
     }
     LaunchedEffect(session.id) { bookingVm.load() }
+    LaunchedEffect(session.id, session.shouldAskStudioVisit) {
+        bookingVm.setShouldAskStudioVisit(session.shouldAskStudioVisit)
+    }
     val cta by bookingVm.ctaState.collectAsState()
     val sheetOpen by bookingVm.sheetOpen.collectAsState()
     val selectedSpot by bookingVm.selectedSpot.collectAsState()
+    val shouldAskVisit by bookingVm.shouldAskStudioVisit.collectAsState()
+    val visitedBefore by bookingVm.visitedBefore.collectAsState()
     val credits by bookingVm.creditsRemaining.collectAsState()
     val coveredMonths by bookingVm.coveredMonths.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
@@ -400,6 +405,9 @@ private fun SuccessBlock(
             selectedSpot = selectedSpot,
             creditsRemaining = credits,
             onSelectSpot = bookingVm::selectSpot,
+            shouldAskStudioVisit = shouldAskVisit,
+            visitedBefore = visitedBefore,
+            onAnswerVisit = bookingVm::answerStudioVisit,
             confirmEnabled = bookingVm.canConfirm,
             submitting = submit is BookingSubmit.Submitting,
             errorMessage = bookingError,
