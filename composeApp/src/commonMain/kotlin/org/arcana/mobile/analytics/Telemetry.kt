@@ -325,6 +325,17 @@ class Telemetry(
         ),
     )
 
+    /** The favorites list opened in the schedule filter panel (Favorites mode). */
+    fun favoritesDropdownOpened(studioCount: Int, locationCount: Int) =
+        track(
+            Events.FAVORITES_DROPDOWN_OPENED,
+            mapOf("studio_count" to studioCount, "location_count" to locationCount),
+        )
+
+    /** Member tapped "manage in Profile" from the schedule favorites list. */
+    fun favoritesManageTapped() =
+        track(Events.FAVORITES_MANAGE_TAPPED, mapOf("source" to "schedule_dropdown"))
+
     // ---- Concierge / support ---------------------------------------------
 
     fun conciergeSubmitted() = track(Events.CONCIERGE_SUBMITTED)
@@ -375,6 +386,8 @@ class Telemetry(
         const val FAVORITE_ADDED = "favorite_added"
         const val FAVORITE_REMOVED = "favorite_removed"
         const val FAVORITES_SAVED = "favorites_saved"
+        const val FAVORITES_DROPDOWN_OPENED = "favorites_dropdown_opened"
+        const val FAVORITES_MANAGE_TAPPED = "favorites_manage_tapped"
 
         const val CONCIERGE_SUBMITTED = "concierge_request_submitted"
         const val CONCIERGE_FAILED = "concierge_request_failed"
