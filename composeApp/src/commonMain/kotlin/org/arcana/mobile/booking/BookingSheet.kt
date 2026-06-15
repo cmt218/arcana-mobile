@@ -1,21 +1,34 @@
 package org.arcana.mobile.booking
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.SpotDto
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Clay
 import org.arcana.mobile.theme.Graphite
+import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
@@ -34,6 +47,9 @@ fun BookingSheet(
     selectedSpot: SpotDto?,
     creditsRemaining: Int?,
     onSelectSpot: (SpotDto) -> Unit,
+    shouldAskStudioVisit: Boolean,
+    visitedBefore: Boolean?,
+    onAnswerVisit: (Boolean) -> Unit,
     confirmEnabled: Boolean,
     submitting: Boolean,
     errorMessage: String? = null,
@@ -42,7 +58,15 @@ fun BookingSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Stone) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+        // Scrollable so tall content (e.g. a big spot grid + the studio-visit
+        // prompt + CONFIRM) is always reachable — never clipped off the bottom.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+        ) {
             if (errorMessage != null) {
                 // Booking was rejected — show the reason in the sheet itself and
                 // replace the confirm controls with a single dismiss action.
@@ -74,6 +98,17 @@ fun BookingSheet(
                     size = 12,
                     color = Graphite,
                 )
+                // One-time-per-studio prompt, right before confirm so we always
+                // capture it. For spot classes the picker is above, so the order
+                // is: pick spot -> answer -> confirm.
+                if (shouldAskStudioVisit) {
+                    Spacer(Modifier.height(20.dp))
+                    StudioVisitPrompt(
+                        studioName = session.location.studio.name,
+                        answer = visitedBefore,
+                        onAnswer = onAnswerVisit,
+                    )
+                }
                 Spacer(Modifier.height(20.dp))
                 PrimaryCta(
                     label = if (submitting) "BOOKING…" else "CONFIRM",
@@ -84,6 +119,56 @@ fun BookingSheet(
                     } else null,
                 )
             }
+        }
+    }
+}
+
+/**
+ * One-time "have you been to {studioName} before?" Yes/No prompt. Two pills in the
+ * SpotPicker idiom (Burnt Nectar when selected, Mist outline otherwise). The
+ * caller gates CONFIRM until [answer] is non-null.
+ */
+@Composable
+private fun StudioVisitPrompt(
+    studioName: String,
+    answer: Boolean?,
+    onAnswer: (Boolean) -> Unit,
+) {
+    Overline(
+        "Have you been to $studioName before?",
+        size = 11,
+        color = Graphite,
+        maxLines = Int.MAX_VALUE,  // wrap long studio names instead of dropping "before?"
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VisitChip(label = "YES", selected = answer == true, onClick = { onAnswer(true) }, modifier = Modifier.weight(1f))
+        VisitChip(label = "NO", selected = answer == false, onClick = { onAnswer(false) }, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun VisitChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (selected) Modifier.background(BurntNectar)
+                else Modifier.border(1.dp, Mist, RoundedCornerShape(8.dp))
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Overline(label, size = 12, color = Stone)
+        } else {
+            Overline(label, size = 12, color = Wood)
         }
     }
 }

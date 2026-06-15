@@ -38,13 +38,16 @@ class BookingViewModelTest {
         val cancelResult: () -> CancelBookingResponse = { CancelBookingResponse("cancelled", true, false) },
     ) : BookingApi, MembershipApi {
         var created: Pair<Int, Int?>? = null
+        var createdVisitedBefore: Boolean? = null
         var cancelledId: Int? = null
         var cancelCalls: Int = 0
         var createCalls: Int = 0
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(upcoming, emptyList())
-        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto {
-            created = sessionId to requestedSpotId; createCalls++; return createResult()
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?): BookingDto {
+            created = sessionId to requestedSpotId
+            createdVisitedBefore = studioVisitedBefore
+            createCalls++; return createResult()
         }
         override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse {
             cancelledId = bookingId; cancelCalls++; return cancelResult()
@@ -107,6 +110,47 @@ class BookingViewModelTest {
         assertEquals(482 to null, api.created)
         assertTrue(vm.submitState.value is BookingSubmit.Booked)
         assertEquals(99, vm.existingBooking.value?.id)
+    }
+
+    @Test fun `studio-visit prompt gates confirm until answered`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, bookingApi = api, membershipApi = api)
+        vm.load()
+        vm.setShouldAskStudioVisit(true)
+        assertFalse(vm.canConfirm)          // unanswered → blocked
+        vm.answerStudioVisit(true)
+        assertTrue(vm.canConfirm)            // answered → allowed
+    }
+
+    @Test fun `confirm forwards the studio-visit answer`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, bookingApi = api, membershipApi = api)
+        vm.load()
+        vm.setShouldAskStudioVisit(true)
+        vm.answerStudioVisit(false)
+        vm.confirmBooking()
+        assertEquals(false, api.createdVisitedBefore)
+    }
+
+    @Test fun `no prompt - confirm sends a null visit answer`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, bookingApi = api, membershipApi = api)
+        vm.load()  // shouldAsk defaults false
+        assertTrue(vm.canConfirm)
+        vm.confirmBooking()
+        assertNull(api.createdVisitedBefore)
+    }
+
+    @Test fun `spot studios still gate on both spot and visit answer`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = true, bookingApi = api, membershipApi = api)
+        vm.load()
+        vm.setShouldAskStudioVisit(true)
+        assertFalse(vm.canConfirm)                       // neither spot nor answer
+        vm.selectSpot(SpotDto(id = 1, label = "Bike 14"))
+        assertFalse(vm.canConfirm)                       // spot but no answer
+        vm.answerStudioVisit(true)
+        assertTrue(vm.canConfirm)                        // both → allowed
     }
 
     // ── loaded flag (Item 2) --------------------------------------------------

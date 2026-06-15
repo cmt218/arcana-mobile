@@ -8,7 +8,11 @@ import org.arcana.mobile.data.MyBookingsDto
 class BookingError(val code: String) : Exception(code)
 
 interface BookingApi {
-    suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto
+    suspend fun createBooking(
+        sessionId: Int,
+        requestedSpotId: Int?,
+        studioVisitedBefore: Boolean? = null,
+    ): BookingDto
     suspend fun myBookings(): MyBookingsDto
     suspend fun cancelBooking(bookingId: Int): CancelBookingResponse
 }

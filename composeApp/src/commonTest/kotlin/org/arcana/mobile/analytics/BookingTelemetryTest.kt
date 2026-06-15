@@ -46,7 +46,7 @@ class BookingTelemetryTest {
     private class FakeApi(val meResult: MembershipMeDto, val createResult: () -> BookingDto) : BookingApi, MembershipApi {
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
-        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?) = createResult()
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?) = createResult()
         override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
     }
 
@@ -70,6 +70,39 @@ class BookingTelemetryTest {
         assertEquals("requested", ok.properties["status"])
         assertEquals(9, ok.properties["studio_id"])
         assertEquals(3, ok.properties["location_id"])
+    }
+
+    @Test fun `studio-visit prompt-shown fires when opening a sheet that asks`() = runTest {
+        val (telemetry, analytics, _) = fakeTelemetry()
+        val api = FakeApi(me(), createResult = { booking() })
+        val v = vm(api, telemetry)
+        v.load()
+        v.setShouldAskStudioVisit(true)
+        v.openSheet()
+        val shown = analytics.first("studio_visit_prompt_shown")
+        assertTrue(shown != null)
+        assertEquals("Barry's", shown.properties["studio_name"])
+    }
+
+    @Test fun `studio-visit prompt-shown does NOT fire when not asked`() = runTest {
+        val (telemetry, analytics, _) = fakeTelemetry()
+        val api = FakeApi(me(), createResult = { booking() })
+        val v = vm(api, telemetry)
+        v.load()
+        v.openSheet()  // shouldAsk defaults false
+        assertTrue("studio_visit_prompt_shown" !in analytics.names())
+    }
+
+    @Test fun `answering the studio-visit prompt emits the answer`() = runTest {
+        val (telemetry, analytics, _) = fakeTelemetry()
+        val api = FakeApi(me(), createResult = { booking() })
+        val v = vm(api, telemetry)
+        v.load()
+        v.setShouldAskStudioVisit(true)
+        v.answerStudioVisit(true)
+        val ans = analytics.first("studio_visit_answered")!!
+        assertEquals(true, ans.properties["visited_before"])
+        assertEquals("Barry's", ans.properties["studio_name"])
     }
 
     @Test fun `dismissing an open sheet without booking emits abandonment`() = runTest {

@@ -118,7 +118,7 @@ internal class FakeBookingApi(
 ) : BookingApi {
     var myBookingsCalls: Int = 0
 
-    override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?): BookingDto =
+    override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?): BookingDto =
         throw AssertionError("schedule VM must not call createBooking")
 
     override suspend fun myBookings(): MyBookingsDto {

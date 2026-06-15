@@ -30,6 +30,10 @@ data class ScheduleSessionDto(
     val instructors: List<InstructorBriefDto>,
     val location: LocationBriefDto,
     val spots: List<SpotDto> = emptyList(),
+    // Detail-only: true when we haven't yet asked this member whether they've
+    // been to this studio (brand) before. Defaulted so list responses (which
+    // omit it) still deserialize. Drives the one-time booking-time prompt.
+    @SerialName("should_ask_studio_visit") val shouldAskStudioVisit: Boolean = false,
 )
 
 @Serializable
