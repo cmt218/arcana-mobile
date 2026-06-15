@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -13,12 +17,23 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.CompleteSignupResponse
+import org.arcana.mobile.data.SignupProfile
 
 sealed interface SignupCompletionState {
     data class Editing(
         val firstName: String = "",
         val lastName: String = "",
         val phoneNumber: String = "",
+        // Gender stored as the server's choice code ("male"/"female"/"other"),
+        // empty until the member picks. Birthday is the raw digit string
+        // (MMDDYYYY) behind the MM/DD/YYYY mask; parsed to a real date at submit.
+        val gender: String = "",
+        val birthday: String = "",
+        val addressLine1: String = "",
+        val addressLine2: String = "",
+        val city: String = "",
+        val state: String = "",
+        val postalCode: String = "",
         val password: String = "",
         val confirmPassword: String = "",
         val isSubmitting: Boolean = false,
@@ -26,6 +41,9 @@ sealed interface SignupCompletionState {
         // the relevant field or re-submits, so stale messages never linger.
         val passwordError: String? = null,
         val phoneError: String? = null,
+        // Shown once the member has typed a full 8-digit date that's either not a
+        // real calendar date or under the minimum age. Null while still typing.
+        val birthdayError: String? = null,
         // Non-field failures (network, server, unrecognized 400) shown as a
         // banner above the form so the member keeps everything they typed.
         val formError: String? = null,
@@ -75,14 +93,41 @@ class SignupCompletionViewModel(
     // server (it would otherwise bounce as a generic validation failure).
     fun updatePhoneNumber(value: String) =
         mutateEditing { it.copy(phoneNumber = value.take(PHONE_MAX_LENGTH), phoneError = null, formError = null) }
+    fun updateGender(value: String) = mutateEditing { it.copy(gender = value, formError = null) }
+    // Birthday is typed as digits behind a MM/DD/YYYY mask. Keep only digits, cap
+    // at 8, and surface an inline error once a full date is entered that's invalid
+    // or under-age. Partial input shows no error (don't nag mid-type).
+    fun updateBirthday(value: String) = mutateEditing {
+        val digits = value.filter { c -> c.isDigit() }.take(BIRTHDAY_DIGITS)
+        it.copy(birthday = digits, birthdayError = birthdayErrorFor(digits), formError = null)
+    }
+    fun updateAddressLine1(value: String) = mutateEditing { it.copy(addressLine1 = value, formError = null) }
+    fun updateAddressLine2(value: String) = mutateEditing { it.copy(addressLine2 = value, formError = null) }
+    fun updateCity(value: String) = mutateEditing { it.copy(city = value, formError = null) }
+    // Lenient: store exactly what the member types. We trust them on address data
+    // and never reject on shape — the only rule is "not blank".
+    fun updateState(value: String) = mutateEditing { it.copy(state = value, formError = null) }
+    fun updatePostalCode(value: String) = mutateEditing { it.copy(postalCode = value, formError = null) }
 
     fun submit() {
         val current = _state.value as? SignupCompletionState.Editing ?: return
         if (!isValidEditing(current) || current.isSubmitting) return
         setState(current.copy(isSubmitting = true, passwordError = null, phoneError = null, formError = null))
         telemetry.signupSubmitted()
+        val profile = SignupProfile(
+            gender = current.gender,
+            // parseBirthday returns a real LocalDate; toString() is ISO-8601
+            // (yyyy-MM-dd), exactly what the server's DateField expects. Validation
+            // guarantees this parses, so the fallback is just defensive.
+            birthday = parseBirthday(current.birthday)?.toString() ?: "",
+            addressLine1 = current.addressLine1.trim(),
+            addressLine2 = current.addressLine2.trim(),
+            city = current.city.trim(),
+            state = current.state.trim(),
+            postalCode = current.postalCode.trim(),
+        )
         viewModelScope.launch {
-            val result = api.complete(token, current.password, current.displayName, current.phoneNumber.trim())
+            val result = api.complete(token, current.password, current.displayName, current.phoneNumber.trim(), profile)
             // Re-read the latest editing snapshot so any keystrokes made while the
             // request was in flight are preserved when we apply errors.
             val latest = _state.value as? SignupCompletionState.Editing ?: current
@@ -163,6 +208,15 @@ class SignupCompletionViewModel(
         if (state.lastName.isBlank()) return false
         if (state.displayName.length > MAX_DISPLAY_NAME_LENGTH) return false
         if (!isValidPhone(state.phoneNumber)) return false
+        if (state.gender.isBlank()) return false
+        val birthday = parseBirthday(state.birthday) ?: return false
+        if (!isAtLeastMinAge(birthday)) return false
+        // Address: lenient — require only that each part the form asks for is
+        // non-blank (apt is optional). No shape/format checks; trust the member.
+        if (state.addressLine1.isBlank()) return false
+        if (state.city.isBlank()) return false
+        if (state.state.isBlank()) return false
+        if (state.postalCode.isBlank()) return false
         return true
     }
 
@@ -202,6 +256,11 @@ class SignupCompletionViewModel(
         const val MIN_PHONE_DIGITS = 10
         // Matches the server User.phone_number max_length.
         const val PHONE_MAX_LENGTH = 20
+        // ToS requires members to be 18+. Mirrored by the server's validate_birthday.
+        const val MIN_AGE_YEARS = 18
+        const val BIRTHDAY_DIGITS = 8  // MMDDYYYY behind the MM/DD/YYYY mask
+        const val BIRTHDAY_INVALID_MESSAGE = "Enter a valid date as MM/DD/YYYY."
+        const val BIRTHDAY_UNDERAGE_MESSAGE = "You must be 18 or older to use Arcana."
 
         const val NETWORK_MESSAGE =
             "Couldn't reach the server. Check your connection and try again."
@@ -215,5 +274,41 @@ class SignupCompletionViewModel(
          *  numbers; the founders confirm the real number out-of-band. */
         fun isValidPhone(raw: String): Boolean =
             raw.count { it.isDigit() } >= MIN_PHONE_DIGITS
+
+        /** Parse MMDDYYYY digits into a real calendar date, or null if it isn't a
+         *  valid date (wrong length, month/day out of range, Feb 30, etc.). */
+        fun parseBirthday(digits: String): LocalDate? {
+            if (digits.length != BIRTHDAY_DIGITS) return null
+            val month = digits.substring(0, 2).toIntOrNull() ?: return null
+            val day = digits.substring(2, 4).toIntOrNull() ?: return null
+            val year = digits.substring(4, 8).toIntOrNull() ?: return null
+            if (month !in 1..12 || year < 1900) return null
+            return try {
+                LocalDate(year, month, day)  // throws on an impossible day (e.g. Feb 30)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
+
+        /** Inline error for a fully-typed (8-digit) birthday, or null while the
+         *  member is still typing or the date is valid + of age. */
+        fun birthdayErrorFor(digits: String): String? {
+            if (digits.length < BIRTHDAY_DIGITS) return null
+            val date = parseBirthday(digits) ?: return BIRTHDAY_INVALID_MESSAGE
+            return if (isAtLeastMinAge(date)) null else BIRTHDAY_UNDERAGE_MESSAGE
+        }
+
+        /** True when [birthday] is at least [MIN_AGE_YEARS] years before today
+         *  (member's local date). */
+        fun isAtLeastMinAge(birthday: LocalDate): Boolean {
+            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+            var age = today.year - birthday.year
+            if (today.monthNumber < birthday.monthNumber ||
+                (today.monthNumber == birthday.monthNumber && today.dayOfMonth < birthday.dayOfMonth)
+            ) {
+                age--
+            }
+            return age >= MIN_AGE_YEARS
+        }
     }
 }

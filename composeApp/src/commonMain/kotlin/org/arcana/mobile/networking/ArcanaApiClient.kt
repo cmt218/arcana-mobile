@@ -30,6 +30,7 @@ import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CompleteSignupRequest
+import org.arcana.mobile.data.SignupProfile
 import org.arcana.mobile.data.CompleteSignupResponse
 import org.arcana.mobile.data.CreateConciergeRequest
 import org.arcana.mobile.data.CreateConciergeResponse
@@ -132,11 +133,24 @@ class ArcanaApiClient(
         password: String,
         displayName: String,
         phoneNumber: String,
+        profile: SignupProfile,
     ): CompleteSignupResult {
         return try {
             val response = client.post(v1("auth/complete-signup")) {
                 contentType(ContentType.Application.Json)
-                setBody(CompleteSignupRequest(token, password, displayName, phoneNumber))
+                setBody(CompleteSignupRequest(
+                    token = token,
+                    password = password,
+                    display_name = displayName,
+                    phone_number = phoneNumber,
+                    gender = profile.gender,
+                    birthday = profile.birthday,
+                    address_line1 = profile.addressLine1,
+                    address_line2 = profile.addressLine2,
+                    city = profile.city,
+                    state = profile.state,
+                    postal_code = profile.postalCode,
+                ))
             }
             when (response.status) {
                 HttpStatusCode.OK -> {

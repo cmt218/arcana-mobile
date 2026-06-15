@@ -27,12 +27,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import org.arcana.mobile.ui.ArcanaDropdownField
+import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Danger
@@ -82,6 +94,13 @@ fun SignupCompletionScreen(
             onFirstNameChange = viewModel::updateFirstName,
             onLastNameChange = viewModel::updateLastName,
             onPhoneNumberChange = viewModel::updatePhoneNumber,
+            onGenderChange = viewModel::updateGender,
+            onBirthdayChange = viewModel::updateBirthday,
+            onAddressLine1Change = viewModel::updateAddressLine1,
+            onAddressLine2Change = viewModel::updateAddressLine2,
+            onCityChange = viewModel::updateCity,
+            onStateChange = viewModel::updateState,
+            onPostalCodeChange = viewModel::updatePostalCode,
             onPasswordChange = viewModel::updatePassword,
             onConfirmPasswordChange = viewModel::updateConfirmPassword,
             onSubmit = viewModel::submit,
@@ -106,6 +125,13 @@ private fun EditingForm(
     onFirstNameChange: (String) -> Unit,
     onLastNameChange: (String) -> Unit,
     onPhoneNumberChange: (String) -> Unit,
+    onGenderChange: (String) -> Unit,
+    onBirthdayChange: (String) -> Unit,
+    onAddressLine1Change: (String) -> Unit,
+    onAddressLine2Change: (String) -> Unit,
+    onCityChange: (String) -> Unit,
+    onStateChange: (String) -> Unit,
+    onPostalCodeChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onConfirmPasswordChange: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -130,7 +156,22 @@ private fun EditingForm(
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
-                .imePadding(),
+                .imePadding()
+                // Own the hardware Tab key so it advances exactly one field. On the
+                // iOS simulator the platform ALSO traverses focus on Tab, which —
+                // combined with each field's onNext moveFocus — advanced two fields
+                // per press. Consuming the event here makes us the single mover; the
+                // soft-keyboard "Next" path (onImeAction) is untouched for phones.
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.Tab) {
+                        focusManager.moveFocus(
+                            if (event.isShiftPressed) FocusDirection.Up else FocusDirection.Down
+                        )
+                        true
+                    } else {
+                        false
+                    }
+                },
         ) {
             Column(modifier = Modifier.heightIn(min = viewportMinHeight)) {
                 Spacer(Modifier.height(8.dp))
@@ -188,6 +229,74 @@ private fun EditingForm(
                         contentType = ContentType.PhoneNumber,
                         error = editing.phoneError,
                     )
+                    ArcanaDropdownField(
+                        label = "Gender",
+                        selectedValue = editing.gender,
+                        options = GENDER_OPTIONS,
+                        onSelect = onGenderChange,
+                        placeholder = "Select",
+                    )
+                    ArcanaTextField(
+                        label = "Birthday",
+                        value = editing.birthday,
+                        onValueChange = onBirthdayChange,
+                        placeholder = "MM/DD/YYYY",
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        visualTransformation = DateMaskVisualTransformation,
+                        error = editing.birthdayError,
+                    )
+                    ArcanaTextField(
+                        label = "Street address",
+                        value = editing.addressLine1,
+                        onValueChange = onAddressLine1Change,
+                        placeholder = "123 Main St",
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.AddressStreet,
+                    )
+                    ArcanaTextField(
+                        label = "Apt / unit (optional)",
+                        value = editing.addressLine2,
+                        onValueChange = onAddressLine2Change,
+                        placeholder = "Apt 4B",
+                        capitalization = KeyboardCapitalization.Characters,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.AddressAuxiliaryDetails,
+                    )
+                    ArcanaTextField(
+                        label = "City",
+                        value = editing.city,
+                        onValueChange = onCityChange,
+                        placeholder = "Brooklyn",
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.AddressLocality,
+                    )
+                    ArcanaTextField(
+                        label = "State",
+                        value = editing.state,
+                        onValueChange = onStateChange,
+                        placeholder = "NY",
+                        capitalization = KeyboardCapitalization.Characters,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.AddressRegion,
+                    )
+                    ArcanaTextField(
+                        label = "ZIP code",
+                        value = editing.postalCode,
+                        onValueChange = onPostalCodeChange,
+                        placeholder = "11211",
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next,
+                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        contentType = ContentType.PostalCode,
+                    )
                     ArcanaTextField(
                         label = "Password",
                         value = editing.password,
@@ -204,6 +313,7 @@ private fun EditingForm(
                         label = "Confirm password",
                         value = editing.confirmPassword,
                         onValueChange = onConfirmPasswordChange,
+                        placeholder = "Re-enter your password",
                         secure = true,
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
@@ -225,8 +335,49 @@ private fun EditingForm(
                 }
 
                 Spacer(Modifier.weight(1f))
+                // Guaranteed breathing room below the CTA so it never sits glued to
+                // the bottom edge / gesture bar once the form is tall enough to scroll.
+                Spacer(Modifier.height(40.dp))
             }
         }
+    }
+}
+
+/** Gender choices — values are the server's choice codes; labels are shown. */
+private val GENDER_OPTIONS = listOf(
+    DropdownOption("male", "Male"),
+    DropdownOption("female", "Female"),
+    DropdownOption("other", "Other"),
+)
+
+/**
+ * Masks raw birthday digits (`MMDDYYYY`) as `MM/DD/YYYY`, inserting the slashes
+ * as the member types. The offset mapping keeps the cursor correct across the two
+ * inserted separators. The underlying value stays digit-only (see the VM).
+ */
+private val DateMaskVisualTransformation = object : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text.take(8)
+        val out = buildString {
+            for (i in digits.indices) {
+                append(digits[i])
+                if (i == 1 || i == 3) append('/')
+            }
+        }
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int = when {
+                offset <= 1 -> offset          // MM
+                offset <= 3 -> offset + 1       // DD (after first slash)
+                else -> offset + 2              // YYYY (after both slashes)
+            }.coerceAtMost(out.length)
+
+            override fun transformedToOriginal(offset: Int): Int = when {
+                offset <= 2 -> offset
+                offset <= 5 -> offset - 1
+                else -> offset - 2
+            }.coerceIn(0, digits.length)
+        }
+        return TransformedText(AnnotatedString(out), mapping)
     }
 }
 

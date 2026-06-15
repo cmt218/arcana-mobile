@@ -1,6 +1,7 @@
 package org.arcana.mobile.signup
 
 import org.arcana.mobile.data.CompleteSignupResponse
+import org.arcana.mobile.data.SignupProfile
 import org.arcana.mobile.networking.ArcanaApiClient
 
 sealed interface CompleteSignupResult {
@@ -20,6 +21,7 @@ interface CompleteSignupCallable {
         password: String,
         displayName: String,
         phoneNumber: String,
+        profile: SignupProfile,
     ): CompleteSignupResult
 }
 
@@ -36,6 +38,7 @@ class CompleteSignupApi(
         password: String,
         displayName: String,
         phoneNumber: String,
+        profile: SignupProfile,
     ): CompleteSignupResult =
-        apiClient.completeSignup(token, password, displayName, phoneNumber)
+        apiClient.completeSignup(token, password, displayName, phoneNumber, profile)
 }

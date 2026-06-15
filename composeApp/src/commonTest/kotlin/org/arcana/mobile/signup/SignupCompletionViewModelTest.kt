@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.arcana.mobile.data.CompleteSignupResponse
 import org.arcana.mobile.data.SignupMembership
+import org.arcana.mobile.data.SignupProfile
 import org.arcana.mobile.data.SignupUser
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -39,6 +40,10 @@ class SignupCompletionViewModelTest {
         updatePassword("longenough1"); updateConfirmPassword("longenough1")
         updateFirstName("Alice"); updateLastName("Smith")
         updatePhoneNumber("(555) 123-4567")
+        updateGender("female")
+        updateBirthday("01011990")  // MM/DD/YYYY → Jan 1, 1990
+        updateAddressLine1("123 Main St"); updateCity("Brooklyn")
+        updateState("NY"); updatePostalCode("11211")
     }
 
     @Test fun `initially editing with empty fields`() {
@@ -97,6 +102,102 @@ class SignupCompletionViewModelTest {
         val vm = SignupCompletionViewModel("tok", fakeSuccess())
         vm.fillValid()
         assertTrue(vm.canSubmit.value)
+    }
+
+    @Test fun `validation rejects a missing gender`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updateGender("")
+        assertFalse(vm.canSubmit.value)
+    }
+
+    @Test fun `validation rejects a missing birthday`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updateBirthday("")
+        assertFalse(vm.canSubmit.value)
+    }
+
+    @Test fun `validation rejects a partial birthday`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updateBirthday("0101")  // incomplete
+        assertFalse(vm.canSubmit.value)
+        // No nagging error while still typing a partial date.
+        assertEquals(null, (vm.state.value as SignupCompletionState.Editing).birthdayError)
+    }
+
+    @Test fun `validation rejects an impossible date`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updateBirthday("02301990")  // Feb 30
+        assertFalse(vm.canSubmit.value)
+        assertEquals(
+            SignupCompletionViewModel.BIRTHDAY_INVALID_MESSAGE,
+            (vm.state.value as SignupCompletionState.Editing).birthdayError,
+        )
+    }
+
+    @Test fun `validation rejects an under-18 birthday`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updateBirthday("01012020")  // a small child
+        assertFalse(vm.canSubmit.value)
+        assertEquals(
+            SignupCompletionViewModel.BIRTHDAY_UNDERAGE_MESSAGE,
+            (vm.state.value as SignupCompletionState.Editing).birthdayError,
+        )
+    }
+
+    @Test fun `birthday input keeps only digits and caps at 8`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.updateBirthday("01/01/1990xyz9")
+        assertEquals("01011990", (vm.state.value as SignupCompletionState.Editing).birthday)
+    }
+
+    @Test fun `validation rejects missing address parts`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updateAddressLine1("")
+        assertFalse(vm.canSubmit.value)
+        vm.updateAddressLine1("123 Main St"); vm.updateCity("")
+        assertFalse(vm.canSubmit.value)
+        vm.updateCity("Brooklyn"); vm.updateState("")
+        assertFalse(vm.canSubmit.value)
+    }
+
+    @Test fun `address fields are lenient — any non-blank value is accepted`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        // Non-US-shaped state + postal code must still be accepted verbatim.
+        vm.fillValid()
+        vm.updateState("Ontario"); vm.updatePostalCode("M5V 2T6")
+        assertTrue(vm.canSubmit.value)
+        val s = vm.state.value as SignupCompletionState.Editing
+        assertEquals("Ontario", s.state)
+        assertEquals("M5V 2T6", s.postalCode)  // stored verbatim, no filtering
+    }
+
+    @Test fun `validation rejects a blank zip`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid(); vm.updatePostalCode("")
+        assertFalse(vm.canSubmit.value)
+    }
+
+    @Test fun `address line 2 is optional`() {
+        val vm = SignupCompletionViewModel("tok", fakeSuccess())
+        vm.fillValid()  // no apt set
+        assertTrue(vm.canSubmit.value)
+    }
+
+    @Test fun `submit forwards the collected profile`() = runTest {
+        val phones = mutableListOf<String>()
+        val profiles = mutableListOf<SignupProfile>()
+        val vm = SignupCompletionViewModel("tok", CapturingApi(phones, profiles) {
+            CompleteSignupResult.TokenExpiredOrConsumed
+        })
+        vm.fillValid(); vm.updateAddressLine2("  Apt 4B  "); vm.submit()
+        val p = profiles.single()
+        assertEquals("female", p.gender)
+        assertEquals("1990-01-01", p.birthday)
+        assertEquals("123 Main St", p.addressLine1)
+        assertEquals("Apt 4B", p.addressLine2)  // trimmed
+        assertEquals("Brooklyn", p.city)
+        assertEquals("NY", p.state)
+        assertEquals("11211", p.postalCode)
     }
 
     @Test fun `submit success transitions to success state`() = runTest {
@@ -226,19 +327,27 @@ class SignupCompletionViewModelTest {
 }
 
 private class FakeApi(private val behavior: () -> CompleteSignupResult) : CompleteSignupCallable {
-    override suspend fun complete(token: String, password: String, displayName: String, phoneNumber: String) = behavior()
+    override suspend fun complete(
+        token: String, password: String, displayName: String, phoneNumber: String, profile: SignupProfile,
+    ) = behavior()
 }
 
 private class CapturingApi(
     private val phones: MutableList<String>,
+    private val profiles: MutableList<SignupProfile> = mutableListOf(),
     private val behavior: () -> CompleteSignupResult,
 ) : CompleteSignupCallable {
-    override suspend fun complete(token: String, password: String, displayName: String, phoneNumber: String): CompleteSignupResult {
+    override suspend fun complete(
+        token: String, password: String, displayName: String, phoneNumber: String, profile: SignupProfile,
+    ): CompleteSignupResult {
         phones.add(phoneNumber)
+        profiles.add(profile)
         return behavior()
     }
 }
 
 private class GatedApi(private val gate: CompletableDeferred<CompleteSignupResult>) : CompleteSignupCallable {
-    override suspend fun complete(token: String, password: String, displayName: String, phoneNumber: String): CompleteSignupResult = gate.await()
+    override suspend fun complete(
+        token: String, password: String, displayName: String, phoneNumber: String, profile: SignupProfile,
+    ): CompleteSignupResult = gate.await()
 }
