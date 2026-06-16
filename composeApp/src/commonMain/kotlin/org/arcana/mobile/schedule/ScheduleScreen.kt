@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,6 +78,7 @@ import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
@@ -846,11 +848,23 @@ private fun FilterPill(
     ) {
         Text(
             text = label,
+            // Nudge down ~9% of the font size — the line-height trim centers the
+            // box, but League Spartan caps still ride a touch high (mirrors the
+            // CircleMonogram recipe).
+            modifier = Modifier.offset(y = 1.dp),
             maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
+                // Trim + center the line box so the all-caps League Spartan
+                // glyphs sit vertically centered in the pill (they otherwise
+                // ride high). Same fix used by CircleMonogram / the tab bar.
+                lineHeight = 12.sp,
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
                 letterSpacing = 0.10.em,
                 color = if (active) Stone else Ink,
             ),
