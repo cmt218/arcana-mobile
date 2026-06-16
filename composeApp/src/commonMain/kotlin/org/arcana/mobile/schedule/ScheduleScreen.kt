@@ -806,12 +806,19 @@ private fun ScheduleFilterSection(
 /** One read-only favorited studio/location in the Favorites panel. */
 @Composable
 private fun FavoriteEntryRow(name: String, detail: String) {
+    // A small Moss dot, not an icon — these rows are read-only, so we avoid the
+    // tappable-looking flag Felicia flagged while still anchoring each line.
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        StrokeIcon(icon = ArcanaIcons.Bookmark, size = 14.dp, tint = Moss)
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(Moss),
+        )
         BodyText(text = name, size = 14, color = Ink, modifier = Modifier.weight(1f))
         Caption(text = detail, size = 11, color = Ash2)
     }
