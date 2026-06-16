@@ -343,9 +343,9 @@ private fun SuccessBlock(
                     }
                 }
             }
-            item("location-card") {
+            item("location") {
                 Spacer(Modifier.height(24.dp))
-                LocationCard(
+                LocationRow(
                     studioName = studio.name,
                     locationName = session.location.name,
                     address = session.location.address,
@@ -850,47 +850,42 @@ private fun CapacityPips(
     }
 }
 
-// ── Location card -------------------------------------------------------------
+// ── Location row --------------------------------------------------------------
 
+/** Flat location row that mirrors [InstructorRow]: a Pin-icon avatar + a
+ *  "LOCATION / NAME" block (address as a sub-line when present). No card — it
+ *  sits on the page like the instructor row, so it doesn't read as tappable. */
 @Composable
-private fun LocationCard(
+private fun LocationRow(
     studioName: String,
     locationName: String,
     address: String,
     studioColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        SectionRule(label = "Location")
-        Spacer(Modifier.height(12.dp))
-        Row(
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Paper)
-                .border(1.dp, Mist, RoundedCornerShape(14.dp))
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(Mist2)
+                .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(studioColor.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                StrokeIcon(icon = ArcanaIcons.Pin, size = 20.dp, tint = studioColor)
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                val displayName = if (locationName.isNotBlank()) locationName else studioName
-                BodyText(
-                    text = displayName, size = 14, color = Ink, weight = FontWeight.SemiBold,
-                )
-                if (address.isNotBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    BodyText(text = address, size = 12, color = Ash)
-                }
+            StrokeIcon(icon = ArcanaIcons.Pin, size = 22.dp, tint = studioColor)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Overline(text = "LOCATION", size = 10, color = Ash)
+            Spacer(Modifier.height(4.dp))
+            val displayName = if (locationName.isNotBlank()) locationName else studioName
+            Display(text = displayName, size = 18, color = Ink)
+            if (address.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                BodyText(text = address, size = 12, color = Ash)
             }
         }
     }
