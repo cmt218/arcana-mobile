@@ -555,13 +555,12 @@ private fun StatCell(value: String?, label: String, modifier: Modifier = Modifie
  */
 @Composable
 private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) {
+    // Flat — no card and no chevron, so the read-only preview doesn't read as
+    // tappable (Felicia's feedback). Just the number badge + the name.
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Paper)
-            .border(1.dp, Mist, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -585,7 +584,6 @@ private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) 
                 color = Ink,
             ),
         )
-        StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash)
     }
 }
 
