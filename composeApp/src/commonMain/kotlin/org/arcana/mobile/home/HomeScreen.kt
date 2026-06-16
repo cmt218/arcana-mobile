@@ -58,7 +58,6 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
-import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline

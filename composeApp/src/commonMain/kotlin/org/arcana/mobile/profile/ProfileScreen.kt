@@ -70,7 +70,6 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
-import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
