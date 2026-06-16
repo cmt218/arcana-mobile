@@ -10,6 +10,11 @@
 
 set -e
 
+# Xcode build phases run with a minimal PATH that excludes Homebrew's bin dir,
+# so a brew-installed `sentry-cli` isn't found by default. Add the common
+# install locations (Apple Silicon + Intel) before looking for it.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 if ! command -v sentry-cli >/dev/null 2>&1; then
   echo "warning: sentry-cli not installed — skipping dSYM upload (brew install getsentry/tools/sentry-cli)"
   exit 0
