@@ -543,15 +543,6 @@ private fun HeroCard(
             )
             .border(1.dp, studioColor.copy(alpha = 0.20f), RoundedCornerShape(14.dp)),
     ) {
-        // Decorative dot field — top-right, rotated -3°, diagonal fade.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(width = 220.dp, height = 160.dp)
-                .rotate(-3f),
-        ) {
-            HeroDotField(color = studioColor)
-        }
         Column(
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 20.dp),
         ) {
@@ -616,36 +607,6 @@ private fun BrandLocationChip(
                     color = studioColor.copy(alpha = 0.78f),
                 ),
             )
-        }
-    }
-}
-
-/** The hero card's decorative dot field. Same dot vocabulary as the brand
- *  wordmark; alpha fades diagonally from top-right (lit) to bottom-left
- *  (transparent) so it reads as a corner accent, not a tiled background. */
-@Composable
-private fun HeroDotField(color: Color) {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val step = 9.dp.toPx()
-        val radius = 1.2.dp.toPx()
-        val w = size.width
-        val h = size.height
-        var y = step / 2f
-        while (y < h) {
-            var x = step / 2f
-            while (x < w) {
-                // Diagonal falloff: brighter toward (w, 0), darker toward (0, h).
-                val nx = x / w
-                val ny = 1f - (y / h)
-                val a = ((nx + ny) * 0.5f).coerceIn(0f, 1f)
-                drawCircle(
-                    color = color.copy(alpha = 0.45f * a),
-                    radius = radius,
-                    center = Offset(x, y),
-                )
-                x += step
-            }
-            y += step
         }
     }
 }

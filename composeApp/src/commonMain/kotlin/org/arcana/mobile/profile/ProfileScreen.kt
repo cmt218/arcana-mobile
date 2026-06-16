@@ -360,7 +360,6 @@ private fun ProfileHero(state: ProfileUiState) {
             .fillMaxWidth()
             .background(Ink),
     ) {
-        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.08f, spacing = 16)
         Column(
             modifier = Modifier
                 .safeContentPadding()

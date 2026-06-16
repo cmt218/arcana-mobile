@@ -414,7 +414,6 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
             .clickable { onClick() }
             .background(Moss),
     ) {
-        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.10f, spacing = 16)
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -608,7 +607,6 @@ private fun ManifestoCard(
             .clip(RoundedCornerShape(20.dp))
             .background(Ink),
     ) {
-        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.10f, spacing = 16)
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
