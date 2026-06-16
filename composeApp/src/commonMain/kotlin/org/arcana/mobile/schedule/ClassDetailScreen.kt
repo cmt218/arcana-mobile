@@ -1,6 +1,5 @@
 package org.arcana.mobile.schedule
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,8 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -250,6 +247,9 @@ private fun SuccessBlock(
     val coveredMonths by bookingVm.coveredMonths.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
     val existing by bookingVm.existingBooking.collectAsState()
+    // The spot on the live booking (effective → fulfilled → requested), shown on
+    // the CTA + cancel sheet for spot studios. Null for non-spot classes.
+    val bookedSpotLabel = existing?.let { it.spot?.label ?: it.fulfilledSpot?.label ?: it.requestedSpot?.label }
     val loaded by bookingVm.loaded.collectAsState()
     val cancelSheetOpen by bookingVm.cancelSheetOpen.collectAsState()
     val cancelState by bookingVm.cancelState.collectAsState()
@@ -343,9 +343,9 @@ private fun SuccessBlock(
                     }
                 }
             }
-            item("location-card") {
+            item("location") {
                 Spacer(Modifier.height(24.dp))
-                LocationCard(
+                LocationRow(
                     studioName = studio.name,
                     locationName = session.location.name,
                     address = session.location.address,
@@ -375,6 +375,8 @@ private fun SuccessBlock(
                     existing?.status != null -> existing!!.status.uppercase()
                     else -> cta.label
                 },
+                // Show the booked spot on the CTA's sub-line for spot studios.
+                spotLabel = bookedSpotLabel,
                 loading = ctaLoading,
                 // Tappable when there's a live booking (→ cancel) or the class is
                 // bookable; while loading the CTA is inert and shows a spinner.
@@ -418,6 +420,7 @@ private fun SuccessBlock(
     if (cancelSheetOpen) {
         CancelBookingSheet(
             className = session.template.name,
+            spotLabel = bookedSpotLabel,
             willForfeitCredit = existing?.cancelPolicy?.willForfeitCredit == true,
             cancelState = cancelState,
             onConfirm = bookingVm::confirmCancel,
@@ -438,6 +441,7 @@ private fun SuccessBlock(
 @Composable
 private fun CancelBookingSheet(
     className: String,
+    spotLabel: String?,
     willForfeitCredit: Boolean,
     cancelState: CancelState,
     onConfirm: () -> Unit,
@@ -450,6 +454,10 @@ private fun CancelBookingSheet(
             Heading3("Cancel booking?", size = 20, color = Ink)
             Spacer(Modifier.height(8.dp))
             BodyText(className, size = 16, color = Ink)
+            if (spotLabel != null) {
+                Spacer(Modifier.height(2.dp))
+                Caption(spotLabel, size = 12, color = Ash)
+            }
             Spacer(Modifier.height(16.dp))
             if (willForfeitCredit) {
                 BodyText(
@@ -543,15 +551,6 @@ private fun HeroCard(
             )
             .border(1.dp, studioColor.copy(alpha = 0.20f), RoundedCornerShape(14.dp)),
     ) {
-        // Decorative dot field — top-right, rotated -3°, diagonal fade.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(width = 220.dp, height = 160.dp)
-                .rotate(-3f),
-        ) {
-            HeroDotField(color = studioColor)
-        }
         Column(
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 20.dp),
         ) {
@@ -616,36 +615,6 @@ private fun BrandLocationChip(
                     color = studioColor.copy(alpha = 0.78f),
                 ),
             )
-        }
-    }
-}
-
-/** The hero card's decorative dot field. Same dot vocabulary as the brand
- *  wordmark; alpha fades diagonally from top-right (lit) to bottom-left
- *  (transparent) so it reads as a corner accent, not a tiled background. */
-@Composable
-private fun HeroDotField(color: Color) {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val step = 9.dp.toPx()
-        val radius = 1.2.dp.toPx()
-        val w = size.width
-        val h = size.height
-        var y = step / 2f
-        while (y < h) {
-            var x = step / 2f
-            while (x < w) {
-                // Diagonal falloff: brighter toward (w, 0), darker toward (0, h).
-                val nx = x / w
-                val ny = 1f - (y / h)
-                val a = ((nx + ny) * 0.5f).coerceIn(0f, 1f)
-                drawCircle(
-                    color = color.copy(alpha = 0.45f * a),
-                    radius = radius,
-                    center = Offset(x, y),
-                )
-                x += step
-            }
-            y += step
         }
     }
 }
@@ -850,47 +819,42 @@ private fun CapacityPips(
     }
 }
 
-// ── Location card -------------------------------------------------------------
+// ── Location row --------------------------------------------------------------
 
+/** Flat location row that mirrors [InstructorRow]: a Pin-icon avatar + a
+ *  "LOCATION / NAME" block (address as a sub-line when present). No card — it
+ *  sits on the page like the instructor row, so it doesn't read as tappable. */
 @Composable
-private fun LocationCard(
+private fun LocationRow(
     studioName: String,
     locationName: String,
     address: String,
     studioColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        SectionRule(label = "Location")
-        Spacer(Modifier.height(12.dp))
-        Row(
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Paper)
-                .border(1.dp, Mist, RoundedCornerShape(14.dp))
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(Mist2)
+                .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(studioColor.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                StrokeIcon(icon = ArcanaIcons.Pin, size = 20.dp, tint = studioColor)
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                val displayName = if (locationName.isNotBlank()) locationName else studioName
-                BodyText(
-                    text = displayName, size = 14, color = Ink, weight = FontWeight.SemiBold,
-                )
-                if (address.isNotBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    BodyText(text = address, size = 12, color = Ash)
-                }
+            StrokeIcon(icon = ArcanaIcons.Pin, size = 22.dp, tint = studioColor)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Overline(text = "LOCATION", size = 10, color = Ash)
+            Spacer(Modifier.height(4.dp))
+            val displayName = if (locationName.isNotBlank()) locationName else studioName
+            Display(text = displayName, size = 18, color = Ink)
+            if (address.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                BodyText(text = address, size = 12, color = Ash)
             }
         }
     }
@@ -916,6 +880,7 @@ private fun StickyReserveCta(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     label: String? = null,
+    spotLabel: String? = null,
     enabled: Boolean = true,
     loading: Boolean = false,
 ) {
@@ -938,6 +903,7 @@ private fun StickyReserveCta(
     val ampm = if (startLocal.hour < 12) "AM" else "PM"
     val timeStamp = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')} $ampm"
     val dayStamp = "${startLocal.dayOfWeek.name.take(3)} ${startLocal.date.day} ${startLocal.date.month.abbr()}"
+    val subStamp = if (spotLabel != null) "$timeStamp · $dayStamp · ${spotLabel.uppercase()}" else "$timeStamp · $dayStamp"
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 40dp transparent→stone fade so list content scrolls under the CTA
@@ -996,7 +962,7 @@ private fun StickyReserveCta(
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "$timeStamp · $dayStamp",
+                            text = subStamp,
                             maxLines = 1,
                             style = TextStyle(
                                 fontFamily = Arcana.fonts.body,

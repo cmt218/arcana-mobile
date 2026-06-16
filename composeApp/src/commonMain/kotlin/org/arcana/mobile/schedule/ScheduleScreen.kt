@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,6 +78,7 @@ import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
@@ -683,146 +685,120 @@ private fun ScheduleFilterSection(
     viewModel: ScheduleViewModel,
     onManageFavorites: () -> Unit,
 ) {
-    // Presentational expansion state. rememberSaveable survives the LazyColumn
-    // disposing this item when it scrolls off-screen (and process death).
-    var panelExpanded by rememberSaveable { mutableStateOf(false) }
+    // Which section is expanded below the pills: "" none, "fav" the favorites
+    // list, "all" the studio accordion. rememberSaveable survives the LazyColumn
+    // recycling this item off-screen (and process death).
+    var expandedSection by rememberSaveable { mutableStateOf("") }
     val expandedSlugs = rememberSaveable(
         saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
     ) { mutableStateListOf<String>() }
 
+    val favoritesActive = state.filterMode == FilterMode.Favorites
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Collapsed summary bar — funnel · summary · chevron.
+        // Two equal pills, always visible: Favorites (when the member has any) +
+        // All Studios. Exactly one is active. Tapping a pill expands its section;
+        // tapping the active pill again collapses it. "All Studios" owns the
+        // studio/location accordion (no separate Filter pill, no summary bar).
         Row(
-            modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, Mist, RoundedCornerShape(16.dp))
-                .clickable { panelExpanded = !panelExpanded }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            StrokeIcon(icon = ArcanaIcons.Filter, size = 16.dp, tint = Moss)
-            Text(
-                text = state.filterSummary,
-                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+            if (state.hasFavorites) {
+                FilterPill(
+                    label = "FAVORITES",
+                    active = favoritesActive,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (!favoritesActive) {
+                            viewModel.useMyFavorites()
+                            expandedSection = "fav"
+                        } else {
+                            expandedSection = if (expandedSection == "fav") "" else "fav"
+                        }
+                    },
+                )
+            }
+            FilterPill(
+                label = "ALL STUDIOS",
+                active = !favoritesActive,
                 modifier = Modifier.weight(1f),
-                style = TextStyle(
-                    fontFamily = Arcana.fonts.display,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    letterSpacing = 0.04.em,
-                    color = Ink,
-                ),
-            )
-            StrokeIcon(
-                icon = ArcanaIcons.ChevronDown,
-                size = 16.dp,
-                tint = Ash2,
-                modifier = Modifier.rotate(if (panelExpanded) 180f else 0f),
+                onClick = {
+                    if (favoritesActive) {
+                        viewModel.showAllStudios()
+                        expandedSection = "all"
+                    } else {
+                        expandedSection = if (expandedSection == "all") "" else "all"
+                    }
+                },
             )
         }
 
-        if (panelExpanded) {
+        // Favorites section — the member's favorites, read-only, with a one-tap
+        // path into the Profile favorites manager.
+        if (expandedSection == "fav" && state.hasFavorites && state.favoriteEntries.isNotEmpty()) {
+            LaunchedEffect(Unit) { viewModel.onFavoritesDropdownShown() }
             Spacer(Modifier.height(12.dp))
-            // Mode pills — exactly one active. Favorites and All Studios apply
-            // immediately and dismiss the panel; only Filter keeps it open to
-            // reveal the studio accordion below.
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (state.hasFavorites) {
-                    FilterPill(
-                        label = "FAVORITES",
-                        active = state.filterMode == FilterMode.Favorites,
-                        // Keep the panel open (like Filter) so the read-only
-                        // favorites list below is revealed on selection.
-                        onClick = { viewModel.useMyFavorites() },
-                    )
+                state.favoriteEntries.forEach { entry ->
+                    FavoriteEntryRow(name = entry.name, detail = entry.detail)
                 }
-                FilterPill(
-                    label = "ALL STUDIOS",
-                    active = state.filterMode == FilterMode.AllStudios,
-                    onClick = { viewModel.showAllStudios(); panelExpanded = false },
-                )
-                FilterPill(
-                    label = "FILTER",
-                    active = state.filterMode == FilterMode.Custom,
-                    onClick = { viewModel.enterFilterMode() },
+                Overline(
+                    text = "MANAGE IN PROFILE",
+                    size = 11, color = Moss,
+                    modifier = Modifier
+                        .clickable {
+                            viewModel.onManageFavoritesTapped()
+                            onManageFavorites()
+                        }
+                        .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
                 )
             }
+        }
 
-            // Only Filter (Custom) mode reveals the accordion — every studio,
-            // collapsed; expand to its locations and pick as many as you like.
-            if (state.filterMode == FilterMode.Custom) {
-                Spacer(Modifier.height(12.dp))
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.filterStudios.forEach { studio ->
-                        val chosen = studio.slug in state.filters.studioSlugs
-                        val expanded = studio.slug in expandedSlugs
-                        Column {
-                            StudioAccordionCard(
-                                name = studio.name,
-                                locationCount = studio.locations.size,
-                                chosen = chosen,
-                                expanded = expanded,
-                                selectedLocationCount = studio.locations.count { it.id in state.filters.locationIds },
-                                onToggle = { viewModel.toggleStudioWhole(studio.slug) },
-                                onToggleExpanded = {
-                                    if (studio.slug in expandedSlugs) expandedSlugs.remove(studio.slug)
-                                    else expandedSlugs.add(studio.slug)
-                                },
-                            )
-                            if (expanded) {
-                                Column(
-                                    modifier = Modifier.padding(start = 32.dp, top = 12.dp, bottom = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    studio.locations.forEach { location ->
-                                        StudioLocationRow(
-                                            label = location.label,
-                                            checked = location.id in state.filters.locationIds || chosen,
-                                            implied = chosen,
-                                            onTap = { viewModel.toggleLocation(studio.slug, location.id) },
-                                        )
-                                    }
+        // All-Studios section — the studio accordion. Empty selection = every
+        // studio; expanding a studio and picking locations narrows the schedule.
+        if (expandedSection == "all") {
+            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.filterStudios.forEach { studio ->
+                    val chosen = studio.slug in state.filters.studioSlugs
+                    val expanded = studio.slug in expandedSlugs
+                    Column {
+                        StudioAccordionCard(
+                            name = studio.name,
+                            locationCount = studio.locations.size,
+                            chosen = chosen,
+                            expanded = expanded,
+                            selectedLocationCount = studio.locations.count { it.id in state.filters.locationIds },
+                            onToggle = { viewModel.toggleStudioWhole(studio.slug) },
+                            onToggleExpanded = {
+                                if (studio.slug in expandedSlugs) expandedSlugs.remove(studio.slug)
+                                else expandedSlugs.add(studio.slug)
+                            },
+                        )
+                        if (expanded) {
+                            Column(
+                                modifier = Modifier.padding(start = 32.dp, top = 12.dp, bottom = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                studio.locations.forEach { location ->
+                                    StudioLocationRow(
+                                        label = location.label,
+                                        checked = location.id in state.filters.locationIds || chosen,
+                                        implied = chosen,
+                                        onTap = { viewModel.toggleLocation(studio.slug, location.id) },
+                                    )
                                 }
                             }
                         }
                     }
-                }
-            }
-
-            // Favorites mode reveals the member's favorites read-only, with a
-            // one-tap path into the Profile favorites manager — so it's always
-            // clear what "Favorites" is scoping to and how to change it.
-            if (state.filterMode == FilterMode.Favorites && state.favoriteEntries.isNotEmpty()) {
-                LaunchedEffect(Unit) { viewModel.onFavoritesDropdownShown() }
-                Spacer(Modifier.height(12.dp))
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    state.favoriteEntries.forEach { entry ->
-                        FavoriteEntryRow(name = entry.name, detail = entry.detail)
-                    }
-                    Overline(
-                        text = "MANAGE IN PROFILE",
-                        size = 11, color = Moss,
-                        modifier = Modifier
-                            .clickable {
-                                viewModel.onManageFavoritesTapped()
-                                onManageFavorites()
-                            }
-                            .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
-                    )
                 }
             }
         }
@@ -832,41 +808,63 @@ private fun ScheduleFilterSection(
 /** One read-only favorited studio/location in the Favorites panel. */
 @Composable
 private fun FavoriteEntryRow(name: String, detail: String) {
+    // A small Moss dot, not an icon — these rows are read-only, so we avoid the
+    // tappable-looking flag Felicia flagged while still anchoring each line.
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        StrokeIcon(icon = ArcanaIcons.Bookmark, size = 14.dp, tint = Moss)
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(Moss),
+        )
         BodyText(text = name, size = 14, color = Ink, modifier = Modifier.weight(1f))
         Caption(text = detail, size = 11, color = Ash2)
     }
 }
 
-/** Small pill toggle for the filter panel header (Favorites / All Studios /
- *  Filter). Ink-filled when active, hairline otherwise. */
+/** Pill toggle for the schedule filter (Favorites / All Studios). Ink-filled
+ *  when active, hairline otherwise. Pass `Modifier.weight(1f)` to size two pills
+ *  equally; the label centers. */
 @Composable
 private fun FilterPill(
     label: String,
     active: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .clip(CircleShape)
             .background(if (active) Ink else Color.Transparent)
             .border(1.dp, if (active) Ink else Mist, CircleShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
+            // Nudge down ~9% of the font size — the line-height trim centers the
+            // box, but League Spartan caps still ride a touch high (mirrors the
+            // CircleMonogram recipe).
+            modifier = Modifier.offset(y = 1.dp),
             maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
+                // Trim + center the line box so the all-caps League Spartan
+                // glyphs sit vertically centered in the pill (they otherwise
+                // ride high). Same fix used by CircleMonogram / the tab bar.
+                lineHeight = 12.sp,
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
                 letterSpacing = 0.10.em,
                 color = if (active) Stone else Ink,
             ),

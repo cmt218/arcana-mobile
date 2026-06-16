@@ -70,7 +70,6 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
-import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
@@ -360,7 +359,6 @@ private fun ProfileHero(state: ProfileUiState) {
             .fillMaxWidth()
             .background(Ink),
     ) {
-        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.08f, spacing = 16)
         Column(
             modifier = Modifier
                 .safeContentPadding()
@@ -556,13 +554,12 @@ private fun StatCell(value: String?, label: String, modifier: Modifier = Modifie
  */
 @Composable
 private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) {
+    // Flat — no card and no chevron, so the read-only preview doesn't read as
+    // tappable (Felicia's feedback). Just the number badge + the name.
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Paper)
-            .border(1.dp, Mist, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -586,7 +583,6 @@ private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) 
                 color = Ink,
             ),
         )
-        StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash)
     }
 }
 

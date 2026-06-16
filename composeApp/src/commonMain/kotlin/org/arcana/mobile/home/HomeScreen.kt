@@ -58,7 +58,6 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
-import org.arcana.mobile.ui.DotField
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
@@ -414,7 +413,6 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
             .clickable { onClick() }
             .background(Moss),
     ) {
-        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.10f, spacing = 16)
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -608,7 +606,6 @@ private fun ManifestoCard(
             .clip(RoundedCornerShape(20.dp))
             .background(Ink),
     ) {
-        DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.10f, spacing = 16)
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

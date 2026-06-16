@@ -20,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
@@ -41,6 +42,7 @@ import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.safeBottomBarPadding
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -133,6 +135,8 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
             .fillMaxSize()
             .background(Stone)
             .safeContentPadding()
+            // Lift the Done button clear of the home indicator / bottom inset.
+            .safeBottomBarPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         IconCircle(
@@ -156,7 +160,13 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
                 StrokeIcon(icon = ArcanaIcons.Check, size = 26.dp, tint = Lime)
             }
             Spacer(Modifier.height(24.dp))
-            Display(text = "Message\nsent.", size = 44, color = Ink)
+            Display(
+                text = "Message sent.",
+                size = 44,
+                color = Ink,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(16.dp))
             BodyText(
                 text = "We've got it. The founders will reach out to you directly.",

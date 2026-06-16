@@ -143,36 +143,38 @@ fun App(
             splashVisible = false
         }
 
-        // Render the post-splash destination underneath so the splash's 300 ms
-        // fade-out reveals the next screen rather than a blank surface.
-        if (!splashVisible) {
-            val welcome = welcomeToken
-            if (isAuthenticated) {
-                CompositionLocalProvider(
-                    LocalViewModelStoreOwner provides sessionStoreOwner
-                ) {
-                    MainScaffold()
-                }
-            } else if (welcome != null) {
-                // key = welcome recreates the VM if a different token arrives.
-                val signupVm = koinViewModel<SignupCompletionViewModel>(key = welcome) {
-                    parametersOf(welcome)
-                }
-                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP) }
-                SignupCompletionScreen(
-                    viewModel = signupVm,
-                    onNavigateToLogin = {
-                        // "Log in instead" (expired/consumed link): clear the token,
-                        // notify, and fall back to AuthScreen.
-                        welcomeToken = null
-                        onWelcomeTokenConsumed()
-                    },
-                    // lockedEmail stays null until the server token-preview endpoint lands.
-                )
-            } else {
-                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }
-                AuthScreen(viewModel = authVm)
+        // Render the destination immediately — even while the splash is still up —
+        // so an authenticated member's Home/Profile data fetches DURING the splash
+        // window (not after it), and the fade reveals ready content instead of a
+        // shimmer. The splash overlay below is drawn on top (z-stacked, opaque) and
+        // covers this until it fades out. The splash duration itself is unchanged, so
+        // timing can't regress: worst case (slow network) is exactly today's behavior.
+        val welcome = welcomeToken
+        if (isAuthenticated) {
+            CompositionLocalProvider(
+                LocalViewModelStoreOwner provides sessionStoreOwner
+            ) {
+                MainScaffold()
             }
+        } else if (welcome != null) {
+            // key = welcome recreates the VM if a different token arrives.
+            val signupVm = koinViewModel<SignupCompletionViewModel>(key = welcome) {
+                parametersOf(welcome)
+            }
+            LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP) }
+            SignupCompletionScreen(
+                viewModel = signupVm,
+                onNavigateToLogin = {
+                    // "Log in instead" (expired/consumed link): clear the token,
+                    // notify, and fall back to AuthScreen.
+                    welcomeToken = null
+                    onWelcomeTokenConsumed()
+                },
+                // lockedEmail stays null until the server token-preview endpoint lands.
+            )
+        } else {
+            LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }
+            AuthScreen(viewModel = authVm)
         }
         AnimatedVisibility(
             visible = splashVisible,
