@@ -250,6 +250,9 @@ private fun SuccessBlock(
     val coveredMonths by bookingVm.coveredMonths.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
     val existing by bookingVm.existingBooking.collectAsState()
+    // The spot on the live booking (effective → fulfilled → requested), shown on
+    // the CTA + cancel sheet for spot studios. Null for non-spot classes.
+    val bookedSpotLabel = existing?.let { it.spot?.label ?: it.fulfilledSpot?.label ?: it.requestedSpot?.label }
     val loaded by bookingVm.loaded.collectAsState()
     val cancelSheetOpen by bookingVm.cancelSheetOpen.collectAsState()
     val cancelState by bookingVm.cancelState.collectAsState()
@@ -375,6 +378,8 @@ private fun SuccessBlock(
                     existing?.status != null -> existing!!.status.uppercase()
                     else -> cta.label
                 },
+                // Show the booked spot on the CTA's sub-line for spot studios.
+                spotLabel = bookedSpotLabel,
                 loading = ctaLoading,
                 // Tappable when there's a live booking (→ cancel) or the class is
                 // bookable; while loading the CTA is inert and shows a spinner.
@@ -418,6 +423,7 @@ private fun SuccessBlock(
     if (cancelSheetOpen) {
         CancelBookingSheet(
             className = session.template.name,
+            spotLabel = bookedSpotLabel,
             willForfeitCredit = existing?.cancelPolicy?.willForfeitCredit == true,
             cancelState = cancelState,
             onConfirm = bookingVm::confirmCancel,
@@ -438,6 +444,7 @@ private fun SuccessBlock(
 @Composable
 private fun CancelBookingSheet(
     className: String,
+    spotLabel: String?,
     willForfeitCredit: Boolean,
     cancelState: CancelState,
     onConfirm: () -> Unit,
@@ -450,6 +457,10 @@ private fun CancelBookingSheet(
             Heading3("Cancel booking?", size = 20, color = Ink)
             Spacer(Modifier.height(8.dp))
             BodyText(className, size = 16, color = Ink)
+            if (spotLabel != null) {
+                Spacer(Modifier.height(2.dp))
+                Caption(spotLabel, size = 12, color = Ash)
+            }
             Spacer(Modifier.height(16.dp))
             if (willForfeitCredit) {
                 BodyText(
@@ -872,6 +883,7 @@ private fun StickyReserveCta(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     label: String? = null,
+    spotLabel: String? = null,
     enabled: Boolean = true,
     loading: Boolean = false,
 ) {
@@ -894,6 +906,7 @@ private fun StickyReserveCta(
     val ampm = if (startLocal.hour < 12) "AM" else "PM"
     val timeStamp = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')} $ampm"
     val dayStamp = "${startLocal.dayOfWeek.name.take(3)} ${startLocal.date.day} ${startLocal.date.month.abbr()}"
+    val subStamp = if (spotLabel != null) "$timeStamp · $dayStamp · ${spotLabel.uppercase()}" else "$timeStamp · $dayStamp"
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 40dp transparent→stone fade so list content scrolls under the CTA
@@ -952,7 +965,7 @@ private fun StickyReserveCta(
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "$timeStamp · $dayStamp",
+                            text = subStamp,
                             maxLines = 1,
                             style = TextStyle(
                                 fontFamily = Arcana.fonts.body,
