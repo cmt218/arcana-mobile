@@ -768,6 +768,10 @@ private fun ScheduleFilterSection(
                         }
                         .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
                 )
+                FilterDoneButton(
+                    onClick = { expandedSection = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -812,6 +816,10 @@ private fun ScheduleFilterSection(
                         }
                     }
                 }
+                FilterDoneButton(
+                    onClick = { expandedSection = "" },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
             }
         }
     }
@@ -879,6 +887,42 @@ private fun FilterPill(
                 ),
                 letterSpacing = 0.10.em,
                 color = if (active) Stone else Ink,
+            ),
+        )
+    }
+}
+
+/** Moss-filled "DONE" button that collapses an expanded filter section — the
+ *  same effect as tapping the active pill again, but reachable from the bottom
+ *  of a long favorites list / studio accordion without scrolling back up. */
+@Composable
+private fun FilterDoneButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Moss)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "DONE",
+            // Same vertical-centering recipe as FilterPill (League Spartan caps
+            // ride high without the line-height trim + 1dp nudge).
+            modifier = Modifier.offset(y = 1.dp),
+            maxLines = 1, softWrap = false,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.display,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                lineHeight = 12.sp,
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+                letterSpacing = 0.10.em,
+                color = Stone,
             ),
         )
     }
