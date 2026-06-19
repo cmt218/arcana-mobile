@@ -245,10 +245,18 @@ fun HomeScreen(
                     }
                 } else {
                     itemsIndexed(rest) { i, b ->
+                        val day = b.session.startAt.take(10)
+                        // Last row of its day: the next day's header rule already
+                        // separates the groups, so drop this row's bottom hairline
+                        // to avoid a doubled divider. The final row drops it too
+                        // (nothing but "See all" follows).
+                        val isLastOfDay =
+                            i == rest.lastIndex || rest[i + 1].session.startAt.take(10) != day
                         UpcomingRow(
                             booking = b,
                             tz = tz,
-                            showDayDivider = i == 0 || rest[i - 1].session.startAt.take(10) != b.session.startAt.take(10),
+                            showDayDivider = i == 0 || rest[i - 1].session.startAt.take(10) != day,
+                            showBottomDivider = !isLastOfDay,
                             onClick = { onOpenClass(b.session.id) },
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
@@ -500,6 +508,7 @@ private fun UpcomingRow(
     booking: BookingDto,
     tz: TimeZone,
     showDayDivider: Boolean,
+    showBottomDivider: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -588,7 +597,11 @@ private fun UpcomingRow(
             }
             StatusPill(booking.status)
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        // Bottom hairline between rows of the same day; suppressed on a day's
+        // last row so the next day header's rule is the only separator.
+        if (showBottomDivider) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        }
     }
 }
 
