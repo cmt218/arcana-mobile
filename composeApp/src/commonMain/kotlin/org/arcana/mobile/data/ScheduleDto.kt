@@ -1,5 +1,6 @@
 package org.arcana.mobile.data
 
+import kotlin.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -34,7 +35,33 @@ data class ScheduleSessionDto(
     // been to this studio (brand) before. Defaulted so list responses (which
     // omit it) still deserialize. Drives the one-time booking-time prompt.
     @SerialName("should_ask_studio_visit") val shouldAskStudioVisit: Boolean = false,
+    // Mariana Tek per-class booking window: the ISO-8601 instant the studio
+    // opens reservations for this class. Null = no window / always open (all
+    // Mindbody, Arketa, ClubReady, and windowless MT classes). When this is in
+    // the future the server reports `arcana_spots_available = 0` and rejects the
+    // booking; the client renders "NOT OPEN" (see [isNotOpenYet]). Defaulted so
+    // older/again-shared payloads keep deserializing.
+    @SerialName("bookable_at") val bookableAt: String? = null,
 )
+
+/**
+ * True when a class's Mariana Tek booking window has not opened yet — i.e.
+ * [bookableAt] parses to an instant strictly after [now]. A null window (always
+ * open) or a past window ⇒ false. Parse failures **fail open** (return false):
+ * a malformed value must never hide a class that may be bookable.
+ *
+ * Pure + top-level so the Schedule row, Class detail, and unit tests share one
+ * definition of "not open yet".
+ */
+fun isNotOpenYet(bookableAt: String?, now: Instant): Boolean {
+    val iso = bookableAt ?: return false
+    val opensAt = try {
+        Instant.parse(iso)
+    } catch (_: IllegalArgumentException) {
+        return false
+    }
+    return now < opensAt
+}
 
 @Serializable
 data class TemplateBriefDto(

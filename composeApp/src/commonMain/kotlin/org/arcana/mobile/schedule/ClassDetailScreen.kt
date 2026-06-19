@@ -96,6 +96,48 @@ private const val SCARCE_THRESHOLD = 2
 // to keep both files self-contained without promoting the helper to internal.
 private fun Month.abbr(): String = name.take(3)
 
+// ── "Booking opens …" copy (Mariana Tek windows) ─────────────────────────────
+
+/**
+ * Eastern Time. Mariana Tek booking windows are defined in ET wall-clock
+ * ("opens Monday 11 AM ET"); we localize the "OPENS …" copy to ET specifically
+ * — not the device zone — so it matches what the member sees on the studio's
+ * own site, even if they're travelling.
+ */
+private val EasternTime = TimeZone.of("America/New_York")
+
+/** "Mon" / "Jun" — title-cased three-letter abbreviation of an enum name. */
+private fun shortTitle(name: String): String =
+    name.take(3).lowercase().replaceFirstChar { it.uppercase() }
+
+/** 12-hour clock parts for a local time: (hour 1–12, "AM"/"PM"). */
+private fun LocalDateTime.hour12(): Pair<Int, String> =
+    (((hour + 11) % 12) + 1) to (if (hour < 12) "AM" else "PM")
+
+/**
+ * Sticky-CTA label for a not-open class: "OPENS MON 11:00 AM ET". Always ET.
+ * Pure + internal so it's unit-testable with a fixed [Instant].
+ */
+internal fun opensAtCtaLabel(opensAt: Instant): String {
+    val dt = opensAt.toLocalDateTime(EasternTime)
+    val (h12, ampm) = dt.hour12()
+    val minute = dt.minute.toString().padStart(2, '0')
+    return "OPENS ${dt.dayOfWeek.name.take(3)} $h12:$minute $ampm ET"
+}
+
+/**
+ * Availability-block line for a not-open class: "Booking opens Mon, Jun 22 ·
+ * 11:00 AM ET". Always ET.
+ */
+internal fun opensAtAvailabilityLine(opensAt: Instant): String {
+    val dt = opensAt.toLocalDateTime(EasternTime)
+    val (h12, ampm) = dt.hour12()
+    val minute = dt.minute.toString().padStart(2, '0')
+    val day = shortTitle(dt.dayOfWeek.name)
+    val month = shortTitle(dt.month.name)
+    return "Booking opens $day, $month ${dt.date.day} · $h12:$minute $ampm ET"
+}
+
 // Copy of studioColorFor from ScheduleScreen — small intentional duplication.
 private fun studioColorFor(primaryColor: String): Color {
     if (primaryColor.length != 7 || !primaryColor.startsWith("#")) return Moss
@@ -111,18 +153,24 @@ private fun studioColorFor(primaryColor: String): Color {
 
 // ── Capacity tier (mirrors ScheduleScreen, kept testable) ---------------------
 
-internal enum class DetailCapacity { Open, Scarce, Full }
+internal enum class DetailCapacity { Open, Scarce, Full, NotOpen }
 
 /**
  * Pure helper for the Detail availability block. When `publishesCapacity`
  * is false we collapse Scarce into Open — for a studio that hides
  * capacity, a "1 spot left" signal is unreliable because we don't know
  * what fraction of the room is booked.
+ *
+ * A not-open Mariana Tek booking window wins over everything: the server
+ * zeroes spots until it opens, so without this the detail block would
+ * mislabel a not-open class as FULL.
  */
 internal fun computeDetailCapacity(
     available: Int,
     publishesCapacity: Boolean,
+    notOpen: Boolean = false,
 ): DetailCapacity {
+    if (notOpen) return DetailCapacity.NotOpen
     if (!publishesCapacity) {
         return if (available <= 0) DetailCapacity.Full else DetailCapacity.Open
     }
@@ -133,9 +181,10 @@ internal fun computeDetailCapacity(
     }
 }
 
-private fun ScheduleSessionDto.detailCapacity(): DetailCapacity = computeDetailCapacity(
+private fun ScheduleSessionDto.detailCapacity(notOpen: Boolean = false): DetailCapacity = computeDetailCapacity(
     available = arcanaSpotsAvailable,
     publishesCapacity = location.studio.publishesCapacity,
+    notOpen = notOpen,
 )
 
 // ── Entry ---------------------------------------------------------------------
@@ -221,7 +270,15 @@ private fun SuccessBlock(
     val studio = session.location.studio
     val sc = studioColorFor(studio.primaryColor)
     val isCancelled = session.status == "cancelled_by_studio"
-    val capacity = session.detailCapacity()
+    // Mariana Tek booking window: the instant the studio opens reservations for
+    // this class (null = always open). When it's in the future the server zeroes
+    // spots and rejects bookings; we render "NOT OPEN" with an "opens …" treatment
+    // localized to Eastern Time, but keep the class fully viewable.
+    val opensAt = remember(session.bookableAt) {
+        session.bookableAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
+    }
+    val notOpenYet = remember(opensAt) { opensAt != null && Clock.System.now() < opensAt }
+    val capacity = session.detailCapacity(notOpen = notOpenYet)
     // A class whose end time has passed: no availability + no live booking.
     val isPast = remember(session.endAt) {
         try { Instant.parse(session.endAt) < Clock.System.now() } catch (_: Exception) { false }
@@ -329,6 +386,9 @@ private fun SuccessBlock(
                         capacity = capacity,
                         publishesCapacity = studio.publishesCapacity,
                         studioColor = sc,
+                        // Non-null for a not-open class — replaces the spot count
+                        // with "Booking opens …" (ET).
+                        opensLine = if (notOpenYet) opensAtAvailabilityLine(opensAt!!) else null,
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
                 }
@@ -373,14 +433,19 @@ private fun SuccessBlock(
                     existing?.status == "confirmed" -> "CONFIRMED ✓"
                     existing?.status == "requested" -> "REQUESTED"
                     existing?.status != null -> existing!!.status.uppercase()
+                    // Booking window hasn't opened (and the member holds no
+                    // booking) — show when it opens, in ET. opensAt is non-null
+                    // whenever notOpenYet is true.
+                    notOpenYet -> opensAtCtaLabel(opensAt!!)
                     else -> cta.label
                 },
                 // Show the booked spot on the CTA's sub-line for spot studios.
                 spotLabel = bookedSpotLabel,
                 loading = ctaLoading,
                 // Tappable when there's a live booking (→ cancel) or the class is
-                // bookable; while loading the CTA is inert and shows a spinner.
-                enabled = !isPast && !ctaLoading && (hasLiveBooking || cta.enabled),
+                // bookable; while loading the CTA is inert and shows a spinner. A
+                // not-open class (no live booking) is inert until the window opens.
+                enabled = !isPast && !ctaLoading && (hasLiveBooking || (cta.enabled && !notOpenYet)),
                 onClick = {
                     when {
                         ctaLoading || isPast -> {}
@@ -747,12 +812,20 @@ private fun AvailabilityBlock(
     publishesCapacity: Boolean,
     studioColor: Color,
     modifier: Modifier = Modifier,
+    // Non-null for a not-open Mariana Tek class: "Booking opens Mon, Jun 22 ·
+    // 11:00 AM ET". When present it replaces the spot-count headline + pips —
+    // there's no meaningful capacity to show before the window opens.
+    opensLine: String? = null,
 ) {
     val taken = (offered - available).coerceAtLeast(0)
     Column(modifier = modifier) {
         SectionRule(label = "Availability", accent = true)
         Spacer(Modifier.height(14.dp))
-        if (publishesCapacity) {
+        if (opensLine != null) {
+            Display(text = "NOT OPEN", size = 20, color = Ink, weight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            BodyText(text = opensLine, size = 14, color = Ash)
+        } else if (publishesCapacity) {
             // Precise form: "N OF M SPOTS OPEN" + the segmented pip strip
             // showing exact taken-vs-open.
             Row(
@@ -760,7 +833,7 @@ private fun AvailabilityBlock(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                val headline = if (available <= 0) "WAITLIST ONLY"
+                val headline = if (available <= 0) "FULLY BOOKED"
                 else "$available OF $offered SPOTS OPEN"
                 Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
                 Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
@@ -775,10 +848,10 @@ private fun AvailabilityBlock(
         } else {
             // Hidden-capacity form: studio doesn't publish exact counts
             // (e.g. ID Hot Yoga — their own first-party app hides them too).
-            // Render binary AVAILABLE / WAITLIST ONLY without pips or
+            // Render binary AVAILABLE / FULLY BOOKED without pips or
             // "N of M" — claiming numbers we don't actually have would be
             // worse than the simpler signal.
-            val headline = if (available <= 0) "WAITLIST ONLY" else "AVAILABLE"
+            val headline = if (available <= 0) "FULLY BOOKED" else "AVAILABLE"
             Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
         }
     }
@@ -797,6 +870,9 @@ private fun CapacityPips(
         DetailCapacity.Open -> MossLight
         DetailCapacity.Scarce -> Warning
         DetailCapacity.Full -> Ash2
+        // Not reached — not-open classes render the "opens …" line, not pips —
+        // but the when must be exhaustive.
+        DetailCapacity.NotOpen -> Ash2
     }
     // Suppress unused-parameter warning while keeping the API future-proof —
     // when brand-tinted pips land in a later iteration, the studioColor will
@@ -868,7 +944,7 @@ private fun LocationRow(
  * State-driven colors:
  * - Open   → moss pill, lime arrow well
  * - Scarce → warning pill, lime arrow well
- * - Full   → graphite pill, stone clock well (waitlist semantics)
+ * - Full / disabled → graphite pill, stone clock well
  *
  * Sits above the home-indicator safe inset via [safeBottomBarPadding].
  */
@@ -894,10 +970,14 @@ private fun StickyReserveCta(
     }
     val arrowWellColor = if (capacity == DetailCapacity.Full || !enabled) Stone else Lime
     val arrowIcon = if (capacity == DetailCapacity.Full || !enabled) ArcanaIcons.Clock else ArcanaIcons.ArrowRight
+    // `label` is always supplied by the caller (ClassDetailScreen computes the
+    // full state machine — past/booked/not-open/eligibility — and passes it in),
+    // so this `when` is just an exhaustive fallback.
     val primaryLabel = label ?: when (capacity) {
         DetailCapacity.Open -> "RESERVE THIS SPOT"
         DetailCapacity.Scarce -> "RESERVE — ONLY $available LEFT"
-        DetailCapacity.Full -> "JOIN THE WAITLIST"
+        DetailCapacity.Full -> "CLASS FULL"
+        DetailCapacity.NotOpen -> "NOT OPEN"
     }
     val hour12 = ((startLocal.hour + 11) % 12) + 1
     val ampm = if (startLocal.hour < 12) "AM" else "PM"

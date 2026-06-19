@@ -67,6 +67,7 @@ import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
+import org.arcana.mobile.data.isNotOpenYet
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -176,6 +177,9 @@ internal fun sessionTimeZone(id: String): TimeZone = try {
 // ── Capacity tier -------------------------------------------------------------
 
 internal enum class CapacityTier(val label: String) {
+    // The class's Mariana Tek booking window hasn't opened yet — distinct from
+    // FULL (the server reports 0 spots until the window opens, but it isn't full).
+    NotOpen("NOT OPEN"),
     Full("FULL"),
     AlmostFull("ALMOST FULL"),
     FillingUp("FILLING UP"),
@@ -196,7 +200,11 @@ internal fun computeCapacityTier(
     available: Int,
     offered: Int,
     publishesCapacity: Boolean,
+    notOpen: Boolean = false,
 ): CapacityTier {
+    // A not-open booking window wins over everything: the server zeroes spots
+    // until it opens, so without this the row would mislabel as FULL.
+    if (notOpen) return CapacityTier.NotOpen
     if (!publishesCapacity) {
         return if (available <= 0) CapacityTier.Full else CapacityTier.Available
     }
@@ -211,10 +219,11 @@ internal fun computeCapacityTier(
     }
 }
 
-private fun ScheduleSessionDto.capacityTier(): CapacityTier = computeCapacityTier(
+private fun ScheduleSessionDto.capacityTier(notOpen: Boolean = false): CapacityTier = computeCapacityTier(
     available = arcanaSpotsAvailable,
     offered = arcanaSpotsOffered,
     publishesCapacity = location.studio.publishesCapacity,
+    notOpen = notOpen,
 )
 
 // ── Time-of-day grouping ------------------------------------------------------
@@ -893,11 +902,17 @@ private fun ClassRow(
     val available = session.arcanaSpotsAvailable
     val offered = session.arcanaSpotsOffered
     val isFull = available <= 0
+    // A Mariana Tek class whose booking window hasn't opened yet. Takes
+    // precedence over FULL (the server zeroes spots until it opens) — we render
+    // "NOT OPEN", no progress bar, but keep the row viewable/tappable.
+    val notOpen = isNotOpenYet(session.bookableAt, Clock.System.now())
+    val tier = session.capacityTier(notOpen = notOpen)
     // Hidden-capacity studios (e.g. ID Hot Yoga) can't truthfully show a
     // fill progress bar — we don't know how many spots are booked. Suppress
     // the bar, the scarce shading, and any AlmostFull treatment for them;
-    // the AVAILABLE / FULL overline carries the full signal.
-    val showsCapacityVisuals = studio.publishesCapacity
+    // the AVAILABLE / FULL overline carries the full signal. Not-open classes
+    // also suppress the bar (no meaningful fill before the window opens).
+    val showsCapacityVisuals = studio.publishesCapacity && !notOpen
     val isScarce = showsCapacityVisuals && !isFull && available <= SCARCE_THRESHOLD
     val fill = if (showsCapacityVisuals && offered > 0) {
         ((offered - available).toFloat() / offered).coerceIn(0f, 1f)
@@ -1008,11 +1023,11 @@ private fun ClassRow(
                         )
                     }
                 }
-                val tier = session.capacityTier()
                 Overline(
                     text = tier.label,
                     size = 10,
                     color = when (tier) {
+                        CapacityTier.NotOpen -> Ash2
                         CapacityTier.Full -> Ash2
                         CapacityTier.AlmostFull -> Warning
                         CapacityTier.FillingUp -> MossLight
@@ -1022,8 +1037,10 @@ private fun ClassRow(
             }
         }
         // CTA — Phase-3 has no booking flow yet; the arrow is a placeholder
-        // that becomes a real navigation target in Phase 5.
-        if (isFull) {
+        // that becomes a real navigation target in Phase 5. Not-open classes
+        // keep the arrow (they're viewable, not full); only genuinely-full
+        // classes get the muted "+".
+        if (isFull && !notOpen) {
             Box(
                 Modifier
                     .size(36.dp)

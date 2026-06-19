@@ -77,10 +77,38 @@ class DetailCapacityTest {
     @Test
     fun hidden_with_zero_spots_is_full() {
         // openings = 0 from upstream means genuinely not bookable. Binary
-        // Full collapses cleanly into the waitlist CTA.
+        // Full collapses cleanly into the full CTA.
         assertEquals(
             DetailCapacity.Full,
             computeDetailCapacity(available = 0, publishesCapacity = false),
+        )
+    }
+
+    // ── NotOpen (Mariana Tek booking window not open yet) ────────────────────
+
+    @Test
+    fun not_open_takes_precedence_over_full() {
+        // Server reports 0 spots for a not-open class; NotOpen must win so the
+        // detail block reads "booking opens …" instead of FULL.
+        assertEquals(
+            DetailCapacity.NotOpen,
+            computeDetailCapacity(available = 0, publishesCapacity = true, notOpen = true),
+        )
+    }
+
+    @Test
+    fun not_open_takes_precedence_over_open() {
+        assertEquals(
+            DetailCapacity.NotOpen,
+            computeDetailCapacity(available = 8, publishesCapacity = true, notOpen = true),
+        )
+    }
+
+    @Test
+    fun open_class_is_unaffected_by_notOpen_false() {
+        assertEquals(
+            DetailCapacity.Open,
+            computeDetailCapacity(available = 8, publishesCapacity = true, notOpen = false),
         )
     }
 }

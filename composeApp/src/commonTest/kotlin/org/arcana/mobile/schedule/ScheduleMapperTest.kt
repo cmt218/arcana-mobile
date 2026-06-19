@@ -17,6 +17,7 @@ class ScheduleMapperTest {
         templateId: Int = 311,
         locationId: Int = 41,
         instructorIds: List<Int> = listOf(77),
+        bookableAt: String? = null,
     ) = SessionFlatDto(
         id = id,
         startAt = "2026-06-10T09:00:00-04:00",
@@ -30,6 +31,7 @@ class ScheduleMapperTest {
         templateId = templateId,
         locationId = locationId,
         instructorIds = instructorIds,
+        bookableAt = bookableAt,
     )
 
     private val template = TemplateBriefDto(
@@ -79,6 +81,20 @@ class ScheduleMapperTest {
         assertEquals("SolidCore Williamsburg", session.location.name)
         assertEquals("America/New_York", session.location.timezone)
         assertEquals(studio, session.location.studio)
+        // Null window by default — most studios/classes are always-open.
+        assertEquals(null, session.bookableAt)
+    }
+
+    @Test
+    fun `bookable_at lands on the nested session - drives the NOT OPEN treatment`() {
+        // Regression guard for the list path dropping the Mariana Tek booking
+        // window: the flat page serializer carries bookable_at and the mapper
+        // must thread it through, or the row mislabels not-open classes as FULL.
+        val result = page(
+            listOf(flatSession(bookableAt = "2026-06-22T15:00:00Z")),
+        ).toSessions()
+
+        assertEquals("2026-06-22T15:00:00Z", result.single().bookableAt)
     }
 
     @Test
