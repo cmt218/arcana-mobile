@@ -55,7 +55,7 @@ class ScheduleViewModelPagingTest {
         assertEquals(1, api.overviewCalls.size)
         val overviewCall = api.overviewCalls.single()
         assertEquals(today, overviewCall.from)
-        assertEquals(today.plus(13, DateTimeUnit.DAY), overviewCall.to)
+        assertEquals(today.plus(14, DateTimeUnit.DAY), overviewCall.to)
 
         assertEquals(1, api.pageCalls.size)
         val pageCall = api.pageCalls.single()

@@ -176,7 +176,8 @@ class ArcanaApiClient(
      *
      * @param from inclusive start date (local NY date — server interprets in
      *             `America/New_York`)
-     * @param to inclusive end date; must be >= [from] and ≤ 14 days from it
+     * @param to inclusive end date; must be >= [from] and span ≤ 15 days
+     *           inclusive (server `MAX_RANGE_DAYS = 15`, i.e. up to today + 14)
      * @param studioSlugs optional studio-slug whitelist; matches any in the list
      * @param locationIds optional location-id whitelist; matches any in the list
      * @param modality optional case-insensitive modality match
