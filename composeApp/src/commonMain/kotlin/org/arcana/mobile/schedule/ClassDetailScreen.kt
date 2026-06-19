@@ -526,7 +526,7 @@ private fun CancelBookingSheet(
             Spacer(Modifier.height(16.dp))
             if (willForfeitCredit) {
                 BodyText(
-                    "Cancelling now forfeits this class's credit — you're past the studio's cutoff.",
+                    "Cancelling now forfeits this class's credit — you're past the studio cutoff.",
                     size = 13, color = Warning,
                 )
             } else {

@@ -100,11 +100,15 @@ fun Overline(
     // Defaults to a single line (the stamp/label use). Raise it (e.g. Int.MAX_VALUE)
     // for longer label text that should wrap to new lines instead of truncating.
     maxLines: Int = 1,
+    // Defaults to clipping (the design's stamps are sized to fit). Pass Ellipsis
+    // for a flexible label that should truncate with "…" when space runs out.
+    overflow: TextOverflow = TextOverflow.Clip,
 ) {
     Text(
         text = text.uppercase(),
         modifier = modifier,
         maxLines = maxLines,
+        overflow = overflow,
         style = TextStyle(
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Bold,
