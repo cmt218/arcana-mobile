@@ -11,6 +11,8 @@ sealed interface ArcanaDestination {
 
     @Serializable data object MyBookings : ArcanaDestination
 
+    @Serializable data object EditProfile : ArcanaDestination
+
     @Serializable data object ConciergeRequest : ArcanaDestination
 
     // Detail nav arg — pass the integer ClassSession id from Schedule.
