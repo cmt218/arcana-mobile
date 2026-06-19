@@ -8,6 +8,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
@@ -123,10 +124,17 @@ fun BodyText(
     color: Color = Ink,
     weight: FontWeight = FontWeight.Normal,
     textAlign: TextAlign = TextAlign.Unspecified,
+    // Default to unbounded wrapping (the prose use). Pass maxLines = 1 +
+    // overflow = Ellipsis for single-line labels that must truncate (e.g. the
+    // schedule row title).
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
 ) {
     Text(
         text = text,
         modifier = modifier,
+        maxLines = maxLines,
+        overflow = overflow,
         style = TextStyle(
             fontFamily = Arcana.fonts.body,
             fontWeight = weight,

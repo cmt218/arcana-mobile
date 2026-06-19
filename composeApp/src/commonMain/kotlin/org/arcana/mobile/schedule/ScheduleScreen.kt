@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -91,7 +89,7 @@ import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
-import org.arcana.mobile.ui.StatusPill
+import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioAccordionCard
 import org.arcana.mobile.ui.StudioLocationRow
@@ -112,6 +110,11 @@ private const val LOAD_MORE_LOOKAHEAD = 10
 
 /** Minimum horizontal drag distance to flip days via a swipe. */
 private val DAY_SWIPE_THRESHOLD = 56.dp
+
+/** Fixed width of the Schedule row's left (time) column. Holds the HH:MM time
+ *  and the width-filling booking-status pill, so every row's content starts at
+ *  the same x whether or not it carries a REQUESTED / CONFIRMED pill. */
+private val SCHEDULE_TIME_COL_WIDTH = 64.dp
 
 /** Class-list fade on day change: start alpha + duration. */
 private const val DAY_FADE_FROM = 0.4f
@@ -927,8 +930,15 @@ private fun ClassRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Time column
-        Column(modifier = Modifier.widthIn(min = 64.dp).wrapContentWidth(Alignment.Start)) {
+        // Time column. The booking-status pill (REQUESTED / CONFIRMED) sits
+        // above the time: the left edge has spare vertical room, and keeping the
+        // pill out of the title row lets a long class name use the row's full
+        // width instead of being shoved into a wrap.
+        Column(modifier = Modifier.width(SCHEDULE_TIME_COL_WIDTH)) {
+            if (bookedStatus != null) {
+                StatusPillFitted(bookedStatus)
+                Spacer(Modifier.height(8.dp))
+            }
             Text(
                 text = time.hhmm(),
                 maxLines = 1, softWrap = false,
@@ -964,26 +974,19 @@ private fun ClassRow(
                 studioColor = sc,
             )
             Spacer(Modifier.height(4.dp))
-            // Title line. When the member already holds a live booking on this
-            // session we tuck a compact status pill in beside the title so the
-            // row reads "I'm in this one" at a glance. The title keeps weight(1f)
-            // so its own ellipsis behavior is unchanged; the pill stays intrinsic.
-            Row(
+            // Title line. Always a single line — a name too long to fit
+            // ellipsizes rather than wrapping (mirrors the brand · location meta
+            // line above). The booking-status pill lives above the time, so the
+            // title gets the row's full width.
+            BodyText(
+                text = session.template.name,
+                size = 16,
+                color = if (isFull) Ash else Ink,
+                weight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                BodyText(
-                    text = session.template.name,
-                    size = 16,
-                    color = if (isFull) Ash else Ink,
-                    weight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f),
-                )
-                if (bookedStatus != null) {
-                    StatusPill(bookedStatus)
-                }
-            }
+            )
             // Instructor on its own row. Previously it shared the meta line with
             // brand · location and was the first to ellipsize when the location
             // ran long; a dedicated line guarantees it always reads in full.
