@@ -94,7 +94,7 @@ fun BookingSheet(
                 Caption(creditLine, size = 13, color = Moss)
                 Spacer(Modifier.height(8.dp))
                 BodyText(
-                    "Free to cancel until the studio's cutoff. After that, the credit's spent even if you cancel.",
+                    "Free to cancel until the studio cutoff. After that, the credit's spent even if you cancel.",
                     size = 12,
                     color = Graphite,
                 )

@@ -38,6 +38,7 @@ import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.networking.ArcanaApiClient
+import org.arcana.mobile.profile.EditProfileScreen
 import org.arcana.mobile.profile.ProfileScreen
 import org.arcana.mobile.profile.ProfileUiState
 import org.arcana.mobile.profile.ProfileViewModel
@@ -263,10 +264,14 @@ private fun MainScaffold() {
                 ProfileScreen(
                     onManageStudios = { navController.navigate(ArcanaDestination.StudioSelection) },
                     onOpenConcierge = { navController.navigate(ArcanaDestination.ConciergeRequest) },
+                    onOpenSettings = { navController.navigate(ArcanaDestination.EditProfile) },
                 )
             }
             composable<ArcanaDestination.StudioSelection> {
                 StudioSelectionScreen(onClose = { navController.popBackStack() })
+            }
+            composable<ArcanaDestination.EditProfile> {
+                EditProfileScreen(onClose = { navController.popBackStack() })
             }
             composable<ArcanaDestination.MyBookings> {
                 MyBookingsScreen(

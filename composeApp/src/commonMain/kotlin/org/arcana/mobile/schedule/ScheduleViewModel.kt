@@ -72,7 +72,7 @@ data class DayState(
 sealed interface ScheduleUiState {
     data object Loading : ScheduleUiState
     data class Success(
-        /** Today through today + 13 days, oldest first ([ScheduleViewModel.ScheduleTimeZone] dates). */
+        /** Today through today + 14 days, oldest first ([ScheduleViewModel.ScheduleTimeZone] dates). */
         val days: List<LocalDate>,
         /** The day whose sessions are on screen — owned by the VM so it
          *  survives navigation and so refetches target the right day. */
@@ -682,8 +682,10 @@ class ScheduleViewModel(
     fun onManageFavoritesTapped() = telemetry.favoritesManageTapped()
 
     companion object {
-        /** Matches the server's 14-day max window (spec §3.1). */
-        const val WINDOW_DAYS: Int = 14
+        /** Matches the server's 15-day max window (today + 14): studios that
+         *  open booking "two weeks ahead" release the 14-days-out date, so the
+         *  schedule must show it. Server `MAX_RANGE_DAYS = 15` + 16-day sync. */
+        const val WINDOW_DAYS: Int = 15
 
         /** Quiet window after the last chip tap before the settled refetch fires. */
         const val FILTER_DEBOUNCE_MS: Long = 250L

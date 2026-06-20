@@ -11,6 +11,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -38,10 +39,12 @@ import org.arcana.mobile.data.CreateBookingRequest
 import org.arcana.mobile.data.CreateBookingResponse
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LoginRequest
+import org.arcana.mobile.data.MeProfileDto
 import org.arcana.mobile.data.MembershipMeDto
 import org.arcana.mobile.data.MyBookingsDto
 import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.data.SchedulePageDto
+import org.arcana.mobile.data.UpdateProfileRequest
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
 import org.arcana.mobile.data.RefreshTokenResponse
@@ -58,7 +61,7 @@ class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
     private val telemetry: Telemetry = Telemetry.Noop,
-) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi, ProfileApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -176,7 +179,8 @@ class ArcanaApiClient(
      *
      * @param from inclusive start date (local NY date — server interprets in
      *             `America/New_York`)
-     * @param to inclusive end date; must be >= [from] and ≤ 14 days from it
+     * @param to inclusive end date; must be >= [from] and span ≤ 15 days
+     *           inclusive (server `MAX_RANGE_DAYS = 15`, i.e. up to today + 14)
      * @param studioSlugs optional studio-slug whitelist; matches any in the list
      * @param locationIds optional location-id whitelist; matches any in the list
      * @param modality optional case-insensitive modality match
@@ -307,6 +311,15 @@ class ArcanaApiClient(
 
     override suspend fun membershipMe(): MembershipMeDto =
         client.get(v1("memberships/me")).body()
+
+    override suspend fun fetchProfile(): MeProfileDto =
+        client.get(v1("users/me/")).body()
+
+    override suspend fun updateProfile(body: UpdateProfileRequest): MeProfileDto =
+        client.patch(v1("users/me/")) {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.body()
 
     override suspend fun createConciergeRequest(message: String): Int {
         val response = client.post(v1("concierge-requests/")) {

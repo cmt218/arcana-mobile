@@ -6,6 +6,10 @@ fun bookingErrorCopy(code: String): String = when (code) {
     "session_full" -> "This class just filled up."
     "credits_exhausted" -> "You're out of credits for this period."
     "already_booked" -> "You've already booked this class."
+    // Server rejects a booking that overlaps a class the member already has
+    // (requested/confirmed), cross-studio. Permanent conflict, not a transient
+    // retry — say so plainly (no other class/studio named; concierge-safe).
+    "time_conflict" -> "You already have a class booked at this time."
     "spot_required" -> "Pick a spot to book."
     "spot_unavailable" -> "That spot was just taken — pick another."
     "session_outside_window" -> outsideWindowCopy(null)

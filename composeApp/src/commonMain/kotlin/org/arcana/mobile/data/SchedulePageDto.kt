@@ -54,6 +54,9 @@ data class SessionFlatDto(
     @SerialName("template_id") val templateId: Int,
     @SerialName("location_id") val locationId: Int,
     @SerialName("instructor_ids") val instructorIds: List<Int> = emptyList(),
+    // Mariana Tek per-class booking window — see ScheduleSessionDto.bookableAt.
+    // Defaulted so older/again-shared payloads keep deserializing.
+    @SerialName("bookable_at") val bookableAt: String? = null,
 )
 
 @Serializable

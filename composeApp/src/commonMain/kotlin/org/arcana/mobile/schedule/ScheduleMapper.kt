@@ -37,5 +37,6 @@ fun SchedulePageDto.toSessions(): List<ScheduleSessionDto> = sessions.mapNotNull
             timezone = location.timezone,
             studio = studio,
         ),
+        bookableAt = flat.bookableAt,
     )
 }

@@ -93,10 +93,48 @@ class CapacityTierTest {
     fun hidden_capacity_with_zero_available_is_full() {
         // When openings = 0 the class is genuinely not bookable; the binary
         // FULL pill is correct and the row's CTA collapses to the "+"
-        // waitlist affordance.
+        // affordance.
         assertEquals(
             CapacityTier.Full,
             computeCapacityTier(available = 0, offered = 33, publishesCapacity = false),
+        )
+    }
+
+    // ── NotOpen (Mariana Tek booking window not open yet) ────────────────────
+
+    @Test
+    fun not_open_takes_precedence_over_full() {
+        // A not-open class arrives with available = 0 (the server zeroes spots
+        // until the window opens). NotOpen must win over Full so it reads
+        // "NOT OPEN", not the misleading "FULL".
+        assertEquals(
+            CapacityTier.NotOpen,
+            computeCapacityTier(available = 0, offered = 20, publishesCapacity = true, notOpen = true),
+        )
+    }
+
+    @Test
+    fun not_open_takes_precedence_over_available() {
+        assertEquals(
+            CapacityTier.NotOpen,
+            computeCapacityTier(available = 12, offered = 20, publishesCapacity = true, notOpen = true),
+        )
+    }
+
+    @Test
+    fun not_open_applies_to_hidden_capacity_too() {
+        assertEquals(
+            CapacityTier.NotOpen,
+            computeCapacityTier(available = 0, offered = 33, publishesCapacity = false, notOpen = true),
+        )
+    }
+
+    @Test
+    fun open_class_is_unaffected_by_notOpen_false() {
+        // Regression guard: the default notOpen = false keeps existing behavior.
+        assertEquals(
+            CapacityTier.Available,
+            computeCapacityTier(available = 12, offered = 20, publishesCapacity = true, notOpen = false),
         )
     }
 }

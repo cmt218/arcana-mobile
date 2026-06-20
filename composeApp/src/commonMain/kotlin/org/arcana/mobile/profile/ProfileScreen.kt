@@ -67,6 +67,7 @@ import org.arcana.mobile.theme.StoneAlpha18
 import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
@@ -111,6 +112,7 @@ private data class AccountItem(
 fun ProfileScreen(
     onManageStudios: () -> Unit,
     onOpenConcierge: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val apiClient = koinInject<ArcanaApiClient>()
@@ -154,7 +156,7 @@ fun ProfileScreen(
             contentPadding = PaddingValues(bottom = 16.dp),
         ) {
         // Profile hero — full-bleed ink that extends behind the status bar.
-        item { ProfileHero(state) }
+        item { ProfileHero(state, onOpenSettings = onOpenSettings) }
 
         // YOUR FAVORITES header
         stoneItem {
@@ -351,7 +353,7 @@ private fun StoneWrap(content: @Composable BoxScope.() -> Unit) {
  * immediately regardless of load state.
  */
 @Composable
-private fun ProfileHero(state: ProfileUiState) {
+private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
     val success = state as? ProfileUiState.Success
 
     Box(
@@ -364,10 +366,12 @@ private fun ProfileHero(state: ProfileUiState) {
                 .safeContentPadding()
                 .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
         ) {
-            // Top bar within hero — member number (shimmer while loading).
+            // Top bar within hero — member number on the left (shimmer while
+            // loading), the settings gear on the right (opens Edit profile).
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 if (success != null) {
                     val memberLabel = if (success.memberNumber != null)
@@ -383,6 +387,13 @@ private fun ProfileHero(state: ProfileUiState) {
                         shape = RoundedCornerShape(4.dp),
                     )
                 }
+                IconCircle(
+                    icon = ArcanaIcons.Settings,
+                    diameter = 36, iconSize = 18,
+                    borderColor = StoneAlpha18,
+                    contentColor = Stone,
+                    onClick = onOpenSettings,
+                )
             }
 
             Spacer(Modifier.height(16.dp))

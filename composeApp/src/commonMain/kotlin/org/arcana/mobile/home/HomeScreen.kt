@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -64,6 +63,7 @@ import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StatusPill
+import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
@@ -71,6 +71,12 @@ import org.koin.compose.viewmodel.koinViewModel
 
 // ── Max upcoming rows shown below the hero card ────────────────────────────────
 private const val UPCOMING_PREVIEW_COUNT = 4
+
+/** Fixed width of the upcoming row's left (time) column — holds the time and the
+ *  width-filling booking-status pill so every row aligns, mirroring the Schedule
+ *  row. Keeping the pill out of the title/meta line stops the studio · location
+ *  stamp from being clipped. */
+private val UPCOMING_TIME_COL_WIDTH = 64.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -245,10 +251,18 @@ fun HomeScreen(
                     }
                 } else {
                     itemsIndexed(rest) { i, b ->
+                        val day = b.session.startAt.take(10)
+                        // Last row of its day: the next day's header rule already
+                        // separates the groups, so drop this row's bottom hairline
+                        // to avoid a doubled divider. The final row drops it too
+                        // (nothing but "See all" follows).
+                        val isLastOfDay =
+                            i == rest.lastIndex || rest[i + 1].session.startAt.take(10) != day
                         UpcomingRow(
                             booking = b,
                             tz = tz,
-                            showDayDivider = i == 0 || rest[i - 1].session.startAt.take(10) != b.session.startAt.take(10),
+                            showDayDivider = i == 0 || rest[i - 1].session.startAt.take(10) != day,
+                            showBottomDivider = !isLastOfDay,
                             onClick = { onOpenClass(b.session.id) },
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
@@ -500,6 +514,7 @@ private fun UpcomingRow(
     booking: BookingDto,
     tz: TimeZone,
     showDayDivider: Boolean,
+    showBottomDivider: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -544,7 +559,13 @@ private fun UpcomingRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(modifier = Modifier.widthIn(min = 64.dp).wrapContentWidth(Alignment.Start)) {
+            // Fixed-width left column. The booking-status pill sits above the
+            // time (auto-shrunk to fit) so it's out of the meta/title line — the
+            // studio · location stamp gets the row's full width instead of being
+            // clipped. Mirrors the Schedule row.
+            Column(modifier = Modifier.width(UPCOMING_TIME_COL_WIDTH)) {
+                StatusPillFitted(booking.status)
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = timeStr,
                     maxLines = 1,
@@ -570,7 +591,15 @@ private fun UpcomingRow(
                     Overline(text = session.studio, size = 10, color = Moss)
                     session.location?.takeIf { it.isNotBlank() }?.let { loc ->
                         Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                        Overline(text = loc, size = 10, color = Ash)
+                        // Studio stays full; the location flexes into the leftover
+                        // space and ellipsizes rather than hard-clipping mid-word.
+                        Overline(
+                            text = loc,
+                            size = 10,
+                            color = Ash,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
                     }
                     booking.spot?.let { spot ->
                         Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
@@ -586,9 +615,12 @@ private fun UpcomingRow(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            StatusPill(booking.status)
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        // Bottom hairline between rows of the same day; suppressed on a day's
+        // last row so the next day header's rule is the only separator.
+        if (showBottomDivider) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        }
     }
 }
 

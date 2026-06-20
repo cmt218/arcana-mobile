@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -67,6 +65,7 @@ import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
+import org.arcana.mobile.data.isNotOpenYet
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -90,7 +89,7 @@ import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
-import org.arcana.mobile.ui.StatusPill
+import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioAccordionCard
 import org.arcana.mobile.ui.StudioLocationRow
@@ -111,6 +110,11 @@ private const val LOAD_MORE_LOOKAHEAD = 10
 
 /** Minimum horizontal drag distance to flip days via a swipe. */
 private val DAY_SWIPE_THRESHOLD = 56.dp
+
+/** Fixed width of the Schedule row's left (time) column. Holds the HH:MM time
+ *  and the width-filling booking-status pill, so every row's content starts at
+ *  the same x whether or not it carries a REQUESTED / CONFIRMED pill. */
+private val SCHEDULE_TIME_COL_WIDTH = 64.dp
 
 /** Class-list fade on day change: start alpha + duration. */
 private const val DAY_FADE_FROM = 0.4f
@@ -176,6 +180,9 @@ internal fun sessionTimeZone(id: String): TimeZone = try {
 // ── Capacity tier -------------------------------------------------------------
 
 internal enum class CapacityTier(val label: String) {
+    // The class's Mariana Tek booking window hasn't opened yet — distinct from
+    // FULL (the server reports 0 spots until the window opens, but it isn't full).
+    NotOpen("NOT OPEN"),
     Full("FULL"),
     AlmostFull("ALMOST FULL"),
     FillingUp("FILLING UP"),
@@ -196,7 +203,11 @@ internal fun computeCapacityTier(
     available: Int,
     offered: Int,
     publishesCapacity: Boolean,
+    notOpen: Boolean = false,
 ): CapacityTier {
+    // A not-open booking window wins over everything: the server zeroes spots
+    // until it opens, so without this the row would mislabel as FULL.
+    if (notOpen) return CapacityTier.NotOpen
     if (!publishesCapacity) {
         return if (available <= 0) CapacityTier.Full else CapacityTier.Available
     }
@@ -211,10 +222,11 @@ internal fun computeCapacityTier(
     }
 }
 
-private fun ScheduleSessionDto.capacityTier(): CapacityTier = computeCapacityTier(
+private fun ScheduleSessionDto.capacityTier(notOpen: Boolean = false): CapacityTier = computeCapacityTier(
     available = arcanaSpotsAvailable,
     offered = arcanaSpotsOffered,
     publishesCapacity = location.studio.publishesCapacity,
+    notOpen = notOpen,
 )
 
 // ── Time-of-day grouping ------------------------------------------------------
@@ -756,6 +768,10 @@ private fun ScheduleFilterSection(
                         }
                         .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
                 )
+                FilterDoneButton(
+                    onClick = { expandedSection = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -800,6 +816,10 @@ private fun ScheduleFilterSection(
                         }
                     }
                 }
+                FilterDoneButton(
+                    onClick = { expandedSection = "" },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
             }
         }
     }
@@ -872,6 +892,42 @@ private fun FilterPill(
     }
 }
 
+/** Moss-filled "DONE" button that collapses an expanded filter section — the
+ *  same effect as tapping the active pill again, but reachable from the bottom
+ *  of a long favorites list / studio accordion without scrolling back up. */
+@Composable
+private fun FilterDoneButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Moss)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "DONE",
+            // Same vertical-centering recipe as FilterPill (League Spartan caps
+            // ride high without the line-height trim + 1dp nudge).
+            modifier = Modifier.offset(y = 1.dp),
+            maxLines = 1, softWrap = false,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.display,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                lineHeight = 12.sp,
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+                letterSpacing = 0.10.em,
+                color = Stone,
+            ),
+        )
+    }
+}
+
 // ── Class row -----------------------------------------------------------------
 
 @Composable
@@ -893,11 +949,17 @@ private fun ClassRow(
     val available = session.arcanaSpotsAvailable
     val offered = session.arcanaSpotsOffered
     val isFull = available <= 0
+    // A Mariana Tek class whose booking window hasn't opened yet. Takes
+    // precedence over FULL (the server zeroes spots until it opens) — we render
+    // "NOT OPEN", no progress bar, but keep the row viewable/tappable.
+    val notOpen = isNotOpenYet(session.bookableAt, Clock.System.now())
+    val tier = session.capacityTier(notOpen = notOpen)
     // Hidden-capacity studios (e.g. ID Hot Yoga) can't truthfully show a
     // fill progress bar — we don't know how many spots are booked. Suppress
     // the bar, the scarce shading, and any AlmostFull treatment for them;
-    // the AVAILABLE / FULL overline carries the full signal.
-    val showsCapacityVisuals = studio.publishesCapacity
+    // the AVAILABLE / FULL overline carries the full signal. Not-open classes
+    // also suppress the bar (no meaningful fill before the window opens).
+    val showsCapacityVisuals = studio.publishesCapacity && !notOpen
     val isScarce = showsCapacityVisuals && !isFull && available <= SCARCE_THRESHOLD
     val fill = if (showsCapacityVisuals && offered > 0) {
         ((offered - available).toFloat() / offered).coerceIn(0f, 1f)
@@ -912,8 +974,15 @@ private fun ClassRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Time column
-        Column(modifier = Modifier.widthIn(min = 64.dp).wrapContentWidth(Alignment.Start)) {
+        // Time column. The booking-status pill (REQUESTED / CONFIRMED) sits
+        // above the time: the left edge has spare vertical room, and keeping the
+        // pill out of the title row lets a long class name use the row's full
+        // width instead of being shoved into a wrap.
+        Column(modifier = Modifier.width(SCHEDULE_TIME_COL_WIDTH)) {
+            if (bookedStatus != null) {
+                StatusPillFitted(bookedStatus)
+                Spacer(Modifier.height(8.dp))
+            }
             Text(
                 text = time.hhmm(),
                 maxLines = 1, softWrap = false,
@@ -949,26 +1018,19 @@ private fun ClassRow(
                 studioColor = sc,
             )
             Spacer(Modifier.height(4.dp))
-            // Title line. When the member already holds a live booking on this
-            // session we tuck a compact status pill in beside the title so the
-            // row reads "I'm in this one" at a glance. The title keeps weight(1f)
-            // so its own ellipsis behavior is unchanged; the pill stays intrinsic.
-            Row(
+            // Title line. Always a single line — a name too long to fit
+            // ellipsizes rather than wrapping (mirrors the brand · location meta
+            // line above). The booking-status pill lives above the time, so the
+            // title gets the row's full width.
+            BodyText(
+                text = session.template.name,
+                size = 16,
+                color = if (isFull) Ash else Ink,
+                weight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                BodyText(
-                    text = session.template.name,
-                    size = 16,
-                    color = if (isFull) Ash else Ink,
-                    weight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f),
-                )
-                if (bookedStatus != null) {
-                    StatusPill(bookedStatus)
-                }
-            }
+            )
             // Instructor on its own row. Previously it shared the meta line with
             // brand · location and was the first to ellipsize when the location
             // ran long; a dedicated line guarantees it always reads in full.
@@ -1008,11 +1070,11 @@ private fun ClassRow(
                         )
                     }
                 }
-                val tier = session.capacityTier()
                 Overline(
                     text = tier.label,
                     size = 10,
                     color = when (tier) {
+                        CapacityTier.NotOpen -> Ash2
                         CapacityTier.Full -> Ash2
                         CapacityTier.AlmostFull -> Warning
                         CapacityTier.FillingUp -> MossLight
@@ -1022,8 +1084,10 @@ private fun ClassRow(
             }
         }
         // CTA — Phase-3 has no booking flow yet; the arrow is a placeholder
-        // that becomes a real navigation target in Phase 5.
-        if (isFull) {
+        // that becomes a real navigation target in Phase 5. Not-open classes
+        // keep the arrow (they're viewable, not full); only genuinely-full
+        // classes get the muted "+".
+        if (isFull && !notOpen) {
             Box(
                 Modifier
                     .size(36.dp)

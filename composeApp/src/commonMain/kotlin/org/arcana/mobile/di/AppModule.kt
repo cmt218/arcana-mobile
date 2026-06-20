@@ -13,10 +13,12 @@ import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.home.HomeViewModel
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.profile.DeleteAccountViewModel
+import org.arcana.mobile.profile.EditProfileViewModel
 import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.networking.BaseUrlProvider
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.ConciergeApi
+import org.arcana.mobile.networking.ProfileApi
 import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
 import org.arcana.mobile.networking.ScheduleApi
@@ -46,11 +48,13 @@ val appModule = module {
     single<FavoritesApi> { get<ArcanaApiClient>() }
     single<ScheduleApi> { get<ArcanaApiClient>() }
     single<ConciergeApi> { get<ArcanaApiClient>() }
+    single<ProfileApi> { get<ArcanaApiClient>() }
     single { FavoritesRepository(get()) }
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
     viewModel { AuthViewModel(get(), get()) }
     viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
     viewModel { ProfileViewModel(api = get(), favoritesRepository = get(), telemetry = get()) }
+    viewModel { EditProfileViewModel(api = get()) }
     viewModel { DeleteAccountViewModel(conciergeApi = get()) }
     viewModel { MyBookingsViewModel(api = get()) }
     viewModel { ConciergeRequestViewModel(conciergeApi = get(), telemetry = get()) }
