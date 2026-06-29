@@ -32,8 +32,10 @@ import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
+import org.arcana.mobile.ui.ArcanaDropdownField
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
+import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.Overline
@@ -50,6 +52,13 @@ fun BookingSheet(
     shouldAskStudioVisit: Boolean,
     visitedBefore: Boolean?,
     onAnswerVisit: (Boolean) -> Unit,
+    // Static spot *preference* dropdown (e.g. ["Bag","Bench"]). Non-empty only
+    // when the template has options AND this isn't a real-spot class — the VM
+    // suppresses it otherwise (real spots win), so the sheet just renders nothing.
+    spotPreferenceOptions: List<String> = emptyList(),
+    spotPreferenceLabel: String? = null,
+    selectedSpotPreference: String? = null,
+    onSelectSpotPreference: (String) -> Unit = {},
     confirmEnabled: Boolean,
     submitting: Boolean,
     errorMessage: String? = null,
@@ -107,6 +116,18 @@ fun BookingSheet(
                         studioName = session.location.studio.name,
                         answer = visitedBefore,
                         onAnswer = onAnswerVisit,
+                    )
+                }
+                // Static spot-preference dropdown — distinct from (and never shown
+                // alongside) the real spot picker above. Empty list ⇒ nothing renders.
+                if (spotPreferenceOptions.isNotEmpty()) {
+                    Spacer(Modifier.height(20.dp))
+                    ArcanaDropdownField(
+                        label = spotPreferenceLabel?.takeIf { it.isNotBlank() } ?: "Spot preference",
+                        selectedValue = selectedSpotPreference ?: "",
+                        options = spotPreferenceOptions.map { DropdownOption(value = it, label = it) },
+                        onSelect = onSelectSpotPreference,
+                        placeholder = "Choose one",
                     )
                 }
                 Spacer(Modifier.height(20.dp))

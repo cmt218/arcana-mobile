@@ -12,6 +12,7 @@ fun bookingErrorCopy(code: String): String = when (code) {
     "time_conflict" -> "You already have a class booked at this time."
     "spot_required" -> "Pick a spot to book."
     "spot_unavailable" -> "That spot was just taken — pick another."
+    "invalid_spot_preference" -> "That option isn't available — pick another."
     "session_outside_window" -> outsideWindowCopy(null)
     "no_active_payment" -> "No active membership. Reach out to concierge with any questions."
     "payment_past_due" -> "There's a payment issue on your membership."

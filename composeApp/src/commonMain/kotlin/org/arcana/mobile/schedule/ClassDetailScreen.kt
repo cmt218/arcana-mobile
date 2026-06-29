@@ -295,11 +295,18 @@ private fun SuccessBlock(
     LaunchedEffect(session.id, session.shouldAskStudioVisit) {
         bookingVm.setShouldAskStudioVisit(session.shouldAskStudioVisit)
     }
+    LaunchedEffect(session.id) {
+        bookingVm.setSpotPreferenceOptions(
+            options = session.template.spotPreferenceOptions,
+            label = session.template.spotPreferenceLabel,
+        )
+    }
     val cta by bookingVm.ctaState.collectAsState()
     val sheetOpen by bookingVm.sheetOpen.collectAsState()
     val selectedSpot by bookingVm.selectedSpot.collectAsState()
     val shouldAskVisit by bookingVm.shouldAskStudioVisit.collectAsState()
     val visitedBefore by bookingVm.visitedBefore.collectAsState()
+    val selectedSpotPreference by bookingVm.selectedSpotPreference.collectAsState()
     val credits by bookingVm.creditsRemaining.collectAsState()
     val coveredMonths by bookingVm.coveredMonths.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
@@ -475,6 +482,10 @@ private fun SuccessBlock(
             shouldAskStudioVisit = shouldAskVisit,
             visitedBefore = visitedBefore,
             onAnswerVisit = bookingVm::answerStudioVisit,
+            spotPreferenceOptions = bookingVm.spotPreferenceOptions,
+            spotPreferenceLabel = bookingVm.spotPreferenceLabel,
+            selectedSpotPreference = selectedSpotPreference,
+            onSelectSpotPreference = bookingVm::selectSpotPreference,
             confirmEnabled = bookingVm.canConfirm,
             submitting = submit is BookingSubmit.Submitting,
             errorMessage = bookingError,

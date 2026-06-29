@@ -12,6 +12,7 @@ interface BookingApi {
         sessionId: Int,
         requestedSpotId: Int?,
         studioVisitedBefore: Boolean? = null,
+        spotPreference: String? = null,
     ): BookingDto
     suspend fun myBookings(): MyBookingsDto
     suspend fun cancelBooking(bookingId: Int): CancelBookingResponse

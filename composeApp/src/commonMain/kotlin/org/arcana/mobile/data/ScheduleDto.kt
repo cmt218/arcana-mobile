@@ -72,6 +72,12 @@ data class TemplateBriefDto(
     @SerialName("spot_selection_mode") val spotSelectionMode: String,
     val description: String = "",
     @SerialName("layout_metadata") val layoutMetadata: JsonObject = JsonObject(emptyMap()),
+    // Static, per-class-type spot *preference* options shown as a booking-time
+    // dropdown (e.g. ["Bag","Bench"]). DISTINCT from real spot selection
+    // (`spotSelectionMode`/`SpotDto`) — the chosen value rides along on the
+    // booking as free text. Defaulted so payloads without them deserialize.
+    @SerialName("spot_preference_options") val spotPreferenceOptions: List<String> = emptyList(),
+    @SerialName("spot_preference_label") val spotPreferenceLabel: String? = null,
 )
 
 @Serializable

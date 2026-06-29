@@ -31,6 +31,29 @@ class BookingDtoTest {
     }
 
     @Test
+    fun `parses a booking with a spot preference`() {
+        val raw = """
+          {"id":18,"status":"requested",
+           "spot_preference":"Bag",
+           "session":{"id":482,"start_at":"2026-07-07T10:00:00Z","end_at":"2026-07-07T10:50:00Z","name":"RUN x LIFT","studio":"Barry's"},
+           "cancel_policy":{"will_forfeit_credit":false}}
+        """.trimIndent()
+        val b = json.decodeFromString(BookingDto.serializer(), raw)
+        assertEquals("Bag", b.spotPreference)
+    }
+
+    @Test
+    fun `booking without a spot preference defaults to null`() {
+        val raw = """
+          {"id":19,"status":"requested",
+           "session":{"id":482,"start_at":"2026-07-07T10:00:00Z","end_at":"2026-07-07T10:50:00Z","name":"RUN x LIFT","studio":"Barry's"},
+           "cancel_policy":{"will_forfeit_credit":false}}
+        """.trimIndent()
+        val b = json.decodeFromString(BookingDto.serializer(), raw)
+        assertNull(b.spotPreference)
+    }
+
+    @Test
     fun `parses my-bookings split`() {
         val raw = """{"upcoming":[],"past":[]}"""
         val m = json.decodeFromString(MyBookingsDto.serializer(), raw)

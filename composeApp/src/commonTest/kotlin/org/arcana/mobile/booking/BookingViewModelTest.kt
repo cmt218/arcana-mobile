@@ -39,14 +39,16 @@ class BookingViewModelTest {
     ) : BookingApi, MembershipApi {
         var created: Pair<Int, Int?>? = null
         var createdVisitedBefore: Boolean? = null
+        var createdSpotPreference: String? = null
         var cancelledId: Int? = null
         var cancelCalls: Int = 0
         var createCalls: Int = 0
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(upcoming, emptyList())
-        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?): BookingDto {
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?): BookingDto {
             created = sessionId to requestedSpotId
             createdVisitedBefore = studioVisitedBefore
+            createdSpotPreference = spotPreference
             createCalls++; return createResult()
         }
         override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse {
@@ -256,6 +258,73 @@ class BookingViewModelTest {
         val s = vm.submitState.value
         assertTrue(s is BookingSubmit.Failed)
         assertEquals("session_full", (s as BookingSubmit.Failed).code)
+    }
+
+    // ── spot preference dropdown ---------------------------------------------
+
+    @Test fun `spot preference options exposed when template has them and no real spots`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, api, api)
+        vm.setSpotPreferenceOptions(listOf("Bag", "Bench"), label = "Side")
+        vm.load()
+        assertEquals(listOf("Bag", "Bench"), vm.spotPreferenceOptions)
+        assertEquals("Side", vm.spotPreferenceLabel)
+        assertNull(vm.selectedSpotPreference.value)  // null → placeholder, deliberate choice
+    }
+
+    @Test fun `blank label from server normalizes to null so the UI default applies`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, api, api)
+        // The server stores an unset label as "" (CharField, not null), so the VM
+        // must normalize blank → null for the sheet's "Spot preference" fallback.
+        vm.setSpotPreferenceOptions(listOf("Bag", "Bench"), label = "")
+        vm.load()
+        assertNull(vm.spotPreferenceLabel)
+    }
+
+    @Test fun `no spot preference options exposed when template has none`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, api, api)
+        vm.load()
+        assertTrue(vm.spotPreferenceOptions.isEmpty())
+    }
+
+    @Test fun `real spots win - preference suppressed even if options present`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = true, api, api)
+        vm.setSpotPreferenceOptions(listOf("Bag", "Bench"), label = "Side")
+        vm.load()
+        // Options are not surfaced and don't gate confirm — the real spot picker owns this class.
+        assertTrue(vm.spotPreferenceOptions.isEmpty())
+        vm.selectSpot(SpotDto(29, "DF-21"))
+        assertTrue(vm.canConfirm)  // not blocked on a (suppressed) preference
+    }
+
+    @Test fun `preference never gates confirm - it is always best-effort`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, api, api)
+        vm.setSpotPreferenceOptions(listOf("Bag", "Bench"), label = "Side")
+        vm.load()
+        // Even with options present and nothing chosen, confirm is allowed.
+        assertTrue(vm.canConfirm)
+    }
+
+    @Test fun `confirm forwards the chosen spot preference`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, api, api)
+        vm.setSpotPreferenceOptions(listOf("Bag", "Bench"), label = "Side")
+        vm.load()
+        vm.selectSpotPreference("Bench")
+        vm.confirmBooking()
+        assertEquals("Bench", api.createdSpotPreference)
+    }
+
+    @Test fun `no options - confirm sends a null preference`() = runTest {
+        val api = FakeApi(me(), createResult = { booking() })
+        val vm = BookingViewModel(482, 5, requiresSpot = false, api, api)
+        vm.load()
+        vm.confirmBooking()
+        assertNull(api.createdSpotPreference)
     }
 
     @Test fun `requiresSpot blocks confirm until spot chosen`() = runTest {

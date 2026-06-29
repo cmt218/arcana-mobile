@@ -78,6 +78,34 @@ class BookingViewModel(
     private val _visitedBefore = MutableStateFlow<Boolean?>(null)
     val visitedBefore: StateFlow<Boolean?> = _visitedBefore
 
+    // Static, per-class-type spot *preference* options (e.g. ["Bag","Bench"]) and
+    // their label, pushed in from the class-detail template the same way
+    // `setShouldAskStudioVisit` pushes the visit flag. DISTINCT from — and
+    // mutually exclusive with — real spot selection: when `requiresSpot` is true
+    // the preference is suppressed entirely (see [spotPreferenceActive]). Always
+    // best-effort (never required): the chosen value (null until tapped) just
+    // rides along on the booking as free text when present.
+    private var _spotPreferenceOptionsRaw: List<String> = emptyList()
+    private var _spotPreferenceLabel: String? = null
+
+    private val _selectedSpotPreference = MutableStateFlow<String?>(null)
+    val selectedSpotPreference: StateFlow<String?> = _selectedSpotPreference
+
+    /** True when the preference dropdown is actually in play: the template has
+     *  options AND this isn't a real-spot class (real spots win). */
+    private val spotPreferenceActive: Boolean
+        get() = !requiresSpot && _spotPreferenceOptionsRaw.isNotEmpty()
+
+    /** Template options to render — empty (dropdown hidden) when not active. */
+    val spotPreferenceOptions: List<String>
+        get() = if (spotPreferenceActive) _spotPreferenceOptionsRaw else emptyList()
+
+    /** Dropdown label/prompt; null when not active OR blank, so the caller's
+     *  default ("Spot preference") actually triggers. The server stores an unset
+     *  label as "" (not null), so normalize blank → null here. */
+    val spotPreferenceLabel: String?
+        get() = if (spotPreferenceActive) _spotPreferenceLabel?.takeIf { it.isNotBlank() } else null
+
     private val _sheetOpen = MutableStateFlow(false)
     val sheetOpen: StateFlow<Boolean> = _sheetOpen
 
@@ -123,6 +151,16 @@ class BookingViewModel(
         _shouldAskStudioVisit.value = shouldAsk
     }
 
+    /** Set from the class-detail payload's template (`spot_preference_*`). */
+    fun setSpotPreferenceOptions(options: List<String>, label: String?) {
+        _spotPreferenceOptionsRaw = options
+        _spotPreferenceLabel = label
+    }
+
+    fun selectSpotPreference(value: String) {
+        _selectedSpotPreference.value = value
+    }
+
     fun answerStudioVisit(visited: Boolean) {
         _visitedBefore.value = visited
         telemetry.studioVisitAnswered(sessionId, studioIdOrNull(), studioContext.studioName, visited)
@@ -158,6 +196,8 @@ class BookingViewModel(
 
     // Confirm is gated on BOTH a picked spot (when required) AND the studio-visit
     // answer (when the prompt is shown), so we always capture the answer first.
+    // The spot preference is always optional (best-effort) — it never gates
+    // confirm; a member can book without choosing one.
     val canConfirm: Boolean get() =
         (!requiresSpot || _selectedSpot.value != null) &&
         (!_shouldAskStudioVisit.value || _visitedBefore.value != null)
@@ -172,7 +212,10 @@ class BookingViewModel(
             try {
                 // visitedBefore is null when the prompt wasn't shown — the server
                 // treats null as a no-op, so old/non-prompted bookings are unaffected.
-                val b = bookingApi.createBooking(sessionId, _selectedSpot.value?.id, _visitedBefore.value)
+                // Only forward a preference when the dropdown is actually active —
+                // never leak a stale value from a suppressed (real-spot) class.
+                val spotPreference = if (spotPreferenceActive) _selectedSpotPreference.value else null
+                val b = bookingApi.createBooking(sessionId, _selectedSpot.value?.id, _visitedBefore.value, spotPreference)
                 _submitState.value = BookingSubmit.Booked(b.id)
                 _existingBooking.value = b
                 _ctaState.value = BookCta.AlreadyBooked

@@ -40,6 +40,9 @@ data class BookingDto(
     val spot: SpotDto? = null,
     val session: SessionBriefDto,
     @SerialName("cancel_policy") val cancelPolicy: CancelPolicyDto,
+    // The chosen static spot *preference* (e.g. "Bag"), DISTINCT from the
+    // requested/fulfilled SpotDto above. Null/absent when not applicable.
+    @SerialName("spot_preference") val spotPreference: String? = null,
 )
 
 @Serializable
@@ -56,6 +59,9 @@ data class CreateBookingRequest(
     // Null (omitted) when not asked — the server records it on the user↔studio
     // relationship, never on the booking.
     @SerialName("studio_visited_before") val studioVisitedBefore: Boolean? = null,
+    // Chosen static spot preference (e.g. "Bag"). Null/absent when not
+    // applicable — the server treats null/absent as "".
+    @SerialName("spot_preference") val spotPreference: String? = null,
 )
 
 @Serializable
