@@ -46,7 +46,7 @@ class BookingTelemetryTest {
     private class FakeApi(val meResult: MembershipMeDto, val createResult: () -> BookingDto) : BookingApi, MembershipApi {
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
-        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?) = createResult()
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = createResult()
         override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
     }
 

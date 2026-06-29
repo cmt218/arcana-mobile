@@ -285,10 +285,11 @@ class ArcanaApiClient(
         sessionId: Int,
         requestedSpotId: Int?,
         studioVisitedBefore: Boolean?,
+        spotPreference: String?,
     ): BookingDto {
         val response = client.post(v1("bookings/")) {
             contentType(ContentType.Application.Json)
-            setBody(CreateBookingRequest(sessionId, requestedSpotId, studioVisitedBefore))
+            setBody(CreateBookingRequest(sessionId, requestedSpotId, studioVisitedBefore, spotPreference))
         }
         if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
             val created = response.body<CreateBookingResponse>()

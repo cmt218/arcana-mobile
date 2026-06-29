@@ -138,7 +138,10 @@ private fun BookingRow(b: BookingDto, onCancel: (() -> Unit)?, onClick: () -> Un
     val dateTimeLabel = remember(b.session.startAt) { formatBookingDateTime(b.session.startAt) }
     val locationSuffix = b.session.location?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
     val spotSuffix = b.spot?.let { " · ${it.label}" } ?: ""
-    val studioSpot = "${b.session.studio}$locationSuffix$spotSuffix"
+    // Read-only static spot *preference* (e.g. "Bag"), distinct from the real
+    // spot above. Shown only when present and non-blank.
+    val preferenceSuffix = b.spotPreference?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
+    val studioSpot = "${b.session.studio}$locationSuffix$spotSuffix$preferenceSuffix"
 
     Row(
         modifier = Modifier
