@@ -11,6 +11,7 @@ import org.arcana.mobile.data.FavoriteStudioDto
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.InstructorBriefDto
 import org.arcana.mobile.data.LocationFlatDto
+import org.arcana.mobile.data.ModalityCategoryDto
 import org.arcana.mobile.data.OverviewLocationDto
 import org.arcana.mobile.data.OverviewStudioDto
 import org.arcana.mobile.data.ScheduleOverviewDto
@@ -44,6 +45,7 @@ internal class FakeScheduleApi : ScheduleApi {
         val to: LocalDate,
         val studioSlugs: List<String>?,
         val locationIds: List<Int>?,
+        val categorySlugs: List<String>?,
         val availableOnly: Boolean,
     )
 
@@ -51,6 +53,7 @@ internal class FakeScheduleApi : ScheduleApi {
         val date: LocalDate,
         val studioSlugs: List<String>?,
         val locationIds: List<Int>?,
+        val categorySlugs: List<String>?,
         val availableOnly: Boolean,
         val cursor: String?,
     )
@@ -67,7 +70,7 @@ internal class FakeScheduleApi : ScheduleApi {
         to: LocalDate,
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
-        modality: String?,
+        categorySlugs: List<String>?,
         availableOnly: Boolean,
     ): List<ScheduleSessionDto> =
         throw AssertionError("legacy GET /classes/ endpoint must not be called by the paged ViewModel")
@@ -77,10 +80,10 @@ internal class FakeScheduleApi : ScheduleApi {
         to: LocalDate,
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
-        modality: String?,
+        categorySlugs: List<String>?,
         availableOnly: Boolean,
     ): ScheduleOverviewDto {
-        val call = OverviewCall(from, to, studioSlugs, locationIds, availableOnly)
+        val call = OverviewCall(from, to, studioSlugs, locationIds, categorySlugs, availableOnly)
         overviewCalls += call
         return overviewResult(call)
     }
@@ -89,11 +92,11 @@ internal class FakeScheduleApi : ScheduleApi {
         date: LocalDate,
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
-        modality: String?,
+        categorySlugs: List<String>?,
         availableOnly: Boolean,
         cursor: String?,
     ): SchedulePageDto {
-        val call = PageCall(date, studioSlugs, locationIds, availableOnly, cursor)
+        val call = PageCall(date, studioSlugs, locationIds, categorySlugs, availableOnly, cursor)
         pageCalls += call
         return pageResult(call)
     }
@@ -221,3 +224,12 @@ internal fun overviewStudio(
 /** Overview = the window's chip-rail studios (filter-independent). */
 internal fun overviewOf(vararg studios: OverviewStudioDto) =
     ScheduleOverviewDto(studios = studios.toList())
+
+/** Overview with an explicit categories list (the filter catalog). */
+internal fun overviewWithCategories(
+    categories: List<Pair<String, String>>,  // slug to name
+    vararg studios: OverviewStudioDto,
+) = ScheduleOverviewDto(
+    studios = studios.toList(),
+    categories = categories.map { ModalityCategoryDto(slug = it.first, name = it.second) },
+)

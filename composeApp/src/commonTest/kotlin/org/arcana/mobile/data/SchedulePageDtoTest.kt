@@ -14,6 +14,20 @@ private val json = Json { ignoreUnknownKeys = true }
 class SchedulePageDtoTest {
 
     @Test
+    fun `overview decodes categories`() {
+        val raw = """
+          {"studios": [], "categories": [
+            {"slug": "yoga", "name": "Yoga"},
+            {"slug": "cycle", "name": "Cycle"}
+          ]}
+        """.trimIndent()
+        val dto = json.decodeFromString(ScheduleOverviewDto.serializer(), raw)
+        assertEquals(2, dto.categories.size)
+        assertEquals("yoga", dto.categories[0].slug)
+        assertEquals("Yoga", dto.categories[0].name)
+    }
+
+    @Test
     fun `parses the overview shape from the spec example`() {
         val raw = """
           {

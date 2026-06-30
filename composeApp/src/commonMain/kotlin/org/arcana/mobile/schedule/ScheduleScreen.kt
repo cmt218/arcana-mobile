@@ -698,20 +698,26 @@ private fun ScheduleFilterSection(
     onManageFavorites: () -> Unit,
 ) {
     // Which section is expanded below the pills: "" none, "fav" the favorites
-    // list, "all" the studio accordion. rememberSaveable survives the LazyColumn
-    // recycling this item off-screen (and process death).
+    // list, "mod" the modalities list, "all" the studio accordion.
+    // rememberSaveable survives the LazyColumn recycling this item off-screen
+    // (and process death).
     var expandedSection by rememberSaveable { mutableStateOf("") }
     val expandedSlugs = rememberSaveable(
         saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
     ) { mutableStateListOf<String>() }
 
     val favoritesActive = state.filterMode == FilterMode.Favorites
+    val modalitiesActive = state.filterMode == FilterMode.Modalities
+    // "All Studios" owns both AllStudios and Custom — Custom is just the studio
+    // accordion narrowed, reached from that pill's panel.
+    val allStudiosActive = !favoritesActive && !modalitiesActive
+    val hasModalities = state.availableModalities.isNotEmpty()
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Two equal pills, always visible: Favorites (when the member has any) +
-        // All Studios. Exactly one is active. Tapping a pill expands its section;
-        // tapping the active pill again collapses it. "All Studios" owns the
-        // studio/location accordion (no separate Filter pill, no summary bar).
+        // Up to three equal pills: Favorites (when the member has any),
+        // Modalities (when the window has any), and All Studios. Exactly one is
+        // active. Tapping a pill expands its section; tapping the active pill
+        // again collapses it. "All Studios" owns the studio/location accordion.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -731,12 +737,27 @@ private fun ScheduleFilterSection(
                     },
                 )
             }
+            if (hasModalities) {
+                FilterPill(
+                    label = "MODALITIES",
+                    active = modalitiesActive,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (!modalitiesActive) {
+                            viewModel.useModalities()
+                            expandedSection = "mod"
+                        } else {
+                            expandedSection = if (expandedSection == "mod") "" else "mod"
+                        }
+                    },
+                )
+            }
             FilterPill(
                 label = "ALL STUDIOS",
-                active = !favoritesActive,
+                active = allStudiosActive,
                 modifier = Modifier.weight(1f),
                 onClick = {
-                    if (favoritesActive) {
+                    if (!allStudiosActive) {
                         viewModel.showAllStudios()
                         expandedSection = "all"
                     } else {
@@ -771,6 +792,30 @@ private fun ScheduleFilterSection(
                 FilterDoneButton(
                     onClick = { expandedSection = "" },
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // Modalities section — a flat multi-select list of the window's class
+        // genres. Empty selection = every class; picking modalities narrows the
+        // schedule across all studios.
+        if (expandedSection == "mod" && hasModalities) {
+            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                state.availableModalities.forEach { option ->
+                    StudioLocationRow(
+                        label = option.label,
+                        checked = option.slug in state.selectedModalitySlugs,
+                        implied = false,
+                        onTap = { viewModel.toggleModality(option.slug) },
+                    )
+                }
+                FilterDoneButton(
+                    onClick = { expandedSection = "" },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
             }
         }

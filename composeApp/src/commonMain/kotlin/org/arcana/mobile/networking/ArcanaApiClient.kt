@@ -183,7 +183,9 @@ class ArcanaApiClient(
      *           inclusive (server `MAX_RANGE_DAYS = 15`, i.e. up to today + 14)
      * @param studioSlugs optional studio-slug whitelist; matches any in the list
      * @param locationIds optional location-id whitelist; matches any in the list
-     * @param modality optional case-insensitive modality match
+     * @param categorySlugs optional modality-category slug whitelist; matches
+     *        classes in any of the selected categories. Sent as REPEATED
+     *        `category` params; the server resolves slugs to raw modalities.
      * @param availableOnly when true, hides sessions with no remaining spots
      */
     override suspend fun fetchSchedule(
@@ -191,7 +193,7 @@ class ArcanaApiClient(
         to: LocalDate,
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
-        modality: String?,
+        categorySlugs: List<String>?,
         availableOnly: Boolean,
     ): List<ScheduleSessionDto> {
         return client.get(v1("classes/")) {
@@ -201,7 +203,7 @@ class ArcanaApiClient(
                 ?.let { parameter("studio_slug", it.joinToString(",")) }
             locationIds?.takeIf { it.isNotEmpty() }
                 ?.let { parameter("location_id", it.joinToString(",")) }
-            modality?.let { parameter("modality", it) }
+            categorySlugs?.forEach { parameter("category", it) }
             if (availableOnly) parameter("available_only", "true")
         }.body()
     }
@@ -216,7 +218,7 @@ class ArcanaApiClient(
         to: LocalDate,
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
-        modality: String?,
+        categorySlugs: List<String>?,
         availableOnly: Boolean,
     ): ScheduleOverviewDto {
         return client.get(v1("classes/overview/")) {
@@ -226,7 +228,7 @@ class ArcanaApiClient(
                 ?.let { parameter("studio_slug", it.joinToString(",")) }
             locationIds?.takeIf { it.isNotEmpty() }
                 ?.let { parameter("location_id", it.joinToString(",")) }
-            modality?.let { parameter("modality", it) }
+            categorySlugs?.forEach { parameter("category", it) }
             if (availableOnly) parameter("available_only", "true")
         }.body()
     }
@@ -241,7 +243,7 @@ class ArcanaApiClient(
         date: LocalDate,
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
-        modality: String?,
+        categorySlugs: List<String>?,
         availableOnly: Boolean,
         cursor: String?,
     ): SchedulePageDto {
@@ -252,7 +254,7 @@ class ArcanaApiClient(
                 ?.let { parameter("studio_slug", it.joinToString(",")) }
             locationIds?.takeIf { it.isNotEmpty() }
                 ?.let { parameter("location_id", it.joinToString(",")) }
-            modality?.let { parameter("modality", it) }
+            categorySlugs?.forEach { parameter("category", it) }
             if (availableOnly) parameter("available_only", "true")
             cursor?.let { parameter("cursor", it) }
         }.body()

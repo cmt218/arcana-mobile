@@ -53,10 +53,13 @@ data class ScheduleFilters(
  *   when they have any). The panel shows the favorites read-only — no picking.
  * - [AllStudios]: no narrowing; every studio shown. The panel hides the
  *   accordion.
+ * - [Modalities]: schedule scoped to the selected class modalities across ALL
+ *   studios (genre filter). Mutually exclusive with the studio picks — the
+ *   panel shows a flat multi-select list of the window's modalities.
  * - [Custom]: manual multi-select via the accordion ([ScheduleFilters] holds
  *   the picks). The only mode that surfaces the studio/location list.
  */
-enum class FilterMode { Favorites, AllStudios, Custom }
+enum class FilterMode { Favorites, AllStudios, Modalities, Custom }
 
 /** One day's cursor-paged session cache. */
 data class DayState(
@@ -103,6 +106,13 @@ sealed interface ScheduleUiState {
         /** The member's favorites as a read-only display list (studios first,
          *  then locations), shown in the filter panel under Favorites mode. */
         val favoriteEntries: List<FavoriteEntry> = emptyList(),
+        /** Curated categories present in the window (from the overview's
+         *  `categories` block — window-only, never vanishes), the catalog for
+         *  the Modalities filter panel. */
+        val availableModalities: List<ModalityOption> = emptyList(),
+        /** The category slugs currently picked, driving Modalities mode's
+         *  list + fetch. */
+        val selectedModalitySlugs: Set<String> = emptySet(),
         /** sessionId → live booking status (requested/confirmed/…) for every
          *  upcoming booking the member holds. Lets a row show an "I'm in this
          *  one" status pill. BEST-EFFORT and STALE-TOLERANT: refreshed only on
@@ -131,6 +141,10 @@ data class FilterLocation(val id: Int, val label: String)
  *  when Favorites mode is active. Whole-studio favorites read "All locations";
  *  location favorites read the specific location. */
 data class FavoriteEntry(val name: String, val detail: String)
+
+/** One selectable modality-filter option (a server category): [slug] is sent
+ *  to the API, [label] is shown to the member. */
+data class ModalityOption(val slug: String, val label: String)
 
 /**
  * Display-friendly short location label. The backend names locations like
@@ -175,7 +189,9 @@ class ScheduleViewModel(
     private var selectedDate: LocalDate = Clock.System.todayIn(ScheduleTimeZone)
     private var dayStates: Map<LocalDate, DayState> = emptyMap()
     private var overviewStudios: List<OverviewStudioDto> = emptyList()
+    private var availableModalities: List<ModalityOption> = emptyList()
     private var filters: ScheduleFilters = ScheduleFilters()
+    private var selectedModalitySlugs: Set<String> = emptySet()
     private var refreshingFilters: Boolean = false
 
     /** The active filter mode. Defaults to [FilterMode.Favorites] at startup
@@ -242,9 +258,10 @@ class ScheduleViewModel(
                 if (favs == null) return@collect // logout clear; VM is being torn down
                 if (favs == lastAppliedFavorites) return@collect
                 lastAppliedFavorites = favs
-                if (filterMode != FilterMode.Custom) {
+                if (filterMode != FilterMode.Custom && filterMode != FilterMode.Modalities) {
                     filterMode = if (favs.isEmpty()) FilterMode.AllStudios else FilterMode.Favorites
                     filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+                    selectedModalitySlugs = emptySet()
                     onFiltersChanged()
                 }
             }
@@ -327,6 +344,7 @@ class ScheduleViewModel(
                     date = date,
                     studioSlugs = null,
                     locationIds = effectiveLocationIds(),
+                    categorySlugs = effectiveCategorySlugs(),
                     cursor = day.nextCursor,
                 )
                 // Stale guard: a filter refetch or refresh landed while this
@@ -367,6 +385,7 @@ class ScheduleViewModel(
         if (favorites == null || favorites.isEmpty()) return
         filterMode = FilterMode.Favorites
         filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+        selectedModalitySlugs = emptySet()
         onFiltersChanged()
     }
 
@@ -375,6 +394,29 @@ class ScheduleViewModel(
         if (filterMode == FilterMode.AllStudios) return
         filterMode = FilterMode.AllStudios
         filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+        selectedModalitySlugs = emptySet()
+        onFiltersChanged()
+    }
+
+    /** Enter Modalities mode — scope the schedule to the selected class genres
+     *  across all studios. Clears the studio/location picks (mutually exclusive).
+     *  No-op when already in Modalities mode. */
+    fun useModalities() {
+        if (filterMode == FilterMode.Modalities) return
+        filterMode = FilterMode.Modalities
+        filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
+        onFiltersChanged()
+    }
+
+    /** Toggle a modality category (by slug) in the Modalities selection.
+     *  Asserts Modalities mode (only reachable from that panel). */
+    fun toggleModality(slug: String) {
+        filterMode = FilterMode.Modalities
+        selectedModalitySlugs = if (slug in selectedModalitySlugs) {
+            selectedModalitySlugs - slug
+        } else {
+            selectedModalitySlugs + slug
+        }
         onFiltersChanged()
     }
 
@@ -384,6 +426,7 @@ class ScheduleViewModel(
     fun enterFilterMode() {
         if (filterMode == FilterMode.Custom) return
         filterMode = FilterMode.Custom
+        selectedModalitySlugs = emptySet()
         onFiltersChanged()
     }
 
@@ -392,6 +435,7 @@ class ScheduleViewModel(
      *  accordion, so it asserts Custom mode. */
     fun toggleStudioWhole(slug: String) {
         filterMode = FilterMode.Custom
+        selectedModalitySlugs = emptySet()
         val locationIdsForStudio = catalog()[slug].orEmpty().toSet()
         filters = if (slug in filters.studioSlugs) {
             filters.copy(studioSlugs = filters.studioSlugs - slug)
@@ -409,6 +453,7 @@ class ScheduleViewModel(
      *  - Selecting the last unselected location PROMOTES to a whole-studio pick. */
     fun toggleLocation(slug: String, id: Int) {
         filterMode = FilterMode.Custom
+        selectedModalitySlugs = emptySet()
         val allLocationIds = catalog()[slug].orEmpty().toSet()
         filters = when {
             slug in filters.studioSlugs -> filters.copy(
@@ -444,10 +489,12 @@ class ScheduleViewModel(
             mode = when (filterMode) {
                 FilterMode.Favorites -> "favorites"
                 FilterMode.AllStudios -> "all"
+                FilterMode.Modalities -> "modalities"
                 FilterMode.Custom -> "custom"
             },
             studioCount = filters.studioSlugs.size,
             locationCount = filters.locationIds.size,
+            modalityCount = selectedModalitySlugs.size,
         )
         // Only republish over existing content — on a cold start (or from the
         // Error screen) there is nothing to dim; the pipeline's refetch will
@@ -471,6 +518,7 @@ class ScheduleViewModel(
             val newDays = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
             val targetDate = if (selectedDate in newDays) selectedDate else today
             val locationIds = effectiveLocationIds()
+            val categorySlugs = effectiveCategorySlugs()
             val (overview, page) = coroutineScope {
                 val overviewDeferred = async {
                     api.fetchOverview(
@@ -478,6 +526,7 @@ class ScheduleViewModel(
                         to = newDays.last(),
                         studioSlugs = null,
                         locationIds = locationIds,
+                        categorySlugs = categorySlugs,
                     )
                 }
                 val pageDeferred = async {
@@ -485,6 +534,7 @@ class ScheduleViewModel(
                         date = targetDate,
                         studioSlugs = null,
                         locationIds = locationIds,
+                        categorySlugs = categorySlugs,
                     )
                 }
                 overviewDeferred.await() to pageDeferred.await()
@@ -499,6 +549,7 @@ class ScheduleViewModel(
             days = newDays
             if (selectedDate !in newDays) selectedDate = today
             overviewStudios = overview.studios
+            availableModalities = overview.categories.map { ModalityOption(it.slug, it.name) }
             dayStates = mapOf(
                 targetDate to DayState(
                     sessions = page.toSessions(),
@@ -551,6 +602,7 @@ class ScheduleViewModel(
                     date = date,
                     studioSlugs = null,
                     locationIds = effectiveLocationIds(),
+                    categorySlugs = effectiveCategorySlugs(),
                 )
                 // Filters/refresh moved on while this was in flight — the
                 // settled refetch owns the day caches now.
@@ -585,10 +637,20 @@ class ScheduleViewModel(
                 ?.expandedLocationIds()
                 ?.takeIf { it.isNotEmpty() }
         FilterMode.AllStudios -> null
+        // Modalities narrows by genre across all studios — no location filter.
+        FilterMode.Modalities -> null
         FilterMode.Custom ->
             expandSelectionToLocationIds(filters.studioSlugs, filters.locationIds, catalog())
                 .takeIf { it.isNotEmpty() }
     }
+
+    /** The category-slug whitelist to send (repeated `category` param).
+     *  Non-null only in Modalities mode with at least one pick; null ⇒ no
+     *  category narrowing. */
+    private fun effectiveCategorySlugs(): List<String>? =
+        selectedModalitySlugs
+            .takeIf { filterMode == FilterMode.Modalities && it.isNotEmpty() }
+            ?.toList()
 
     /** Best-effort fetch of the member's live bookings into [bookedSessions]
      *  (sessionId → status), for the row "already booked" pill. TOLERATES
@@ -651,6 +713,7 @@ class ScheduleViewModel(
             selectedLocationIds = filters.locationIds,
             studioNamesBySlug = studioNamesBySlug,
             locationStudioSlugById = locationStudioSlugById,
+            selectedModalities = selectedModalitySlugs,
         )
 
         _uiState.value = ScheduleUiState.Success(
@@ -665,6 +728,8 @@ class ScheduleViewModel(
             hasFavorites = favorites?.isEmpty() == false,
             favoritesKnown = favorites != null,
             favoriteEntries = favoriteEntries,
+            availableModalities = availableModalities,
+            selectedModalitySlugs = selectedModalitySlugs,
             bookedSessions = bookedSessions,
         )
     }

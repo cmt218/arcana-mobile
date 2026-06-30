@@ -10,7 +10,13 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ScheduleOverviewDto(
     val studios: List<OverviewStudioDto> = emptyList(),
+    /** Curated, member-facing class categories present in the window (ordered
+     *  server-side), feeding the MODALITIES filter list. */
+    val categories: List<ModalityCategoryDto> = emptyList(),
 )
+
+@Serializable
+data class ModalityCategoryDto(val slug: String, val name: String)
 
 @Serializable
 data class OverviewStudioDto(
