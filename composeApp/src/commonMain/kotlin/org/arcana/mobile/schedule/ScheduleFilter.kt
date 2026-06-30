@@ -16,8 +16,9 @@ internal fun expandSelectionToLocationIds(
 
 /**
  * The collapsed filter-bar summary label. Pure so it's unit-testable without a
- * VM. Favorites → "Favorites"; All-Studios → "All Studios"; Custom → the
- * selection ("Filter" when nothing picked yet, else "BARRY'S · 2 locations" /
+ * VM. Favorites → "Favorites"; All-Studios → "All Studios"; Modalities →
+ * "Modalities" when none picked, else "N modalities"; Custom → the selection
+ * ("Filter" when nothing picked yet, else "BARRY'S · 2 locations" /
  * "3 Studios"). "Studios touched" = studios selected whole OR with any
  * individual location.
  */
@@ -27,10 +28,16 @@ internal fun filterSummary(
     selectedLocationIds: Set<Int>,
     studioNamesBySlug: Map<String, String>,
     locationStudioSlugById: Map<Int, String>,
+    selectedModalities: Set<String> = emptySet(),
 ): String {
     when (filterMode) {
         FilterMode.Favorites -> return "Favorites"
         FilterMode.AllStudios -> return "All Studios"
+        FilterMode.Modalities -> {
+            val k = selectedModalities.size
+            return if (k == 0) "Modalities"
+            else "$k ${if (k == 1) "modality" else "modalities"}"
+        }
         FilterMode.Custom -> {
             val touchedSlugs = selectedStudioSlugs +
                 selectedLocationIds.mapNotNull { locationStudioSlugById[it] }

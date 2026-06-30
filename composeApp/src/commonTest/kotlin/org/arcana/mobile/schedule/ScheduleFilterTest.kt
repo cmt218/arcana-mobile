@@ -50,7 +50,8 @@ class ScheduleFilterTest {
         mode: FilterMode,
         studios: Set<String> = emptySet(),
         locations: Set<Int> = emptySet(),
-    ) = filterSummary(mode, studios, locations, names, locStudio)
+        modalities: Set<String> = emptySet(),
+    ) = filterSummary(mode, studios, locations, names, locStudio, modalities)
 
     @Test fun `favorites mode reads Favorites`() {
         assertEquals("Favorites", summary(FilterMode.Favorites))
@@ -78,5 +79,20 @@ class ScheduleFilterTest {
 
     @Test fun `custom multiple studios touched read N Studios`() {
         assertEquals("2 Studios", summary(FilterMode.Custom, studios = setOf("barrys"), locations = setOf(10)))
+    }
+
+    @Test fun `modalities mode with none picked reads Modalities`() {
+        assertEquals("Modalities", summary(FilterMode.Modalities))
+    }
+
+    @Test fun `modalities mode with one pick is singular`() {
+        assertEquals("1 modality", summary(FilterMode.Modalities, modalities = setOf("Reformer")))
+    }
+
+    @Test fun `modalities mode with two picks is plural`() {
+        assertEquals(
+            "2 modalities",
+            summary(FilterMode.Modalities, modalities = setOf("Reformer", "Cycle")),
+        )
     }
 }

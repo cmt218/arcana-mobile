@@ -20,6 +20,7 @@ class FakeAnalytics : Analytics {
 
     fun names(): List<String> = events.map { it.name }
     fun first(name: String): Event? = events.firstOrNull { it.name == name }
+    fun all(name: String): List<Event> = events.filter { it.name == name }
 }
 
 class FakeCrashReporter : CrashReporter {

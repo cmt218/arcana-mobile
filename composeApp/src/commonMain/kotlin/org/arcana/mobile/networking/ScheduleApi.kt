@@ -13,7 +13,7 @@ interface ScheduleApi {
         to: LocalDate,
         studioSlugs: List<String>? = null,
         locationIds: List<Int>? = null,
-        modality: String? = null,
+        categorySlugs: List<String>? = null,
         availableOnly: Boolean = false,
     ): List<ScheduleSessionDto>
 
@@ -25,7 +25,7 @@ interface ScheduleApi {
         to: LocalDate,
         studioSlugs: List<String>? = null,
         locationIds: List<Int>? = null,
-        modality: String? = null,
+        categorySlugs: List<String>? = null,
         availableOnly: Boolean = false,
     ): ScheduleOverviewDto
 
@@ -34,7 +34,7 @@ interface ScheduleApi {
         date: LocalDate,
         studioSlugs: List<String>? = null,
         locationIds: List<Int>? = null,
-        modality: String? = null,
+        categorySlugs: List<String>? = null,
         availableOnly: Boolean = false,
         cursor: String? = null,
     ): SchedulePageDto

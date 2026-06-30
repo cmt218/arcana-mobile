@@ -101,10 +101,20 @@ class Telemetry(
     fun scheduleLoadMore(pageIndex: Int, day: String) =
         track(Events.SCHEDULE_LOAD_MORE, mapOf("page_index" to pageIndex, "day" to day))
 
-    fun scheduleFilterChanged(mode: String, studioCount: Int, locationCount: Int) =
+    fun scheduleFilterChanged(
+        mode: String,
+        studioCount: Int,
+        locationCount: Int,
+        modalityCount: Int = 0,
+    ) =
         track(
             Events.SCHEDULE_FILTER_CHANGED,
-            mapOf("mode" to mode, "studio_count" to studioCount, "location_count" to locationCount),
+            mapOf(
+                "mode" to mode,
+                "studio_count" to studioCount,
+                "location_count" to locationCount,
+                "modality_count" to modalityCount,
+            ),
         )
 
     // ---- Signup funnel ----------------------------------------------------
