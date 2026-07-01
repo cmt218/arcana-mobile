@@ -57,6 +57,31 @@ import org.arcana.mobile.signup.CompleteSignupResult
  * is the HTTP status — 401 means the email/password didn't match. */
 class LoginError(val statusCode: Int) : Exception("login_failed_$statusCode")
 
+/**
+ * How the client should react to a token-refresh attempt. A member is only
+ * force-logged-out when the server genuinely *rejects* the refresh token
+ * ([REJECTED] — a 401/403). Every other failure — a 5xx, a 429, a timeout, or a
+ * response that never fully arrives on a flaky connection — is [TRANSIENT] and
+ * MUST leave the session intact so the next request can retry. Treating a
+ * transient failure as a logout signs out members whose credentials are
+ * perfectly valid: observed in prod on 2026-07-01, where a refresh the server
+ * answered `200` threw client-side on cellular and force-logged-out the member.
+ */
+internal enum class RefreshOutcome { REFRESHED, REJECTED, TRANSIENT }
+
+/**
+ * Classify a *completed* refresh HTTP response by status code. Only 401/403 —
+ * the refresh endpoint's "this token is no good" answers — are [REJECTED]. Any
+ * other non-2xx (5xx, 429, 408, 400, ...) is [TRANSIENT], so we never sign out
+ * a member on a status that doesn't prove their refresh token is dead. A 2xx is
+ * [REFRESHED].
+ */
+internal fun refreshOutcomeForStatus(statusCode: Int): RefreshOutcome = when {
+    statusCode in 200..299 -> RefreshOutcome.REFRESHED
+    statusCode == 401 || statusCode == 403 -> RefreshOutcome.REJECTED
+    else -> RefreshOutcome.TRANSIENT
+}
+
 class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
@@ -87,20 +112,47 @@ class ArcanaApiClient(
                             forceLogout("refresh_missing")
                             return@refreshTokens null
                         }
-                    try {
-                        val tokens = client.post(v1("auth/token/refresh/")) {
+                    // A refresh fails two very different ways: the server *rejects*
+                    // the token (401/403 → session is truly dead), or the request
+                    // just doesn't complete (5xx, timeout, a response dropped on
+                    // cellular). Only the former may sign the member out; the latter
+                    // must leave the tokens untouched so the next request retries.
+                    // `expectSuccess` is false, so we inspect the status ourselves
+                    // rather than let `.body()` throw on an error body (as `login()`
+                    // does). Never forceLogout on a transient failure — doing so
+                    // logged out valid sessions in prod (see [RefreshOutcome]).
+                    val response = try {
+                        client.post(v1("auth/token/refresh/")) {
                             contentType(ContentType.Application.Json)
                             setBody(RefreshRequest(refresh))
                             markAsRefreshTokenRequest()
-                        }.body<RefreshTokenResponse>()
-                        tokenStorage.accessToken = tokens.access
-                        tokens.refresh?.let { tokenStorage.refreshToken = it }
-                        BearerTokens(tokens.access, tokenStorage.refreshToken ?: return@refreshTokens null)
+                        }
                     } catch (e: Exception) {
-                        // Refresh token rejected/expired or network failure during
-                        // refresh → the session is dead through no user action.
-                        forceLogout("refresh_error")
-                        null
+                        // Couldn't complete the request (network/IO/timeout). Not an
+                        // auth failure — keep the session and let the caller retry.
+                        return@refreshTokens null
+                    }
+                    when (refreshOutcomeForStatus(response.status.value)) {
+                        RefreshOutcome.REFRESHED -> {
+                            val tokens = try {
+                                response.body<RefreshTokenResponse>()
+                            } catch (e: Exception) {
+                                // 2xx but the body didn't parse / never fully arrived
+                                // (seen on flaky cellular). Transient — do NOT sign out.
+                                return@refreshTokens null
+                            }
+                            tokenStorage.accessToken = tokens.access
+                            tokens.refresh?.let { tokenStorage.refreshToken = it }
+                            BearerTokens(tokens.access, tokenStorage.refreshToken ?: return@refreshTokens null)
+                        }
+                        RefreshOutcome.REJECTED -> {
+                            // Server explicitly rejected the refresh token — the
+                            // session is dead through no user action.
+                            forceLogout("refresh_error")
+                            null
+                        }
+                        // 5xx / 429 / timeout-shaped status: keep tokens, let retry.
+                        RefreshOutcome.TRANSIENT -> null
                     }
                 }
                 sendWithoutRequest { request ->
