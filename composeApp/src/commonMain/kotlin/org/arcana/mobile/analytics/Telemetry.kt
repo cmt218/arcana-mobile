@@ -413,6 +413,7 @@ class Telemetry(
         const val CONCIERGE_REQUEST = "ConciergeRequest"
         const val CLASS_DETAIL = "ClassDetail"
         const val AUTH = "Auth"
+        const val PASSWORD_RESET_REQUEST = "PasswordResetRequest"
         const val SIGNUP = "SignupCompletion"
     }
 }

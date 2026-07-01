@@ -42,6 +42,7 @@ import org.arcana.mobile.data.LoginRequest
 import org.arcana.mobile.data.MeProfileDto
 import org.arcana.mobile.data.MembershipMeDto
 import org.arcana.mobile.data.MyBookingsDto
+import org.arcana.mobile.data.PasswordResetRequest
 import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.data.SchedulePageDto
 import org.arcana.mobile.data.UpdateProfileRequest
@@ -86,7 +87,7 @@ class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
     private val telemetry: Telemetry = Telemetry.Noop,
-) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi, ProfileApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi, ProfileApi, PasswordResetApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -158,7 +159,8 @@ class ArcanaApiClient(
                 sendWithoutRequest { request ->
                     !request.url.encodedPath.contains("token") &&
                         !request.url.encodedPath.contains("register") &&
-                        !request.url.encodedPath.contains("complete-signup")
+                        !request.url.encodedPath.contains("complete-signup") &&
+                        !request.url.encodedPath.contains("request-password-reset")
                 }
             }
         }
@@ -181,6 +183,16 @@ class ArcanaApiClient(
         tokenStorage.refreshToken = tokens.refresh
         clearBearerTokenCache()
         _isAuthenticated.value = true
+    }
+
+    override suspend fun requestPasswordReset(email: String) {
+        val response = client.post(v1("auth/request-password-reset")) {
+            contentType(ContentType.Application.Json)
+            setBody(PasswordResetRequest(email))
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw PasswordResetRequestError(response.status.value)
+        }
     }
 
     suspend fun completeSignup(
