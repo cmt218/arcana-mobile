@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,7 +35,13 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
@@ -57,6 +64,7 @@ import org.arcana.mobile.settings.DeveloperSettingsScreen
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
+    onForgotPassword: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Developer Settings (API base-URL override — dev/testing only) is hidden
@@ -135,6 +143,7 @@ fun AuthScreen(
                 CtaBlock(
                     loading = loading,
                     onSubmit = onSubmit,
+                    onForgotPassword = { onForgotPassword(email.trim()) },
                 )
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.height(24.dp))
@@ -197,24 +206,41 @@ private fun FormBlock(
 private fun CtaBlock(
     loading: Boolean,
     onSubmit: () -> Unit,
+    onForgotPassword: () -> Unit,
 ) {
-    if (loading) {
-        Box(
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        if (loading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(CircleShape)
+                    .background(Moss),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = Lime,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        } else {
+            PrimaryCta(label = "Sign in", onClick = onSubmit)
+        }
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = "Forgot your password?",
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .clip(CircleShape)
-                .background(Moss),
-            contentAlignment = Alignment.Center,
-        ) {
-            CircularProgressIndicator(
-                color = Lime,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-    } else {
-        PrimaryCta(label = "Sign in", onClick = onSubmit)
+                .clickable(onClick = onForgotPassword),
+            textAlign = TextAlign.Center,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.body,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                color = Moss,
+                textDecoration = TextDecoration.Underline,
+            ),
+        )
     }
 }
-

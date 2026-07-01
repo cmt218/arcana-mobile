@@ -33,6 +33,8 @@ import kotlinx.coroutines.delay
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
+import org.arcana.mobile.auth.PasswordResetRequestScreen
+import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.auth.SecureStorage
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.home.HomeScreen
@@ -83,6 +85,8 @@ fun App(
         var splashVisible by rememberSaveable { mutableStateOf(true) }
 
         val authVm = koinViewModel<AuthViewModel>()
+        var showPasswordReset by rememberSaveable { mutableStateOf(false) }
+        var passwordResetInitialEmail by rememberSaveable { mutableStateOf("") }
 
         val sessionStore = remember { ViewModelStore() }
         val sessionStoreOwner = remember {
@@ -174,8 +178,27 @@ fun App(
                 // lockedEmail stays null until the server token-preview endpoint lands.
             )
         } else {
-            LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }
-            AuthScreen(viewModel = authVm)
+            if (showPasswordReset) {
+                val resetVm = koinViewModel<PasswordResetRequestViewModel>(
+                    key = "password-reset-$passwordResetInitialEmail",
+                ) {
+                    parametersOf(passwordResetInitialEmail)
+                }
+                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.PASSWORD_RESET_REQUEST) }
+                PasswordResetRequestScreen(
+                    viewModel = resetVm,
+                    onBackToLogin = { showPasswordReset = false },
+                )
+            } else {
+                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }
+                AuthScreen(
+                    viewModel = authVm,
+                    onForgotPassword = { email ->
+                        passwordResetInitialEmail = email
+                        showPasswordReset = true
+                    },
+                )
+            }
         }
         AnimatedVisibility(
             visible = splashVisible,

@@ -24,3 +24,8 @@ data class RefreshTokenResponse(
 data class RefreshRequest(
     val refresh: String,
 )
+
+@Serializable
+data class PasswordResetRequest(
+    val email: String,
+)

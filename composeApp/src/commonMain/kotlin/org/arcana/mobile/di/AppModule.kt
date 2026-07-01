@@ -4,6 +4,7 @@ import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.SecureStorage
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.auth.AuthViewModel
+import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.MyBookingsViewModel
@@ -21,6 +22,7 @@ import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.ProfileApi
 import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
+import org.arcana.mobile.networking.PasswordResetApi
 import org.arcana.mobile.networking.ScheduleApi
 import org.arcana.mobile.schedule.ClassDetailViewModel
 import org.arcana.mobile.schedule.ScheduleViewModel
@@ -49,9 +51,11 @@ val appModule = module {
     single<ScheduleApi> { get<ArcanaApiClient>() }
     single<ConciergeApi> { get<ArcanaApiClient>() }
     single<ProfileApi> { get<ArcanaApiClient>() }
+    single<PasswordResetApi> { get<ArcanaApiClient>() }
     single { FavoritesRepository(get()) }
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
     viewModel { AuthViewModel(get(), get()) }
+    viewModel { (initialEmail: String) -> PasswordResetRequestViewModel(get(), initialEmail) }
     viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
     viewModel { ProfileViewModel(api = get(), favoritesRepository = get(), telemetry = get()) }
     viewModel { EditProfileViewModel(api = get()) }
