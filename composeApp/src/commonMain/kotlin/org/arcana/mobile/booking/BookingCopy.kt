@@ -6,6 +6,10 @@ fun bookingErrorCopy(code: String): String = when (code) {
     "session_full" -> "This class just filled up."
     "credits_exhausted" -> "You're out of credits for this period."
     "already_booked" -> "You've already booked this class."
+    // The studio cancelled/removed this class between browse and booking. Not a
+    // retry — the class is gone. (Older app builds fall through to the generic
+    // line below, which is graceful, just less specific.)
+    "class_cancelled" -> "This class was cancelled by the studio."
     // Server rejects a booking that overlaps a class the member already has
     // (requested/confirmed), cross-studio. Permanent conflict, not a transient
     // retry — say so plainly (no other class/studio named; concierge-safe).
