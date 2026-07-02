@@ -142,7 +142,7 @@ fun ArcanaTextField(
         )
         if (error != null) {
             Spacer(Modifier.height(8.dp))
-            Caption(text = error, size = 13, color = Danger)
+            Caption(text = error, size = 13, color = Danger, maxLines = 3)
         }
     }
 }
@@ -301,7 +301,7 @@ fun ArcanaDropdownField(
         }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
-            Caption(text = error, size = 13, color = Danger)
+            Caption(text = error, size = 13, color = Danger, maxLines = 3)
         }
     }
 }

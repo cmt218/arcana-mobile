@@ -111,6 +111,7 @@ fun ConciergeRequestScreen(
                 text = "Something went wrong sending your message. Please try again.",
                 size = 13,
                 color = BurntNectar,
+                maxLines = 3,
             )
         }
 

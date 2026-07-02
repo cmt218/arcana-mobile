@@ -556,7 +556,7 @@ private fun CancelBookingSheet(
             )
             if (cancelState is CancelState.Failed) {
                 Spacer(Modifier.height(12.dp))
-                Caption("Couldn't cancel — please try again.", size = 13, color = BurntNectar)
+                Caption("Couldn't cancel — please try again.", size = 13, color = BurntNectar, maxLines = 3)
             }
         }
     }
@@ -1091,7 +1091,7 @@ private fun BookingErrorBanner(message: String) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Caption(message, size = 13, color = BurntNectar)
+        Caption(message, size = 13, color = BurntNectar, maxLines = 3)
     }
 }
 

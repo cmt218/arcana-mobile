@@ -56,7 +56,7 @@ fun MyBookingsScreen(onClose: () -> Unit, onOpenClass: (Int) -> Unit) {
         Spacer(Modifier.height(16.dp))
         when (val s = state) {
             is MyBookingsUiState.Loading -> Caption("Loading…", size = 13, color = Ash)
-            is MyBookingsUiState.Error -> Caption(s.message, size = 13, color = BurntNectar)
+            is MyBookingsUiState.Error -> Caption(s.message, size = 13, color = BurntNectar, maxLines = 3)
             is MyBookingsUiState.Success -> LazyColumn(Modifier.fillMaxSize()) {
                 if (s.upcoming.isNotEmpty()) {
                     item {
