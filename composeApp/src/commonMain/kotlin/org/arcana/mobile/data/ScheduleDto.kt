@@ -115,4 +115,9 @@ data class StudioBriefDto(
      *  count. Default true so older server responses (and most studios) keep
      *  the precise UI. */
     @SerialName("publishes_capacity") val publishesCapacity: Boolean = true,
+    /** Resolved late-cancel window in minutes (per-studio override or the
+     *  platform default). Drives the booking sheet's "free to cancel up to N
+     *  hours before class" copy. Null only when talking to an older server that
+     *  predates the field — the sheet falls back to generic copy in that case. */
+    @SerialName("late_cancel_cutoff_minutes") val lateCancelCutoffMinutes: Int? = null,
 )

@@ -34,6 +34,27 @@ class ScheduleDtoTest {
     }
 
     @Test
+    fun `studio brief carries the resolved late-cancel window`() {
+        val raw = """
+          {"id": 3, "slug": "nofar-method", "name": "nofar method",
+           "logo_url": "", "primary_color": "#000000",
+           "late_cancel_cutoff_minutes": 1440}
+        """.trimIndent()
+        val studio = json.decodeFromString(StudioBriefDto.serializer(), raw)
+        assertEquals(1440, studio.lateCancelCutoffMinutes)
+    }
+
+    @Test
+    fun `studio brief from an older server without the window is null`() {
+        val raw = """
+          {"id": 3, "slug": "barrys", "name": "Barry's",
+           "logo_url": "", "primary_color": "#000000"}
+        """.trimIndent()
+        val studio = json.decodeFromString(StudioBriefDto.serializer(), raw)
+        assertNull(studio.lateCancelCutoffMinutes)
+    }
+
+    @Test
     fun `template without spot preference fields defaults cleanly`() {
         val raw = """
           {
