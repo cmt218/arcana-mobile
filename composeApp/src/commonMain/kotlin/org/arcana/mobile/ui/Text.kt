@@ -4,6 +4,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -131,6 +132,36 @@ fun BodyText(
     // Default to unbounded wrapping (the prose use). Pass maxLines = 1 +
     // overflow = Ellipsis for single-line labels that must truncate (e.g. the
     // schedule row title).
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        maxLines = maxLines,
+        overflow = overflow,
+        style = TextStyle(
+            fontFamily = Arcana.fonts.body,
+            fontWeight = weight,
+            fontSize = size.sp,
+            lineHeight = (size * 1.5f).sp,
+            color = color,
+            textAlign = textAlign,
+        ),
+    )
+}
+
+/** Body overload for rich text — same DM Sans style as the String version, but
+ *  accepts an AnnotatedString so callers can emphasize a span (e.g. bold the
+ *  late-cancel window in the booking sheet). Keep the two in sync. */
+@Composable
+fun BodyText(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    size: Int = 15,
+    color: Color = Ink,
+    weight: FontWeight = FontWeight.Normal,
+    textAlign: TextAlign = TextAlign.Unspecified,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
 ) {

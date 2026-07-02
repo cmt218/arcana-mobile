@@ -103,7 +103,7 @@ fun BookingSheet(
                 Caption(creditLine, size = 13, color = Moss)
                 Spacer(Modifier.height(8.dp))
                 BodyText(
-                    "Free to cancel until the studio cutoff. After that, the credit's spent even if you cancel.",
+                    bookingCancelCopy(session.location.studio.lateCancelCutoffMinutes),
                     size = 12,
                     color = Graphite,
                 )
