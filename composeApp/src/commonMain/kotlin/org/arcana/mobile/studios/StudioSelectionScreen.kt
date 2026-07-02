@@ -131,7 +131,7 @@ fun StudioSelectionScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (s.error != null) {
-                    Caption(text = s.error, size = 12, color = Warning)
+                    Caption(text = s.error, size = 12, color = Warning, maxLines = 3)
                 }
                 PrimaryCta(
                     label = if (s.saving) "Saving…" else "Save favorites",

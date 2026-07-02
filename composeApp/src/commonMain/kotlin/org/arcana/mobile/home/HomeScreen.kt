@@ -187,6 +187,7 @@ fun HomeScreen(
                         text = s.message,
                         size = 13,
                         color = Ash,
+                        maxLines = 3,
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
                 }

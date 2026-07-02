@@ -213,11 +213,20 @@ fun Caption(
     modifier: Modifier = Modifier,
     size: Int = 12,
     color: Color = Ash,
+    // Defaults to a single line (the metadata/stamp use). Raise it for prose
+    // captions — error and empty-state messages — that should wrap onto more
+    // lines instead of truncating.
+    maxLines: Int = 1,
+    // Defaults to Ellipsis so an overflowing single-line caption degrades with a
+    // "…" rather than an abrupt hard clip. (Only ever engages when the text
+    // already doesn't fit, since captions are single-line by default.)
+    overflow: TextOverflow = TextOverflow.Ellipsis,
 ) {
     Text(
         text = text,
         modifier = modifier,
-        maxLines = 1,
+        maxLines = maxLines,
+        overflow = overflow,
         style = TextStyle(
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Medium,
