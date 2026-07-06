@@ -45,10 +45,12 @@ import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.booking.BookCta
+import org.arcana.mobile.booking.BookingInfoCallout
 import org.arcana.mobile.booking.BookingSheet
 import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingSubmit
 import org.arcana.mobile.booking.BookingViewModel
+import org.arcana.mobile.booking.bookingInfoOrNull
 import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
 import org.arcana.mobile.booking.outsideWindowCopy
@@ -360,6 +362,15 @@ private fun SuccessBlock(
                     durationMinutes = session.durationMinutes,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
+            }
+            bookingInfoOrNull(existing)?.let { note ->
+                item("booking-info") {
+                    Spacer(Modifier.height(24.dp))
+                    BookingInfoCallout(
+                        note = note,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
             }
             item("instructor") {
                 val instructor = session.instructors.firstOrNull()

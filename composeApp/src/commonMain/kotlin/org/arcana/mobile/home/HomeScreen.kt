@@ -40,6 +40,7 @@ import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.booking.bookingInfoOrNull
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
@@ -505,6 +506,19 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
                     background = Lime,
                     contentColor = Ink,
                 )
+            }
+            // Member-facing booking note (e.g. a door code) — only when present.
+            bookingInfoOrNull(booking)?.let { note ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Overline(text = "Booking info", size = 10, color = Lime)
+                    BodyText(
+                        text = note,
+                        size = 13,
+                        color = StoneAlpha65,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

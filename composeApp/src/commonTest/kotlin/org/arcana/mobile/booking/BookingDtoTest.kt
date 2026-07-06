@@ -54,6 +54,29 @@ class BookingDtoTest {
     }
 
     @Test
+    fun `parses a booking with a member note`() {
+        val raw = """
+          {"id":20,"status":"confirmed",
+           "member_note":"Door code 1234",
+           "session":{"id":482,"start_at":"2026-07-07T10:00:00Z","end_at":"2026-07-07T10:50:00Z","name":"RUN x LIFT","studio":"Barry's"},
+           "cancel_policy":{"will_forfeit_credit":false}}
+        """.trimIndent()
+        val b = json.decodeFromString(BookingDto.serializer(), raw)
+        assertEquals("Door code 1234", b.memberNote)
+    }
+
+    @Test
+    fun `booking without a member note defaults to null`() {
+        val raw = """
+          {"id":21,"status":"confirmed",
+           "session":{"id":482,"start_at":"2026-07-07T10:00:00Z","end_at":"2026-07-07T10:50:00Z","name":"RUN x LIFT","studio":"Barry's"},
+           "cancel_policy":{"will_forfeit_credit":false}}
+        """.trimIndent()
+        val b = json.decodeFromString(BookingDto.serializer(), raw)
+        assertNull(b.memberNote)
+    }
+
+    @Test
     fun `parses my-bookings split`() {
         val raw = """{"upcoming":[],"past":[]}"""
         val m = json.decodeFromString(MyBookingsDto.serializer(), raw)
