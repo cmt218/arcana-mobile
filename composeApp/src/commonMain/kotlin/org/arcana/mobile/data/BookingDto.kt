@@ -43,6 +43,9 @@ data class BookingDto(
     // The chosen static spot *preference* (e.g. "Bag"), DISTINCT from the
     // requested/fulfilled SpotDto above. Null/absent when not applicable.
     @SerialName("spot_preference") val spotPreference: String? = null,
+    // Member-facing note ops attaches (e.g. a door code). Null/absent when none.
+    // Defaulted so older server responses (no field) still deserialize.
+    @SerialName("member_note") val memberNote: String? = null,
 )
 
 @Serializable
