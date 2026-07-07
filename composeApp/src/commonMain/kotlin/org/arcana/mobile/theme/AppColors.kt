@@ -11,16 +11,16 @@ import androidx.compose.ui.graphics.Color
 
 // ---- Brand primaries (source of truth — brand identity doc) ----
 val Lime        = Color(0xFFB6C24F) // signal — active, success, focus
-val Moss        = Color(0xFF3C5D1A) // foundation — primary CTAs, deep surfaces
+val Moss        = Color(0xFF283B15) // foundation — primary CTAs, deep surfaces
 val Stone       = Color(0xFFF5F2ED) // primary background
-val Wood        = Color(0xFF3B2415) // sophisticated dark accent
+val Wood        = Color(0xFF2E1B0F) // sophisticated dark accent
 val BurntNectar = Color(0xFFF65713) // accent — sparingly
 
 // ---- Derived greens ----
 val LimeBright  = Color(0xFFC9D560) // hover / lit state
 val LimeDeep    = Color(0xFF96A235) // pressed
-val MossDeep    = Color(0xFF2A4214) // splash background — exact value from design handoff
-val MossLight   = Color(0xFF537F26)
+val MossDeep    = Color(0xFF1F2D10) // splash background — HSL shift of Moss #283B15 (−6% L, floored to stay above Ink)
+val MossLight   = Color(0xFF405E21) // HSL shift of Moss #283B15 (+9% L)
 
 // ---- Derived stone tones ----
 val Stone2      = Color(0xFFEAE6DE)
