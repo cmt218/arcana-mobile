@@ -8,7 +8,10 @@ enum class BookCta(val label: String, val enabled: Boolean) {
     AlreadyBooked("ALREADY BOOKED", false),
     Full("CLASS FULL", false),
     OutOfCredits("OUT OF CREDITS", false),
-    NotBookable("NOT AVAILABLE", false),
+    // No active/usable membership (no current period, or the period can't book).
+    // The class-detail CTA renders this as a single clear line (no time sub-stamp),
+    // matching the Home tile's "No active membership."
+    NotBookable("NO ACTIVE MEMBERSHIP", false),
 }
 
 /** Derive the CTA state from session availability + the member's current period.

@@ -1,6 +1,8 @@
 package org.arcana.mobile.data
 
 import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -70,6 +72,38 @@ fun MembershipMeDto.periodForClass(classStartIso: String): CurrentPeriodDto? {
         ws != null && we != null && start >= ws && start < we
     }
     return match ?: currentPeriod
+}
+
+/** The wallet that actually *covers* a class starting at [classStartIso], or
+ *  null when the member holds wallet(s) but none covers that date (e.g. a
+ *  July-only member viewing an August class). Unlike [periodForClass], this does
+ *  NOT fall back to the current period — the null return is what lets the UI say
+ *  "your plan doesn't include this month" instead of pretending the class is
+ *  bookable off the wrong wallet.
+ *
+ *  A rolling (unbounded-window) wallet covers every date, so rolling
+ *  subscribers always get a covering wallet and never hit the out-of-window
+ *  state. On an unparseable date we stay lenient and fall back to the current
+ *  period (never a false "outside your membership"). */
+fun MembershipMeDto.coveringPeriodForClass(classStartIso: String): CurrentPeriodDto? {
+    val wallets = listOfNotNull(currentPeriod, upcomingPeriod)
+    // A rolling wallet (no bounded window) covers all dates — prefer the current.
+    wallets.firstOrNull { it.windowStart == null || it.windowEnd == null }?.let { return it }
+    val start = runCatching { Instant.parse(classStartIso) }.getOrNull() ?: return currentPeriod
+    return wallets.firstOrNull { p ->
+        val ws = p.windowStart?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        val we = p.windowEnd?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        ws != null && we != null && start >= ws && start < we
+    }
+}
+
+/** The class's cohort month for member-facing copy, e.g. "August" — resolved in
+ *  Eastern Time so it agrees with how the beta cohort windows are defined
+ *  server-side. Null on an unparseable date. */
+fun classCohortMonthName(classStartIso: String): String? {
+    val tz = TimeZone.of("America/New_York")
+    val local = runCatching { Instant.parse(classStartIso).toLocalDateTime(tz) }.getOrNull() ?: return null
+    return local.month.name.lowercase().replaceFirstChar { it.titlecase() }
 }
 
 /** The covered month(s) phrase for the concierge popup, e.g. "July" or

@@ -9,7 +9,9 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.SpotDto
+import org.arcana.mobile.data.classCohortMonthName
 import org.arcana.mobile.data.coveredMonthsPhrase
+import org.arcana.mobile.data.coveringPeriodForClass
 import org.arcana.mobile.data.periodForClass
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.BookingError
@@ -27,6 +29,11 @@ sealed interface CancelState {
     data object Submitting : CancelState
     data class Failed(val code: String) : CancelState
 }
+
+/** Set when the member holds a wallet but none of their wallets cover THIS
+ *  class's month (e.g. a July-only member viewing an August class). Carries the
+ *  month strings the CTA copy needs. Distinct from "no active membership at all". */
+data class OutsideWindowInfo(val heldMonths: String, val classMonth: String)
 
 /** Studio/location context for booking-funnel analytics, grouped into one value
  *  so the Koin factory stays within its 5-parameter destructuring limit. */
@@ -60,6 +67,12 @@ class BookingViewModel(
 
     private val _creditsRemaining = MutableStateFlow<Int?>(null)
     val creditsRemaining: StateFlow<Int?> = _creditsRemaining
+
+    // Non-null when the member holds a wallet but none covers this class's month.
+    // Drives the CTA's "OUTSIDE YOUR MEMBERSHIP" state; null in every other case
+    // (covered, no membership, rolling subscriber).
+    private val _outsideWindow = MutableStateFlow<OutsideWindowInfo?>(null)
+    val outsideWindow: StateFlow<OutsideWindowInfo?> = _outsideWindow
 
     // The month(s) this member's wallet(s) cover, e.g. "July" / "July and August".
     // Drives the concierge popup when they try to book outside their window.
@@ -136,12 +149,30 @@ class BookingViewModel(
             val existing = runCatching { bookingApi.myBookings() }
                 .getOrNull()?.upcoming?.firstOrNull { it.session.id == sessionId }
             _existingBooking.value = existing
-            // Show the balance of the wallet that will actually pay for THIS
-            // class (current vs the next-month wallet), not just the current one.
-            val walletForClass = me?.periodForClass(sessionStartIso)
-            _creditsRemaining.value = walletForClass?.creditsRemaining
             _coveredMonths.value = me?.coveredMonthsPhrase()
-            _ctaState.value = bookCtaState(spotsAvailable, walletForClass, alreadyBooked = existing != null)
+            // The wallet whose window actually covers THIS class, if any. Null
+            // means either no membership at all, or a membership that doesn't
+            // reach this class's month.
+            val covering = me?.coveringPeriodForClass(sessionStartIso)
+            val hasAnyWallet = me != null && (me.currentPeriod != null || me.upcomingPeriod != null)
+            // Already-booked outranks coverage — an existing booking is always
+            // shown/cancellable regardless of which wallet paid for it.
+            if (existing == null && covering == null && hasAnyWallet) {
+                // Member holds a wallet, but not for this class's month.
+                _outsideWindow.value = OutsideWindowInfo(
+                    heldMonths = me!!.coveredMonthsPhrase() ?: "your current",
+                    classMonth = classCohortMonthName(sessionStartIso) ?: "this month",
+                )
+                _creditsRemaining.value = null
+                // Inert; the screen overrides the label to "OUTSIDE YOUR MEMBERSHIP".
+                _ctaState.value = BookCta.NotBookable
+            } else {
+                _outsideWindow.value = null
+                // Show the balance of the wallet that will actually pay for THIS
+                // class (current vs the next-month wallet), not just the current one.
+                _creditsRemaining.value = covering?.creditsRemaining
+                _ctaState.value = bookCtaState(spotsAvailable, covering, alreadyBooked = existing != null)
+            }
             _loaded.value = true
         }
     }
