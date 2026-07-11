@@ -17,10 +17,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Modalities filter mode on the paged pipeline: the genre filter is standalone
- *  (mutually exclusive with the studio picks) and narrows by repeated `modality`
- *  param across all studios. Mutations are debounced ([settleFilters]). */
-class ScheduleViewModelModalitiesTest {
+/** The ADDITIVE filter model: the Time + Modality overlays AND on top of the
+ *  studio/location scope (Favorites vs All Studios) rather than replacing it.
+ *  Mutations are debounced ([settleFilters]). */
+class ScheduleViewModelAdditiveFilterTest {
     private val dispatcher = UnconfinedTestDispatcher()
     @BeforeTest fun setup() { Dispatchers.setMain(dispatcher) }
     @AfterTest fun teardown() { Dispatchers.resetMain() }
@@ -28,133 +28,157 @@ class ScheduleViewModelModalitiesTest {
     private fun vm(
         scheduleApi: FakeScheduleApi,
         favoritesApi: FakeFavoritesApi = FakeFavoritesApi(),
-        bookingApi: FakeBookingApi = FakeBookingApi(),
         telemetry: org.arcana.mobile.analytics.Telemetry = org.arcana.mobile.analytics.Telemetry.Noop,
     ): ScheduleViewModel = ScheduleViewModel(
         api = scheduleApi,
         favoritesRepository = FavoritesRepository(favoritesApi),
-        bookingApi = bookingApi,
+        bookingApi = FakeBookingApi(),
         telemetry = telemetry,
     )
 
-    /** Overview carrying a category catalog (slug to name) + one studio. */
-    private fun modalitiesOverview() = overviewWithCategories(
+    private fun categoriesOverview() = overviewWithCategories(
         categories = listOf("cycle" to "Cycle", "reformer" to "Reformer"),
         overviewStudio("barrys", "Barry's", locationIds = listOf(1, 2)),
     )
 
-    @Test fun `available categories are surfaced from the overview`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi)
+    private fun favApi() = FakeFavoritesApi(
+        favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12)))),
+    )
 
-        val options = vm.success().availableModalities
+    @Test fun `available categories are surfaced from the overview`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val options = vm(api).success().availableModalities
         assertEquals(listOf("cycle", "reformer"), options.map { it.slug })
         assertEquals(listOf("Cycle", "Reformer"), options.map { it.label })
     }
 
-    @Test fun `entering modalities mode with no picks sends no category param`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi)
-
-        vm.useModalities()
-        settleFilters()
-
-        val state = vm.success()
-        assertEquals(FilterMode.Modalities, state.filterMode)
-        assertEquals("Modalities", state.filterSummary)
-        // No picks yet → null category filter (shows everything).
-        assertNull(scheduleApi.overviewCalls.last().categorySlugs)
-        assertNull(scheduleApi.pageCalls.last().categorySlugs)
-    }
-
-    @Test fun `toggling categories sends their slugs as the category whitelist`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi)
-
-        vm.useModalities()
+    @Test fun `a modality is an overlay - it does not change the scope`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api)  // no favorites -> AllStudios scope
         vm.toggleModality("reformer")
         vm.toggleModality("cycle")
         settleFilters()
 
         val state = vm.success()
-        assertEquals(FilterMode.Modalities, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)  // scope untouched
         assertEquals(setOf("reformer", "cycle"), state.selectedModalitySlugs)
-        assertEquals("2 modalities", state.filterSummary)
-        // Both slugs sent; no location/studio narrowing in this mode.
-        assertEquals(listOf("reformer", "cycle"), scheduleApi.pageCalls.last().categorySlugs)
-        assertEquals(listOf("reformer", "cycle"), scheduleApi.overviewCalls.last().categorySlugs)
-        assertNull(scheduleApi.pageCalls.last().locationIds)
-        assertNull(scheduleApi.pageCalls.last().studioSlugs)
+        assertEquals(listOf("reformer", "cycle"), api.pageCalls.last().categorySlugs)
+        assertNull(api.pageCalls.last().locationIds)  // no scope narrowing
     }
 
-    @Test fun `deselecting a category removes it from the whitelist`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi)
+    @Test fun `modality overlay AND-s with the Favorites scope - both are sent`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api, favApi())  // has favorites -> Favorites scope
+        assertEquals(ScopeMode.Favorites, vm.success().scope)
 
-        vm.useModalities()
-        vm.toggleModality("reformer")
-        vm.toggleModality("reformer") // off again
-        settleFilters()
-
-        assertTrue(vm.success().selectedModalitySlugs.isEmpty())
-        assertNull(scheduleApi.pageCalls.last().categorySlugs)
-    }
-
-    @Test fun `switching to a studio filter clears the category selection`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi)
-
-        vm.useModalities()
-        vm.toggleModality("reformer")
-        settleFilters()
-        assertEquals(FilterMode.Modalities, vm.success().filterMode)
-
-        vm.toggleStudioWhole("barrys") // jump to a studio filter
-        settleFilters()
-
-        val state = vm.success()
-        assertEquals(FilterMode.Custom, state.filterMode)
-        assertTrue(state.selectedModalitySlugs.isEmpty())
-        // Studio narrowing applies; category filter is gone.
-        assertNull(scheduleApi.pageCalls.last().categorySlugs)
-        assertEquals(listOf(1, 2), scheduleApi.pageCalls.last().locationIds)
-    }
-
-    @Test fun `switching to All Studios clears categories`() = runTest {
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi)
-
-        vm.useModalities()
         vm.toggleModality("cycle")
         settleFilters()
 
-        vm.showAllStudios()
+        val call = api.pageCalls.last()
+        assertEquals(ScopeMode.Favorites, vm.success().scope)      // still favorites
+        assertEquals(listOf(11, 12), call.locationIds)             // favorites scope
+        assertEquals(listOf("cycle"), call.categorySlugs)          // AND the modality
+    }
+
+    @Test fun `switching scope keeps the modality overlay`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api, favApi())
+        vm.toggleModality("cycle")
+        settleFilters()
+
+        vm.showAllStudios()  // toggle scope
         settleFilters()
 
         val state = vm.success()
-        assertEquals(FilterMode.AllStudios, state.filterMode)
-        assertTrue(state.selectedModalitySlugs.isEmpty())
-        assertNull(scheduleApi.pageCalls.last().categorySlugs)
+        assertEquals(ScopeMode.AllStudios, state.scope)
+        assertEquals(setOf("cycle"), state.selectedModalitySlugs)  // overlay preserved
+        assertEquals(listOf("cycle"), api.pageCalls.last().categorySlugs)
     }
 
-    @Test fun `category toggle emits filter-changed telemetry with mode and count`() = runTest {
-        val (telemetry, analytics, _) = fakeTelemetry()
-        val scheduleApi = FakeScheduleApi()
-        scheduleApi.overviewResult = { modalitiesOverview() }
-        val vm = vm(scheduleApi, telemetry = telemetry)
+    @Test fun `removeModality clears just that chip`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api)
+        vm.toggleModality("reformer")
+        vm.toggleModality("cycle")
+        settleFilters()
 
-        vm.useModalities()
+        vm.removeModality("reformer")
+        settleFilters()
+
+        assertEquals(setOf("cycle"), vm.success().selectedModalitySlugs)
+        assertEquals(listOf("cycle"), api.pageCalls.last().categorySlugs)
+    }
+
+    @Test fun `no modality picks sends no category param`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api)
+        vm.toggleModality("reformer")
+        vm.toggleModality("reformer")  // off again
+        settleFilters()
+        assertTrue(vm.success().selectedModalitySlugs.isEmpty())
+        assertNull(api.pageCalls.last().categorySlugs)
+    }
+
+    @Test fun `a preset time filter sends the NY start-time bounds`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api)
+        vm.setTimeFilter(TimePreset.Evening.toFilter())
+        settleFilters()
+
+        val call = api.pageCalls.last()
+        assertEquals("17:00", call.startTimeGte)
+        assertNull(call.startTimeLte)
+        assertEquals("Evening", vm.success().timeFilter?.label)
+    }
+
+    @Test fun `a custom time range sends both bounds`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api)
+        vm.setTimeFilter(customTimeFilter("18:00", "21:00"))
+        settleFilters()
+
+        val call = api.pageCalls.last()
+        assertEquals("18:00", call.startTimeGte)
+        assertEquals("21:00", call.startTimeLte)
+    }
+
+    @Test fun `clearTimeFilter removes the time overlay`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api)
+        vm.setTimeFilter(TimePreset.Morning.toFilter())
+        settleFilters()
+
+        vm.clearTimeFilter()
+        settleFilters()
+
+        assertNull(vm.success().timeFilter)
+        assertNull(api.pageCalls.last().startTimeGte)
+        assertNull(api.pageCalls.last().startTimeLte)
+    }
+
+    @Test fun `all three facets AND together - favorites + modality + time`() = runTest {
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api, favApi())
+        vm.toggleModality("cycle")
+        vm.setTimeFilter(customTimeFilter("18:00", "21:00"))
+        settleFilters()
+
+        val call = api.pageCalls.last()
+        assertEquals(listOf(11, 12), call.locationIds)
+        assertEquals(listOf("cycle"), call.categorySlugs)
+        assertEquals("18:00", call.startTimeGte)
+        assertEquals("21:00", call.startTimeLte)
+    }
+
+    @Test fun `filter-changed telemetry carries the scope + modality count`() = runTest {
+        val (telemetry, analytics, _) = fakeTelemetry()
+        val api = FakeScheduleApi().apply { overviewResult = { categoriesOverview() } }
+        val vm = vm(api, telemetry = telemetry)  // AllStudios scope
         vm.toggleModality("reformer")
         settleFilters()
 
         val event = analytics.all("schedule_filter_changed").last()
-        assertEquals("modalities", event.properties["mode"])
+        assertEquals("all", event.properties["mode"])
         assertEquals(1, event.properties["modality_count"])
     }
 }

@@ -184,7 +184,7 @@ class ScheduleViewModelPagingTest {
         val vm = vm(api)
 
         vm.loadMore() // suspends on the gate
-        vm.enterFilterMode()
+        vm.toggleModality("shift") // a filter change mid-flight bumps the generation
         settleFilters() // refetch lands: generation bumped, fresh page 1
 
         gate.complete(Unit) // the stale loadMore finally returns
@@ -250,7 +250,7 @@ class ScheduleViewModelPagingTest {
         vm.loadMore()
 
         assertEquals(listOf(11, 12), api.pageCalls[1].locationIds)
-        assertEquals(FilterMode.Favorites, vm.success().filterMode)
+        assertEquals(ScopeMode.Favorites, vm.success().scope)
     }
 
     // ── 8. Failure semantics ───────────────────────────────────────────────
@@ -270,13 +270,12 @@ class ScheduleViewModelPagingTest {
         assertEquals(listOf(1, 2), vm.success().dayStates.getValue(today).sessions.map { it.id })
 
         api.overviewResult = { throw RuntimeException("transient") }
-        vm.enterFilterMode()
         settleFilters()
 
         val state = vm.success() // still Success — content kept, no Error flash
         assertEquals(listOf(1, 2), state.dayStates.getValue(today).sessions.map { it.id })
         assertFalse(state.refreshingFilters)
-        assertEquals(FilterMode.Custom, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)
     }
 
     // ── Pull-to-refresh ────────────────────────────────────────────────────
@@ -316,7 +315,7 @@ class ScheduleViewModelPagingTest {
         // …while a chip tap runs a NEWER refetch to completion.
         api.overviewResult = { overviewOf() }
         api.pageResult = { pageOf(42) }
-        vm.enterFilterMode()
+        vm.toggleModality("shift") // the chip tap: a newer filter change
         settleFilters()
         assertEquals(listOf(42), vm.success().dayStates.getValue(today).sessions.map { it.id })
 
@@ -339,13 +338,12 @@ class ScheduleViewModelPagingTest {
         val vm = vm(api, favoritesApi)
         assertEquals(listOf(11), api.overviewCalls.last().locationIds) // favorites scope
 
-        vm.enterFilterMode()
         vm.toggleStudioWhole("barrys")
         settleFilters()
 
         val call = api.overviewCalls.last()
         assertNull(call.studioSlugs)                 // always null now
         assertEquals(listOf(1, 2), call.locationIds) // barrys expanded to its locations
-        assertEquals(FilterMode.Custom, vm.success().filterMode)
+        assertEquals(ScopeMode.AllStudios, vm.success().scope)
     }
 }

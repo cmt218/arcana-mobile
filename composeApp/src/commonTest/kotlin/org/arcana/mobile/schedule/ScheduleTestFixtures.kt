@@ -46,6 +46,8 @@ internal class FakeScheduleApi : ScheduleApi {
         val studioSlugs: List<String>?,
         val locationIds: List<Int>?,
         val categorySlugs: List<String>?,
+        val startTimeGte: String?,
+        val startTimeLte: String?,
         val availableOnly: Boolean,
     )
 
@@ -54,6 +56,8 @@ internal class FakeScheduleApi : ScheduleApi {
         val studioSlugs: List<String>?,
         val locationIds: List<Int>?,
         val categorySlugs: List<String>?,
+        val startTimeGte: String?,
+        val startTimeLte: String?,
         val availableOnly: Boolean,
         val cursor: String?,
     )
@@ -81,9 +85,11 @@ internal class FakeScheduleApi : ScheduleApi {
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
         categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
         availableOnly: Boolean,
     ): ScheduleOverviewDto {
-        val call = OverviewCall(from, to, studioSlugs, locationIds, categorySlugs, availableOnly)
+        val call = OverviewCall(from, to, studioSlugs, locationIds, categorySlugs, startTimeGte, startTimeLte, availableOnly)
         overviewCalls += call
         return overviewResult(call)
     }
@@ -93,10 +99,12 @@ internal class FakeScheduleApi : ScheduleApi {
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
         categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
         availableOnly: Boolean,
         cursor: String?,
     ): SchedulePageDto {
-        val call = PageCall(date, studioSlugs, locationIds, categorySlugs, availableOnly, cursor)
+        val call = PageCall(date, studioSlugs, locationIds, categorySlugs, startTimeGte, startTimeLte, availableOnly, cursor)
         pageCalls += call
         return pageResult(call)
     }

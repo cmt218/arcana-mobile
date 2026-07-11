@@ -2,17 +2,21 @@ package org.arcana.mobile.schedule
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,10 +36,13 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -45,18 +52,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.datetime.IllegalTimeZoneException
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
@@ -85,6 +100,8 @@ import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
+import org.arcana.mobile.ui.FilterChip
+import org.arcana.mobile.ui.FlowChipRow
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
@@ -697,78 +714,45 @@ private fun ScheduleFilterSection(
     viewModel: ScheduleViewModel,
     onManageFavorites: () -> Unit,
 ) {
-    // Which section is expanded below the pills: "" none, "fav" the favorites
-    // list, "mod" the modalities list, "all" the studio accordion.
-    // rememberSaveable survives the LazyColumn recycling this item off-screen
-    // (and process death).
+    // Which section is expanded below the bars: "" none, "fav" favorites list,
+    // "all" studio accordion, "time" time picker, "mod" modality list.
     var expandedSection by rememberSaveable { mutableStateOf("") }
     val expandedSlugs = rememberSaveable(
         saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
     ) { mutableStateListOf<String>() }
 
-    val favoritesActive = state.filterMode == FilterMode.Favorites
-    val modalitiesActive = state.filterMode == FilterMode.Modalities
-    // "All Studios" owns both AllStudios and Custom — Custom is just the studio
-    // accordion narrowed, reached from that pill's panel.
-    val allStudiosActive = !favoritesActive && !modalitiesActive
+    val favoritesActive = state.scope == ScopeMode.Favorites
     val hasModalities = state.availableModalities.isNotEmpty()
+    val modalityLabels = state.availableModalities.associate { it.slug to it.label }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Up to three equal pills: Favorites (when the member has any),
-        // Modalities (when the window has any), and All Studios. Exactly one is
-        // active. Tapping a pill expands its section; tapping the active pill
-        // again collapses it. "All Studios" owns the studio/location accordion.
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (state.hasFavorites) {
-                FilterPill(
-                    label = "FAVORITES",
-                    active = favoritesActive,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        if (!favoritesActive) {
-                            viewModel.useMyFavorites()
-                            expandedSection = "fav"
-                        } else {
-                            expandedSection = if (expandedSection == "fav") "" else "fav"
-                        }
-                    },
-                )
-            }
-            if (hasModalities) {
-                FilterPill(
-                    label = "MODALITIES",
-                    active = modalitiesActive,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        if (!modalitiesActive) {
-                            viewModel.useModalities()
-                            expandedSection = "mod"
-                        } else {
-                            expandedSection = if (expandedSection == "mod") "" else "mod"
-                        }
-                    },
-                )
-            }
-            FilterPill(
-                label = "ALL STUDIOS",
-                active = allStudiosActive,
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    if (!allStudiosActive) {
-                        viewModel.showAllStudios()
-                        expandedSection = "all"
-                    } else {
-                        expandedSection = if (expandedSection == "all") "" else "all"
-                    }
-                },
-            )
-        }
+        // ── Tier 1: the studio/location SCOPE toggle (Favorites ⟷ All Studios).
+        // Exactly one active. Tapping switches scope + opens its panel; tapping
+        // the active one again toggles the panel.
+        ScopeToggle(
+            hasFavorites = state.hasFavorites,
+            favoritesActive = favoritesActive,
+            onFavorites = {
+                if (!favoritesActive) {
+                    // First tap just switches scope (no auto-expand — less jarring).
+                    viewModel.useMyFavorites()
+                    expandedSection = ""
+                } else {
+                    // Tapping the already-active scope toggles its panel.
+                    expandedSection = if (expandedSection == "fav") "" else "fav"
+                }
+            },
+            onAllStudios = {
+                if (favoritesActive) {
+                    viewModel.showAllStudios()
+                    expandedSection = ""
+                } else {
+                    expandedSection = if (expandedSection == "all") "" else "all"
+                }
+            },
+        )
 
-        // Favorites section — the member's favorites, read-only, with a one-tap
-        // path into the Profile favorites manager.
+        // Favorites panel — read-only, with a path into the Profile manager.
         if (expandedSection == "fav" && state.hasFavorites && state.favoriteEntries.isNotEmpty()) {
             LaunchedEffect(Unit) { viewModel.onFavoritesDropdownShown() }
             Spacer(Modifier.height(12.dp))
@@ -796,32 +780,7 @@ private fun ScheduleFilterSection(
             }
         }
 
-        // Modalities section — a flat multi-select list of the window's class
-        // genres. Empty selection = every class; picking modalities narrows the
-        // schedule across all studios.
-        if (expandedSection == "mod" && hasModalities) {
-            Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                state.availableModalities.forEach { option ->
-                    StudioLocationRow(
-                        label = option.label,
-                        checked = option.slug in state.selectedModalitySlugs,
-                        implied = false,
-                        onTap = { viewModel.toggleModality(option.slug) },
-                    )
-                }
-                FilterDoneButton(
-                    onClick = { expandedSection = "" },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                )
-            }
-        }
-
-        // All-Studios section — the studio accordion. Empty selection = every
-        // studio; expanding a studio and picking locations narrows the schedule.
+        // All-Studios panel — the studio accordion for narrowing to a subset.
         if (expandedSection == "all") {
             Spacer(Modifier.height(12.dp))
             Column(
@@ -867,6 +826,360 @@ private fun ScheduleFilterSection(
                 )
             }
         }
+
+        // ── Tier 2: the additive overlay filters (Time + Modalities), visually
+        // separated from the scope toggle. Each opens a picker; active state =
+        // "has a selection". Selections render as removable chips below.
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterPill(
+                label = "TIME",
+                active = state.timeFilter != null,
+                modifier = Modifier.weight(1f),
+                onClick = { expandedSection = if (expandedSection == "time") "" else "time" },
+            )
+            if (hasModalities) {
+                FilterPill(
+                    label = "MODALITIES",
+                    active = state.selectedModalitySlugs.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    onClick = { expandedSection = if (expandedSection == "mod") "" else "mod" },
+                )
+            }
+        }
+
+        // Time picker — presets + a custom From/To range.
+        if (expandedSection == "time") {
+            Spacer(Modifier.height(12.dp))
+            TimeFilterPanel(
+                active = state.timeFilter,
+                onApply = { viewModel.setTimeFilter(it); expandedSection = "" },
+                onClear = { viewModel.clearTimeFilter() },
+                onDone = { expandedSection = "" },
+            )
+        }
+
+        // Modalities picker — a flat multi-select list; picks become chips.
+        if (expandedSection == "mod" && hasModalities) {
+            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                state.availableModalities.forEach { option ->
+                    StudioLocationRow(
+                        label = option.label,
+                        checked = option.slug in state.selectedModalitySlugs,
+                        implied = false,
+                        onTap = { viewModel.toggleModality(option.slug) },
+                    )
+                }
+                FilterDoneButton(
+                    onClick = { expandedSection = "" },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
+        }
+
+        // ── Chip rail: the active overlay filters as removable bubbles.
+        if (state.timeFilter != null || state.selectedModalitySlugs.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            FlowChipRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+                state.timeFilter?.let { tf ->
+                    FilterChip(label = tf.label, onRemove = { viewModel.clearTimeFilter() })
+                }
+                state.selectedModalitySlugs.forEach { slug ->
+                    FilterChip(
+                        label = modalityLabels[slug] ?: slug,
+                        onRemove = { viewModel.removeModality(slug) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The Favorites ⟷ All Studios scope toggle — a connected two-segment control
+ *  (exactly one active). Favorites segment hidden when the member has none. */
+@Composable
+private fun ScopeToggle(
+    hasFavorites: Boolean,
+    favoritesActive: Boolean,
+    onFavorites: () -> Unit,
+    onAllStudios: () -> Unit,
+) {
+    // No favorites → no toggle, just a static "All Studios" bar.
+    if (!hasFavorites) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .clip(CircleShape)
+                .background(Ink)
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) { ScopeLabel("ALL STUDIOS", onInk = true) }
+        return
+    }
+
+    // Thumb-tracking toggle: a single Ink highlight slides under the finger as
+    // you drag (Favorites at the left half, All Studios at the right), and
+    // animates/commits to whichever side it lands on when you lift. Taps on
+    // either label still switch (or expand the active panel).
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
+    // The gesture block below is keyed on Unit (never restarts), so read the
+    // latest scope + callbacks through rememberUpdatedState — otherwise the drag
+    // commits against a stale favoritesActive and only the first slide "sticks".
+    val currentFavoritesActive by rememberUpdatedState(favoritesActive)
+    val currentOnFavorites by rememberUpdatedState(onFavorites)
+    val currentOnAllStudios by rememberUpdatedState(onAllStudios)
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(CircleShape)
+            .border(1.dp, Mist, CircleShape),
+    ) {
+        val halfPx = with(density) { maxWidth.toPx() } / 2f
+        var dragging by remember { mutableStateOf(false) }
+        // Highlight's left-edge position in px: 0 = Favorites, halfPx = All Studios.
+        val offset = remember { Animatable(if (favoritesActive) 0f else halfPx) }
+        // Follow external scope changes (favorites saved/cleared) when not dragging.
+        LaunchedEffect(favoritesActive, halfPx) {
+            if (!dragging) offset.animateTo(if (favoritesActive) 0f else halfPx)
+        }
+        val favHighlighted by remember(halfPx) {
+            derivedStateOf { offset.value < halfPx / 2f }
+        }
+
+        // The sliding Ink highlight — drawn behind the labels, tracks the thumb.
+        // Wrapped in a matchParentSize box so the pill fills the toggle's real
+        // height (set by the labels) rather than the incoming constraints — which
+        // may be unbounded here (scrolling parent), collapsing fillMaxHeight to 0.
+        Box(modifier = Modifier.matchParentSize()) {
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(offset.value.roundToInt(), 0) }
+                    .width(with(density) { halfPx.toDp() })
+                    .fillMaxHeight()
+                    .padding(3.dp)
+                    .clip(CircleShape)
+                    .background(Ink),
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true },
+                        onHorizontalDrag = { change, delta ->
+                            change.consume()
+                            coroutineScope.launch {
+                                offset.snapTo((offset.value + delta).coerceIn(0f, halfPx))
+                            }
+                        },
+                        onDragEnd = {
+                            dragging = false
+                            val toFavorites = offset.value < halfPx / 2f
+                            coroutineScope.launch {
+                                offset.animateTo(if (toFavorites) 0f else halfPx)
+                            }
+                            // Commit only on an actual side change — a no-cross
+                            // drag just springs back (and never toggles a panel).
+                            if (toFavorites && !currentFavoritesActive) currentOnFavorites()
+                            else if (!toFavorites && currentFavoritesActive) currentOnAllStudios()
+                        },
+                        onDragCancel = {
+                            dragging = false
+                            coroutineScope.launch {
+                                offset.animateTo(if (currentFavoritesActive) 0f else halfPx)
+                            }
+                        },
+                    )
+                },
+        ) {
+            ScopeSegment("FAVORITES", onInk = favHighlighted, modifier = Modifier.weight(1f), onClick = onFavorites)
+            ScopeSegment("ALL STUDIOS", onInk = !favHighlighted, modifier = Modifier.weight(1f), onClick = onAllStudios)
+        }
+    }
+}
+
+/** One tappable half of the scope toggle. The Ink highlight is drawn separately
+ *  (it slides), so this stays transparent — [onInk] only flips the text color
+ *  (Stone when the highlight is under it, else Ink). */
+@Composable
+private fun ScopeSegment(
+    label: String,
+    onInk: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        ScopeLabel(label, onInk)
+    }
+}
+
+@Composable
+private fun ScopeLabel(label: String, onInk: Boolean) {
+    Text(
+        text = label,
+        modifier = Modifier.offset(y = 1.dp),
+        maxLines = 1, softWrap = false,
+        style = TextStyle(
+            fontFamily = Arcana.fonts.display,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            lineHeight = 12.sp,
+            lineHeightStyle = LineHeightStyle(
+                alignment = LineHeightStyle.Alignment.Center,
+                trim = LineHeightStyle.Trim.Both,
+            ),
+            letterSpacing = 0.10.em,
+            color = if (onInk) Stone else Ink,
+        ),
+    )
+}
+
+/** Time-of-day picker: quick presets (Morning/Afternoon/Evening) + a compact
+ *  custom From–To range slider ([HourRangeSlider], min 1h gap). Applying sets a
+ *  single TimeFilter overlay. */
+@Composable
+private fun TimeFilterPanel(
+    active: TimeFilter?,
+    onApply: (TimeFilter) -> Unit,
+    onClear: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val minHour = 6
+    val maxHour = 22
+    val minGap = 1
+    fun hourInt(hhmm: String?, default: Int): Int =
+        hhmm?.substringBefore(":")?.toIntOrNull()?.coerceIn(minHour, maxHour) ?: default
+    fun hhmm(h: Int): String = "${h.toString().padStart(2, '0')}:00"
+
+    // Seed from the active custom range if any, else the full span.
+    var from by remember(active) { mutableStateOf(hourInt(active?.startGte, minHour)) }
+    var to by remember(active) { mutableStateOf(hourInt(active?.startLte, maxHour)) }
+
+    Column(
+        modifier = Modifier.padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Overline(text = "QUICK", size = 11, color = Ash)
+        FlowChipRow {
+            TimePreset.entries.forEach { preset ->
+                SelectablePill(
+                    label = preset.label,
+                    selected = active?.label == preset.label,
+                    onClick = { onApply(preset.toFilter()) },
+                )
+            }
+        }
+        Overline(text = "CUSTOM RANGE", size = 11, color = Ash)
+        BodyText(
+            text = "${formatTime12h(hhmm(from))}  –  ${formatTime12h(hhmm(to))}",
+            size = 14, color = Ink,
+        )
+        HourRangeSlider(
+            from = from, to = to,
+            minHour = minHour, maxHour = maxHour, minGap = minGap,
+            onChange = { f, t -> from = f; to = t },
+        )
+        FilterDoneButton(
+            onClick = {
+                // A full-span selection means "no custom time filter".
+                if (from <= minHour && to >= maxHour) onDone()
+                else onApply(customTimeFilter(hhmm(from), hhmm(to)))
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+    }
+}
+
+/** A compact dual-handle hour range slider. Enforces a [minGap] between the
+ *  handles, snaps to whole hours, and grabs the NEAREST handle to the touch
+ *  (so the end handle is easy to grab even at the extreme). 36dp tall. */
+@Composable
+private fun HourRangeSlider(
+    from: Int,
+    to: Int,
+    minHour: Int,
+    maxHour: Int,
+    minGap: Int,
+    onChange: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val curFrom by rememberUpdatedState(from)
+    val curTo by rememberUpdatedState(to)
+    var active by remember { mutableStateOf(-1) }  // 0 = from handle, 1 = to handle
+    val span = (maxHour - minHour).toFloat()
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .pointerInput(Unit) {
+                val thumbR = 11.dp.toPx()
+                fun usable() = (size.width - 2 * thumbR).coerceAtLeast(1f)
+                fun hourToX(h: Int) = thumbR + (h - minHour) / span * usable()
+                fun xToHour(x: Float) =
+                    (minHour + ((x - thumbR) / usable() * span)).roundToInt().coerceIn(minHour, maxHour)
+                detectDragGestures(
+                    onDragStart = { off ->
+                        active = if (abs(off.x - hourToX(curFrom)) <= abs(off.x - hourToX(curTo))) 0 else 1
+                    },
+                    onDragEnd = { active = -1 },
+                    onDragCancel = { active = -1 },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val h = xToHour(change.position.x)
+                        when (active) {
+                            0 -> onChange(h.coerceAtMost(curTo - minGap), curTo)
+                            1 -> onChange(curFrom, h.coerceAtLeast(curFrom + minGap))
+                        }
+                    },
+                )
+            },
+    ) {
+        val thumbR = 11.dp.toPx()
+        val usable = (size.width - 2 * thumbR).coerceAtLeast(1f)
+        fun hourToX(h: Int) = thumbR + (h - minHour) / span * usable
+        val cy = size.height / 2
+        val trackH = 4.dp.toPx()
+        drawLine(Mist, Offset(thumbR, cy), Offset(size.width - thumbR, cy), strokeWidth = trackH, cap = StrokeCap.Round)
+        drawLine(Moss, Offset(hourToX(from), cy), Offset(hourToX(to), cy), strokeWidth = trackH, cap = StrokeCap.Round)
+        listOf(from, to).forEach { h ->
+            drawCircle(Stone, radius = thumbR, center = Offset(hourToX(h), cy))
+            drawCircle(Moss, radius = thumbR, center = Offset(hourToX(h), cy), style = Stroke(width = 3.dp.toPx()))
+        }
+    }
+}
+
+/** A small selectable pill for presets / hour options: Moss-filled when
+ *  selected, hairline otherwise. */
+@Composable
+private fun SelectablePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (selected) Moss else Color.Transparent)
+            .border(1.dp, if (selected) Moss else Mist, CircleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        BodyText(text = label, size = 12, color = if (selected) Stone else Ink)
     }
 }
 

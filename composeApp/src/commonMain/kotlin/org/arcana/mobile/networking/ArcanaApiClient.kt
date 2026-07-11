@@ -283,6 +283,8 @@ class ArcanaApiClient(
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
         categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
         availableOnly: Boolean,
     ): ScheduleOverviewDto {
         return client.get(v1("classes/overview/")) {
@@ -293,6 +295,8 @@ class ArcanaApiClient(
             locationIds?.takeIf { it.isNotEmpty() }
                 ?.let { parameter("location_id", it.joinToString(",")) }
             categorySlugs?.forEach { parameter("category", it) }
+            startTimeGte?.let { parameter("start_time_gte", it) }
+            startTimeLte?.let { parameter("start_time_lte", it) }
             if (availableOnly) parameter("available_only", "true")
         }.body()
     }
@@ -308,6 +312,8 @@ class ArcanaApiClient(
         studioSlugs: List<String>?,
         locationIds: List<Int>?,
         categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
         availableOnly: Boolean,
         cursor: String?,
     ): SchedulePageDto {
@@ -319,6 +325,8 @@ class ArcanaApiClient(
             locationIds?.takeIf { it.isNotEmpty() }
                 ?.let { parameter("location_id", it.joinToString(",")) }
             categorySlugs?.forEach { parameter("category", it) }
+            startTimeGte?.let { parameter("start_time_gte", it) }
+            startTimeLte?.let { parameter("start_time_lte", it) }
             if (availableOnly) parameter("available_only", "true")
             cursor?.let { parameter("cursor", it) }
         }.body()

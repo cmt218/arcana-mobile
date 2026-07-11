@@ -48,11 +48,11 @@ class ScheduleTelemetryTest {
         assertEquals("forward", ev.properties["direction"])
     }
 
-    @Test fun `entering filter mode fires schedule_filter_changed`() = runTest {
+    @Test fun `changing a filter fires schedule_filter_changed with the scope mode`() = runTest {
         val (telemetry, analytics, _) = fakeTelemetry()
         val v = vm(telemetry)
         advanceUntilIdle()
-        v.enterFilterMode()
-        assertEquals("custom", analytics.first("schedule_filter_changed")!!.properties["mode"])
+        v.toggleModality("cycle")  // an overlay change on the default (All Studios) scope
+        assertEquals("all", analytics.first("schedule_filter_changed")!!.properties["mode"])
     }
 }

@@ -15,46 +15,50 @@ internal fun expandSelectionToLocationIds(
     (studioSlugs.flatMap { catalog[it].orEmpty() } + locationIds).distinct()
 
 /**
- * The collapsed filter-bar summary label. Pure so it's unit-testable without a
- * VM. Favorites → "Favorites"; All-Studios → "All Studios"; Modalities →
- * "Modalities" when none picked, else "N modalities"; Custom → the selection
- * ("Filter" when nothing picked yet, else "BARRY'S · 2 locations" /
- * "3 Studios"). "Studios touched" = studios selected whole OR with any
- * individual location.
+ * An active start-time-of-day window (NY local wall-clock). Sent to the server
+ * as `start_time_gte` / `start_time_lte` ("HH:MM"); either bound may be null
+ * (one-sided). [label] is the chip text shown to the member.
  */
-internal fun filterSummary(
-    filterMode: FilterMode,
-    selectedStudioSlugs: Set<String>,
-    selectedLocationIds: Set<Int>,
-    studioNamesBySlug: Map<String, String>,
-    locationStudioSlugById: Map<Int, String>,
-    selectedModalities: Set<String> = emptySet(),
-): String {
-    when (filterMode) {
-        FilterMode.Favorites -> return "Favorites"
-        FilterMode.AllStudios -> return "All Studios"
-        FilterMode.Modalities -> {
-            val k = selectedModalities.size
-            return if (k == 0) "Modalities"
-            else "$k ${if (k == 1) "modality" else "modalities"}"
-        }
-        FilterMode.Custom -> {
-            val touchedSlugs = selectedStudioSlugs +
-                selectedLocationIds.mapNotNull { locationStudioSlugById[it] }
-            if (touchedSlugs.isEmpty()) return "Filter"
-            return if (touchedSlugs.size == 1) {
-                val slug = touchedSlugs.single()
-                val name = (studioNamesBySlug[slug] ?: slug).uppercase()
-                if (slug in selectedStudioSlugs) {
-                    name
-                } else {
-                    val k = selectedLocationIds.count { locationStudioSlugById[it] == slug }
-                    val word = if (k == 1) "location" else "locations"
-                    "$name · $k $word"
-                }
-            } else {
-                "${touchedSlugs.size} Studios"
-            }
-        }
-    }
+data class TimeFilter(
+    val startGte: String?,
+    val startLte: String?,
+    val label: String,
+)
+
+/**
+ * The quick time-window presets. Boundaries are NY-local "HH:MM"; a null bound
+ * is unbounded on that side (Morning has no lower bound, Evening no upper).
+ */
+enum class TimePreset(val label: String, val startGte: String?, val startLte: String?) {
+    Morning("Morning", null, "11:59"),
+    Afternoon("Afternoon", "12:00", "16:59"),
+    Evening("Evening", "17:00", null);
+
+    fun toFilter(): TimeFilter = TimeFilter(startGte, startLte, label)
 }
+
+/** Format a 24h "HH:MM" as a friendly 12h clock, e.g. "18:00" → "6:00 PM".
+ *  Avoids JVM-only String.format so it compiles for Kotlin/Native (iOS). */
+internal fun formatTime12h(hhmm: String): String {
+    val parts = hhmm.split(":")
+    val h = parts[0].toIntOrNull() ?: 0
+    val m = parts.getOrNull(1) ?: "00"
+    val period = if (h < 12) "AM" else "PM"
+    val h12 = when {
+        h % 12 == 0 -> 12
+        else -> h % 12
+    }
+    return "$h12:$m $period"
+}
+
+/** Chip label for a custom range: "6:00 AM – 9:00 PM" (or one-sided variants). */
+internal fun customTimeLabel(startGte: String?, startLte: String?): String = when {
+    startGte != null && startLte != null -> "${formatTime12h(startGte)} – ${formatTime12h(startLte)}"
+    startGte != null -> "After ${formatTime12h(startGte)}"
+    startLte != null -> "Before ${formatTime12h(startLte)}"
+    else -> "Any time"
+}
+
+/** Build a custom TimeFilter from two optional "HH:MM" bounds. */
+internal fun customTimeFilter(startGte: String?, startLte: String?): TimeFilter =
+    TimeFilter(startGte, startLte, customTimeLabel(startGte, startLte))
