@@ -311,6 +311,9 @@ private fun SuccessBlock(
     val selectedSpotPreference by bookingVm.selectedSpotPreference.collectAsState()
     val credits by bookingVm.creditsRemaining.collectAsState()
     val coveredMonths by bookingVm.coveredMonths.collectAsState()
+    // Non-null when the member holds a wallet but none covers this class's month
+    // (e.g. July-only member on an August class) — overrides the CTA copy.
+    val outsideWindow by bookingVm.outsideWindow.collectAsState()
     val submit by bookingVm.submitState.collectAsState()
     val existing by bookingVm.existingBooking.collectAsState()
     // The spot on the live booking (effective → fulfilled → requested), shown on
@@ -437,26 +440,42 @@ private fun SuccessBlock(
         // it so scrolling list content feathers out instead of butting hard
         // against the pill.
         if (!isCancelled) {
+            // Reflect the member's real booking status on the CTA. Right after
+            // a successful tap it's "Requested ✓"; on a return visit it shows the
+            // live ops-driven status — "REQUESTED" (pending) or "CONFIRMED ✓"
+            // (ops secured it) — instead of a flat "Already booked".
+            val ctaLabel = when {
+                isPast -> "CLASS ENDED"
+                submit is BookingSubmit.Booked -> "REQUESTED ✓"
+                existing?.status == "confirmed" -> "CONFIRMED ✓"
+                existing?.status == "requested" -> "REQUESTED"
+                existing?.status != null -> existing!!.status.uppercase()
+                // Member holds a wallet but not for this class's month (e.g. a
+                // July-only member on an August class). Outranks the booking
+                // window — even once it opens they still can't book this month.
+                outsideWindow != null -> "OUTSIDE YOUR MEMBERSHIP"
+                // Booking window hasn't opened (and the member holds no
+                // booking) — show when it opens, in ET. opensAt is non-null
+                // whenever notOpenYet is true.
+                notOpenYet -> opensAtCtaLabel(opensAt!!)
+                else -> cta.label
+            }
+            // For the out-of-window state, the sub-line explains the coverage gap
+            // in the member's actual months, e.g. "July credits don't cover August."
+            val ctaSubOverride = outsideWindow?.let {
+                "${it.heldMonths} credits don't cover ${it.classMonth}."
+            }
+            // The no-active-membership state reads as one clear line — drop the
+            // time/day sub-stamp. It's the only state that renders NotBookable's
+            // label (past/booked/out-of-window/not-open all take precedence above).
+            val showCtaSubStamp = ctaLabel != BookCta.NotBookable.label
             StickyReserveCta(
                 capacity = capacity,
                 available = session.arcanaSpotsAvailable,
                 startLocal = startLocal,
-                // Reflect the member's real booking status on the CTA. Right after
-                // a successful tap it's "Requested ✓"; on a return visit it shows the
-                // live ops-driven status — "REQUESTED" (pending) or "CONFIRMED ✓"
-                // (ops secured it) — instead of a flat "Already booked".
-                label = when {
-                    isPast -> "CLASS ENDED"
-                    submit is BookingSubmit.Booked -> "REQUESTED ✓"
-                    existing?.status == "confirmed" -> "CONFIRMED ✓"
-                    existing?.status == "requested" -> "REQUESTED"
-                    existing?.status != null -> existing!!.status.uppercase()
-                    // Booking window hasn't opened (and the member holds no
-                    // booking) — show when it opens, in ET. opensAt is non-null
-                    // whenever notOpenYet is true.
-                    notOpenYet -> opensAtCtaLabel(opensAt!!)
-                    else -> cta.label
-                },
+                label = ctaLabel,
+                showSubStamp = showCtaSubStamp,
+                subStampOverride = ctaSubOverride,
                 // Show the booked spot on the CTA's sub-line for spot studios.
                 spotLabel = bookedSpotLabel,
                 loading = ctaLoading,
@@ -981,6 +1000,12 @@ private fun StickyReserveCta(
     spotLabel: String? = null,
     enabled: Boolean = true,
     loading: Boolean = false,
+    // When false, the time/day sub-stamp is hidden and the primary label reads as
+    // a single centered line (used for the "no active membership" state).
+    showSubStamp: Boolean = true,
+    // Replaces the computed time/day sub-stamp with custom text when non-null
+    // (used for the "outside your membership" coverage explanation).
+    subStampOverride: String? = null,
 ) {
     val pillColor = when {
         loading -> Graphite
@@ -1005,7 +1030,8 @@ private fun StickyReserveCta(
     val ampm = if (startLocal.hour < 12) "AM" else "PM"
     val timeStamp = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')} $ampm"
     val dayStamp = "${startLocal.dayOfWeek.name.take(3)} ${startLocal.date.day} ${startLocal.date.month.abbr()}"
-    val subStamp = if (spotLabel != null) "$timeStamp · $dayStamp · ${spotLabel.uppercase()}" else "$timeStamp · $dayStamp"
+    val subStamp = subStampOverride
+        ?: if (spotLabel != null) "$timeStamp · $dayStamp · ${spotLabel.uppercase()}" else "$timeStamp · $dayStamp"
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 40dp transparent→stone fade so list content scrolls under the CTA
@@ -1062,18 +1088,20 @@ private fun StickyReserveCta(
                                 color = Stone,
                             ),
                         )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = subStamp,
-                            maxLines = 1,
-                            style = TextStyle(
-                                fontFamily = Arcana.fonts.body,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 9.sp,
-                                letterSpacing = 0.10.em,
-                                color = Stone.copy(alpha = 0.67f),
-                            ),
-                        )
+                        if (showSubStamp) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = subStamp,
+                                maxLines = 1,
+                                style = TextStyle(
+                                    fontFamily = Arcana.fonts.body,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 9.sp,
+                                    letterSpacing = 0.10.em,
+                                    color = Stone.copy(alpha = 0.67f),
+                                ),
+                            )
+                        }
                     }
                     Box(
                         modifier = Modifier

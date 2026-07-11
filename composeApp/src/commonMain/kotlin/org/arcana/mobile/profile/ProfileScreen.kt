@@ -126,9 +126,16 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) { vm.load() }
 
-    // Membership row shows the member's tier name (e.g. "Alpha Tester").
+    // Membership row shows the member's tier name (e.g. "Alpha Tester") while
+    // active, or "Inactive" once the membership has lapsed — keyed off the same
+    // absent current period the Home tile uses for "No active membership".
     // Not clickable for now — see the Stripe-link note in the design discussion.
-    val tierLabel = (state as? ProfileUiState.Success)?.tierName.orEmpty()
+    val success = state as? ProfileUiState.Success
+    val tierLabel = when {
+        success == null -> ""
+        success.creditsRemaining == null -> "Inactive"
+        else -> success.tierName
+    }
     val accountItems = listOf(
         AccountItem(ArcanaIcons.Card, "Membership", tierLabel, Ash),
         AccountItem(ArcanaIcons.Support, "Concierge", "", Moss, onClick = onOpenConcierge),

@@ -47,4 +47,34 @@ class MembershipWalletTest {
         assertEquals("July and August", me(july, august).coveredMonthsPhrase())
         assertNull(me(null).coveredMonthsPhrase())
     }
+
+    @Test fun coveringPeriodForClass_matches_only_when_in_window() {
+        val july = wallet("July Beta", "2026-07-01T04:00:00Z", "2026-08-01T04:00:00Z")
+        // July class → covered by the July wallet.
+        assertEquals("July Beta", me(july).coveringPeriodForClass("2026-07-20T18:00:00Z")?.label)
+        // August class, July-only member → NOT covered (null, unlike periodForClass
+        // which falls back). This is what drives "outside your membership".
+        assertNull(me(july).coveringPeriodForClass("2026-08-04T18:00:00Z"))
+    }
+
+    @Test fun coveringPeriodForClass_two_wallets_cover_both_months() {
+        val july = wallet("July Beta", "2026-07-01T04:00:00Z", "2026-08-01T04:00:00Z")
+        val august = wallet("August Beta", "2026-08-01T04:00:00Z", "2026-09-01T04:00:00Z")
+        val both = me(july, august)
+        assertEquals("July Beta", both.coveringPeriodForClass("2026-07-20T18:00:00Z")?.label)
+        assertEquals("August Beta", both.coveringPeriodForClass("2026-08-04T18:00:00Z")?.label)
+    }
+
+    @Test fun coveringPeriodForClass_rolling_wallet_covers_every_date() {
+        // A rolling (null-window) wallet covers all dates — rolling subscribers
+        // never hit the out-of-window state.
+        val rolling = wallet(null, null, null)
+        assertEquals(rolling, me(rolling).coveringPeriodForClass("2026-08-04T18:00:00Z"))
+    }
+
+    @Test fun classCohortMonthName_resolves_in_eastern_time() {
+        assertEquals("July", classCohortMonthName("2026-07-20T18:00:00Z"))
+        assertEquals("August", classCohortMonthName("2026-08-04T18:00:00Z"))
+        assertNull(classCohortMonthName("not-a-date"))
+    }
 }

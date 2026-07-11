@@ -659,7 +659,9 @@ private fun ManifestoCard(
         ) {
             if (creditsRemaining == null) {
                 // No live wallet — explicit, calm empty state (lapsed member or
-                // a between-cohorts / pre-rolling lull).
+                // a between-cohorts / pre-rolling lull). Stands alone: the streak
+                // sub-line is suppressed so the tile reads only "No active
+                // membership."
                 Heading2(text = "No active membership.", size = 26, color = Stone)
             } else {
                 Heading2(text = "$creditsRemaining classes remaining.", size = 26, color = Stone)
@@ -672,13 +674,13 @@ private fun ManifestoCard(
                         color = StoneAlpha65,
                     )
                 }
+                val streakLine = if (weekStreak > 0) "$weekStreak-week streak. Keep it going." else "Build your streak."
+                BodyText(
+                    text = streakLine,
+                    size = 12,
+                    color = StoneAlpha65,
+                )
             }
-            val streakLine = if (weekStreak > 0) "$weekStreak-week streak. Keep it going." else "Build your streak."
-            BodyText(
-                text = streakLine,
-                size = 12,
-                color = StoneAlpha65,
-            )
         }
     }
 }
