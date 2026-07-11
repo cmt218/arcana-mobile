@@ -26,15 +26,20 @@ interface ScheduleApi {
         studioSlugs: List<String>? = null,
         locationIds: List<Int>? = null,
         categorySlugs: List<String>? = null,
+        startTimeGte: String? = null,
+        startTimeLte: String? = null,
         availableOnly: Boolean = false,
     ): ScheduleOverviewDto
 
-    /** One keyset page of [date]'s sessions (server scopes via from == to). */
+    /** One keyset page of [date]'s sessions (server scopes via from == to).
+     *  [startTimeGte]/[startTimeLte] are NY-local "HH:MM" start-time bounds. */
     suspend fun fetchSessionsPage(
         date: LocalDate,
         studioSlugs: List<String>? = null,
         locationIds: List<Int>? = null,
         categorySlugs: List<String>? = null,
+        startTimeGte: String? = null,
+        startTimeLte: String? = null,
         availableOnly: Boolean = false,
         cursor: String? = null,
     ): SchedulePageDto

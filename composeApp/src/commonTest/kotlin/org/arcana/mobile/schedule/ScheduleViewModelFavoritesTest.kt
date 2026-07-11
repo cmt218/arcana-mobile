@@ -56,9 +56,8 @@ class ScheduleViewModelFavoritesTest {
         assertEquals(listOf(11, 12, 31), scheduleApi.pageCalls.single().locationIds)
         assertNull(scheduleApi.overviewCalls.single().studioSlugs)
         val state = vm.success()
-        assertEquals(FilterMode.Favorites, state.filterMode)
+        assertEquals(ScopeMode.Favorites, state.scope)
         assertTrue(state.hasFavorites)
-        assertEquals("Favorites", state.filterSummary)
     }
 
     @Test fun `favoriteEntries lists favorited studios then locations for the panel`() = runTest {
@@ -107,8 +106,7 @@ class ScheduleViewModelFavoritesTest {
         assertNull(scheduleApi.overviewCalls.single().locationIds)
         assertNull(scheduleApi.pageCalls.single().locationIds)
         val state = vm.success()
-        assertEquals(FilterMode.AllStudios, state.filterMode)
-        assertEquals("All Studios", state.filterSummary)
+        assertEquals(ScopeMode.AllStudios, state.scope)
     }
 
     @Test fun `entering filter mode and selecting a studio scopes to its locations`() = runTest {
@@ -118,9 +116,8 @@ class ScheduleViewModelFavoritesTest {
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(99)))),
         )
         val vm = vm(scheduleApi, favoritesApi)
-        assertEquals(FilterMode.Favorites, vm.success().filterMode)
+        assertEquals(ScopeMode.Favorites, vm.success().scope)
 
-        vm.enterFilterMode()
         vm.toggleStudioWhole("barrys")
         settleFilters()
 
@@ -129,9 +126,8 @@ class ScheduleViewModelFavoritesTest {
         assertNull(call.studioSlugs)
         assertEquals(listOf(1, 2, 3), call.locationIds)
         val state = vm.success()
-        assertEquals(FilterMode.Custom, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)
         assertEquals(setOf("barrys"), state.filters.studioSlugs)
-        assertEquals("BARRY'S", state.filterSummary)
     }
 
     @Test fun `useMyFavorites after a manual selection re-applies favorites`() = runTest {
@@ -141,10 +137,9 @@ class ScheduleViewModelFavoritesTest {
             favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12)))),
         )
         val vm = vm(scheduleApi, favoritesApi)
-        vm.enterFilterMode()
         vm.toggleStudioWhole("barrys")
         settleFilters()
-        assertEquals(FilterMode.Custom, vm.success().filterMode)
+        assertEquals(ScopeMode.AllStudios, vm.success().scope)
 
         vm.useMyFavorites()
         settleFilters()
@@ -153,7 +148,7 @@ class ScheduleViewModelFavoritesTest {
         assertEquals(listOf(11, 12), call.locationIds)
         assertNull(call.studioSlugs)
         val state = vm.success()
-        assertEquals(FilterMode.Favorites, state.filterMode)
+        assertEquals(ScopeMode.Favorites, state.scope)
         assertTrue(state.filters.studioSlugs.isEmpty())
         assertTrue(state.filters.locationIds.isEmpty())
     }
@@ -168,7 +163,7 @@ class ScheduleViewModelFavoritesTest {
         settleFilters()
 
         val state = vm.success()
-        assertEquals(FilterMode.Custom, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)
         assertEquals(setOf("yo-bk"), state.filters.studioSlugs)
         assertTrue(state.filters.locationIds.isEmpty())
         // Expanded back to its locations for the fetch.
@@ -187,9 +182,8 @@ class ScheduleViewModelFavoritesTest {
 
         assertNull(scheduleApi.overviewCalls.last().locationIds)
         val state = vm.success()
-        assertEquals(FilterMode.AllStudios, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)
         assertTrue(state.filters.studioSlugs.isEmpty())
-        assertEquals("All Studios", state.filterSummary)
     }
 
     @Test fun `saving favorites in the manager from empty applies favorites`() = runTest {
@@ -206,7 +200,7 @@ class ScheduleViewModelFavoritesTest {
 
         assertEquals(listOf(11, 12), scheduleApi.overviewCalls.last().locationIds)
         val state = vm.success()
-        assertEquals(FilterMode.Favorites, state.filterMode)
+        assertEquals(ScopeMode.Favorites, state.scope)
         assertTrue(state.hasFavorites)
     }
 
@@ -225,7 +219,7 @@ class ScheduleViewModelFavoritesTest {
 
         assertNull(scheduleApi.overviewCalls.last().locationIds)
         val state = vm.success()
-        assertEquals(FilterMode.AllStudios, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)
         assertTrue(!state.hasFavorites)
     }
 
@@ -235,7 +229,6 @@ class ScheduleViewModelFavoritesTest {
         val favoritesApi = FakeFavoritesApi(favoritesResult = FavoritesDto())
         val repository = FavoritesRepository(favoritesApi)
         val vm = vm(scheduleApi, favoritesApi, repository)
-        vm.enterFilterMode()
         vm.toggleStudioWhole("barrys") // Custom selection active
         settleFilters()
 
@@ -246,7 +239,7 @@ class ScheduleViewModelFavoritesTest {
 
         // Custom selection preserved; favorites NOT auto-applied.
         val state = vm.success()
-        assertEquals(FilterMode.Custom, state.filterMode)
+        assertEquals(ScopeMode.AllStudios, state.scope)
         assertEquals(setOf("barrys"), state.filters.studioSlugs)
     }
 

@@ -47,19 +47,16 @@ data class ScheduleFilters(
 )
 
 /**
- * The three mutually-exclusive filter modes the schedule bar offers.
+ * The studio/location SCOPE — a toggle, exactly one active. This is tier 1 of
+ * the two-tier filter model; the Time + Modalities overlays (tier 2) AND on top
+ * of whichever scope is selected.
  *
- * - [Favorites]: schedule scoped to the member's saved favorites (the default
- *   when they have any). The panel shows the favorites read-only — no picking.
- * - [AllStudios]: no narrowing; every studio shown. The panel hides the
- *   accordion.
- * - [Modalities]: schedule scoped to the selected class modalities across ALL
- *   studios (genre filter). Mutually exclusive with the studio picks — the
- *   panel shows a flat multi-select list of the window's modalities.
- * - [Custom]: manual multi-select via the accordion ([ScheduleFilters] holds
- *   the picks). The only mode that surfaces the studio/location list.
+ * - [Favorites]: scoped to the member's saved favorites (the default when they
+ *   have any). The panel shows favorites read-only — managed in Profile.
+ * - [AllStudios]: every studio; the accordion lets the member narrow to a
+ *   subset of studios/locations ([ScheduleFilters] holds those picks).
  */
-enum class FilterMode { Favorites, AllStudios, Modalities, Custom }
+enum class ScopeMode { Favorites, AllStudios }
 
 /** One day's cursor-paged session cache. */
 data class DayState(
@@ -90,13 +87,12 @@ sealed interface ScheduleUiState {
          *  which ignores studio/location narrowing — never vanishes) with its
          *  selectable locations — the filter accordion's catalog (Custom mode). */
         val filterStudios: List<FilterStudio>,
-        /** The manual selection driving Custom mode's accordion + fetch. */
+        /** The studio/location subset selection (meaningful under AllStudios). */
         val filters: ScheduleFilters,
-        /** Collapsed filter-bar summary label ("Favorites", "All Studios",
-         *  "Filter", or "BARRY'S · 2 locations"). */
-        val filterSummary: String,
-        /** Which of the three filter modes is active. */
-        val filterMode: FilterMode,
+        /** The active studio/location scope (Favorites vs All Studios toggle). */
+        val scope: ScopeMode,
+        /** The active time-of-day overlay, or null. Renders as a removable chip. */
+        val timeFilter: TimeFilter? = null,
         /** Favorites loaded and non-empty — gates the Favorites pill and
          *  suppresses the "choose favorites" nudge banner. */
         val hasFavorites: Boolean,
@@ -192,11 +188,14 @@ class ScheduleViewModel(
     private var availableModalities: List<ModalityOption> = emptyList()
     private var filters: ScheduleFilters = ScheduleFilters()
     private var selectedModalitySlugs: Set<String> = emptySet()
+    private var timeFilter: TimeFilter? = null
     private var refreshingFilters: Boolean = false
 
-    /** The active filter mode. Defaults to [FilterMode.Favorites] at startup
-     *  when the member has favorites, else [FilterMode.AllStudios]. */
-    private var filterMode: FilterMode = FilterMode.AllStudios
+    /** The active studio/location scope. Defaults to [ScopeMode.Favorites] at
+     *  startup when the member has favorites, else [ScopeMode.AllStudios]. The
+     *  Time + Modalities overlays are independent and persist across scope
+     *  changes. */
+    private var scope: ScopeMode = ScopeMode.AllStudios
 
     /** sessionId → live booking status for the member's upcoming bookings.
      *  Source-of-truth for the row "already booked" pill; snapshotted into
@@ -246,7 +245,7 @@ class ScheduleViewModel(
             // Favorites first — they decide whether the first fetch is scoped
             // to the member's locations.
             val favorites = favoritesRepository.refresh()
-            if (favorites != null && !favorites.isEmpty()) filterMode = FilterMode.Favorites
+            if (favorites != null && !favorites.isEmpty()) scope = ScopeMode.Favorites
             lastAppliedFavorites = favorites
             refetchForFilters()
             // React to favorites saved/cleared in the manager while this VM is
@@ -258,10 +257,12 @@ class ScheduleViewModel(
                 if (favs == null) return@collect // logout clear; VM is being torn down
                 if (favs == lastAppliedFavorites) return@collect
                 lastAppliedFavorites = favs
-                if (filterMode != FilterMode.Custom && filterMode != FilterMode.Modalities) {
-                    filterMode = if (favs.isEmpty()) FilterMode.AllStudios else FilterMode.Favorites
-                    filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-                    selectedModalitySlugs = emptySet()
+                // Reflect a favorites change (saved/cleared in Profile) into the
+                // scope — but only when the member isn't actively narrowing to a
+                // studio subset. Overlays (time/modalities) are always preserved.
+                if (scope == ScopeMode.Favorites || filters == ScheduleFilters()) {
+                    scope = if (favs.isEmpty()) ScopeMode.AllStudios else ScopeMode.Favorites
+                    filters = ScheduleFilters()
                     onFiltersChanged()
                 }
             }
@@ -345,6 +346,8 @@ class ScheduleViewModel(
                     studioSlugs = null,
                     locationIds = effectiveLocationIds(),
                     categorySlugs = effectiveCategorySlugs(),
+                    startTimeGte = timeFilter?.startGte,
+                    startTimeLte = timeFilter?.startLte,
                     cursor = day.nextCursor,
                 )
                 // Stale guard: a filter refetch or refresh landed while this
@@ -377,41 +380,29 @@ class ScheduleViewModel(
         }
     }
 
-    /** Enter Favorites mode — scope the schedule to the member's favorites.
-     *  No-op without favorites or when already in Favorites mode. */
+    /** Scope toggle → Favorites. Clears the studio subset; KEEPS the time +
+     *  modality overlays. No-op without favorites or when already on Favorites. */
     fun useMyFavorites() {
-        if (filterMode == FilterMode.Favorites) return
+        if (scope == ScopeMode.Favorites) return
         val favorites = favoritesRepository.favorites.value
         if (favorites == null || favorites.isEmpty()) return
-        filterMode = FilterMode.Favorites
-        filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-        selectedModalitySlugs = emptySet()
+        scope = ScopeMode.Favorites
+        filters = ScheduleFilters()
         onFiltersChanged()
     }
 
-    /** Enter All-Studios mode — clear every selection; show the whole schedule. */
+    /** Scope toggle → All Studios (reset to the whole fleet: clears the studio
+     *  subset). KEEPS the time + modality overlays. */
     fun showAllStudios() {
-        if (filterMode == FilterMode.AllStudios) return
-        filterMode = FilterMode.AllStudios
-        filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-        selectedModalitySlugs = emptySet()
+        if (scope == ScopeMode.AllStudios && filters == ScheduleFilters()) return
+        scope = ScopeMode.AllStudios
+        filters = ScheduleFilters()
         onFiltersChanged()
     }
 
-    /** Enter Modalities mode — scope the schedule to the selected class genres
-     *  across all studios. Clears the studio/location picks (mutually exclusive).
-     *  No-op when already in Modalities mode. */
-    fun useModalities() {
-        if (filterMode == FilterMode.Modalities) return
-        filterMode = FilterMode.Modalities
-        filters = filters.copy(studioSlugs = emptySet(), locationIds = emptySet())
-        onFiltersChanged()
-    }
-
-    /** Toggle a modality category (by slug) in the Modalities selection.
-     *  Asserts Modalities mode (only reachable from that panel). */
+    /** Toggle a modality category (by slug) in the overlay selection. Does NOT
+     *  touch the studio/location scope — modalities AND on top of it. */
     fun toggleModality(slug: String) {
-        filterMode = FilterMode.Modalities
         selectedModalitySlugs = if (slug in selectedModalitySlugs) {
             selectedModalitySlugs - slug
         } else {
@@ -420,22 +411,33 @@ class ScheduleViewModel(
         onFiltersChanged()
     }
 
-    /** Enter Custom (Filter) mode — reveal the accordion for manual multi-select.
-     *  Keeps the current selection (empty after Favorites/All-Studios cleared it).
-     *  No-op (and no refetch) when already in Custom mode. */
-    fun enterFilterMode() {
-        if (filterMode == FilterMode.Custom) return
-        filterMode = FilterMode.Custom
-        selectedModalitySlugs = emptySet()
+    /** Remove a modality overlay (chip ×). */
+    fun removeModality(slug: String) {
+        if (slug !in selectedModalitySlugs) return
+        selectedModalitySlugs = selectedModalitySlugs - slug
         onFiltersChanged()
     }
 
-    /** Toggle a whole studio in the Custom selection. Selecting it drops its
-     *  individual location picks (redundant). Only reachable from the Custom-mode
-     *  accordion, so it asserts Custom mode. */
+    /** Set the time-of-day overlay (preset or custom range). AND's onto the
+     *  scope + modalities. */
+    fun setTimeFilter(filter: TimeFilter) {
+        if (timeFilter == filter) return
+        timeFilter = filter
+        onFiltersChanged()
+    }
+
+    /** Remove the time overlay (chip ×). */
+    fun clearTimeFilter() {
+        if (timeFilter == null) return
+        timeFilter = null
+        onFiltersChanged()
+    }
+
+    /** Toggle a whole studio in the All-Studios subset. Selecting it drops its
+     *  individual location picks (redundant). Implies All-Studios scope; keeps
+     *  the overlays. */
     fun toggleStudioWhole(slug: String) {
-        filterMode = FilterMode.Custom
-        selectedModalitySlugs = emptySet()
+        scope = ScopeMode.AllStudios
         val locationIdsForStudio = catalog()[slug].orEmpty().toSet()
         filters = if (slug in filters.studioSlugs) {
             filters.copy(studioSlugs = filters.studioSlugs - slug)
@@ -452,8 +454,7 @@ class ScheduleViewModel(
      *  - With the whole studio selected → narrow: studio off, this location on.
      *  - Selecting the last unselected location PROMOTES to a whole-studio pick. */
     fun toggleLocation(slug: String, id: Int) {
-        filterMode = FilterMode.Custom
-        selectedModalitySlugs = emptySet()
+        scope = ScopeMode.AllStudios
         val allLocationIds = catalog()[slug].orEmpty().toSet()
         filters = when {
             slug in filters.studioSlugs -> filters.copy(
@@ -486,11 +487,9 @@ class ScheduleViewModel(
     private fun onFiltersChanged() {
         refreshingFilters = true
         telemetry.scheduleFilterChanged(
-            mode = when (filterMode) {
-                FilterMode.Favorites -> "favorites"
-                FilterMode.AllStudios -> "all"
-                FilterMode.Modalities -> "modalities"
-                FilterMode.Custom -> "custom"
+            mode = when (scope) {
+                ScopeMode.Favorites -> "favorites"
+                ScopeMode.AllStudios -> "all"
             },
             studioCount = filters.studioSlugs.size,
             locationCount = filters.locationIds.size,
@@ -519,6 +518,8 @@ class ScheduleViewModel(
             val targetDate = if (selectedDate in newDays) selectedDate else today
             val locationIds = effectiveLocationIds()
             val categorySlugs = effectiveCategorySlugs()
+            val timeGte = timeFilter?.startGte
+            val timeLte = timeFilter?.startLte
             val (overview, page) = coroutineScope {
                 val overviewDeferred = async {
                     api.fetchOverview(
@@ -527,6 +528,8 @@ class ScheduleViewModel(
                         studioSlugs = null,
                         locationIds = locationIds,
                         categorySlugs = categorySlugs,
+                        startTimeGte = timeGte,
+                        startTimeLte = timeLte,
                     )
                 }
                 val pageDeferred = async {
@@ -535,6 +538,8 @@ class ScheduleViewModel(
                         studioSlugs = null,
                         locationIds = locationIds,
                         categorySlugs = categorySlugs,
+                        startTimeGte = timeGte,
+                        startTimeLte = timeLte,
                     )
                 }
                 overviewDeferred.await() to pageDeferred.await()
@@ -603,6 +608,8 @@ class ScheduleViewModel(
                     studioSlugs = null,
                     locationIds = effectiveLocationIds(),
                     categorySlugs = effectiveCategorySlugs(),
+                    startTimeGte = timeFilter?.startGte,
+                    startTimeLte = timeFilter?.startLte,
                 )
                 // Filters/refresh moved on while this was in flight — the
                 // settled refetch owns the day caches now.
@@ -631,26 +638,20 @@ class ScheduleViewModel(
      *  Null ⇒ send no location filter (show all). `studio_slug` is never sent
      *  (the server ANDs the two params), so a mixed multi-studio set must be
      *  expressed as locations only. */
-    private fun effectiveLocationIds(): List<Int>? = when (filterMode) {
-        FilterMode.Favorites ->
+    private fun effectiveLocationIds(): List<Int>? = when (scope) {
+        ScopeMode.Favorites ->
             favoritesRepository.favorites.value
                 ?.expandedLocationIds()
                 ?.takeIf { it.isNotEmpty() }
-        FilterMode.AllStudios -> null
-        // Modalities narrows by genre across all studios — no location filter.
-        FilterMode.Modalities -> null
-        FilterMode.Custom ->
+        ScopeMode.AllStudios ->
             expandSelectionToLocationIds(filters.studioSlugs, filters.locationIds, catalog())
                 .takeIf { it.isNotEmpty() }
     }
 
-    /** The category-slug whitelist to send (repeated `category` param).
-     *  Non-null only in Modalities mode with at least one pick; null ⇒ no
-     *  category narrowing. */
+    /** The category-slug whitelist to send (repeated `category` param). Applies
+     *  as an overlay regardless of scope; null ⇒ no category narrowing. */
     private fun effectiveCategorySlugs(): List<String>? =
-        selectedModalitySlugs
-            .takeIf { filterMode == FilterMode.Modalities && it.isNotEmpty() }
-            ?.toList()
+        selectedModalitySlugs.takeIf { it.isNotEmpty() }?.toList()
 
     /** Best-effort fetch of the member's live bookings into [bookedSessions]
      *  (sessionId → status), for the row "already booked" pill. TOLERATES
@@ -703,19 +704,6 @@ class ScheduleViewModel(
                 f.locations.sortedBy { it.studioName }
                     .map { FavoriteEntry(name = it.studioName, detail = studioLocationLabel(it.studioName, it.name)) }
         } ?: emptyList()
-        val studioNamesBySlug = overviewStudios.associate { it.slug to it.name }
-        val locationStudioSlugById = overviewStudios
-            .flatMap { studio -> studio.locations.map { it.id to studio.slug } }
-            .toMap()
-        val summary = filterSummary(
-            filterMode = filterMode,
-            selectedStudioSlugs = filters.studioSlugs,
-            selectedLocationIds = filters.locationIds,
-            studioNamesBySlug = studioNamesBySlug,
-            locationStudioSlugById = locationStudioSlugById,
-            selectedModalities = selectedModalitySlugs,
-        )
-
         _uiState.value = ScheduleUiState.Success(
             days = days,
             selectedDate = selectedDate,
@@ -723,8 +711,8 @@ class ScheduleViewModel(
             refreshingFilters = refreshingFilters,
             filterStudios = filterStudios,
             filters = filters,
-            filterSummary = summary,
-            filterMode = filterMode,
+            scope = scope,
+            timeFilter = timeFilter,
             hasFavorites = favorites?.isEmpty() == false,
             favoritesKnown = favorites != null,
             favoriteEntries = favoriteEntries,

@@ -41,58 +41,39 @@ class ScheduleFilterTest {
         assertEquals(listOf(11), expandSelectionToLocationIds(setOf("ghost"), setOf(11), catalog))
     }
 
-    // ── filterSummary ──────────────────────────────────────────────────────
+    // ── time filter ────────────────────────────────────────────────────────
 
-    private val names = mapOf("barrys" to "Barry's", "yo-bk" to "YO BK")
-    private val locStudio = mapOf(1 to "barrys", 2 to "barrys", 10 to "yo-bk", 11 to "yo-bk")
-
-    private fun summary(
-        mode: FilterMode,
-        studios: Set<String> = emptySet(),
-        locations: Set<Int> = emptySet(),
-        modalities: Set<String> = emptySet(),
-    ) = filterSummary(mode, studios, locations, names, locStudio, modalities)
-
-    @Test fun `favorites mode reads Favorites`() {
-        assertEquals("Favorites", summary(FilterMode.Favorites))
+    @Test fun `formatTime12h converts 24h to friendly 12h`() {
+        assertEquals("6:00 AM", formatTime12h("06:00"))
+        assertEquals("12:00 PM", formatTime12h("12:00"))
+        assertEquals("6:00 PM", formatTime12h("18:00"))
+        assertEquals("12:00 AM", formatTime12h("00:00"))
+        assertEquals("9:30 PM", formatTime12h("21:30"))
     }
 
-    @Test fun `all-studios mode reads All Studios`() {
-        assertEquals("All Studios", summary(FilterMode.AllStudios))
+    @Test fun `presets carry the expected NY bounds`() {
+        assertEquals(null to "11:59", TimePreset.Morning.startGte to TimePreset.Morning.startLte)
+        assertEquals("12:00" to "16:59", TimePreset.Afternoon.startGte to TimePreset.Afternoon.startLte)
+        assertEquals("17:00" to null, TimePreset.Evening.startGte to TimePreset.Evening.startLte)
     }
 
-    @Test fun `custom mode with nothing selected reads Filter`() {
-        assertEquals("Filter", summary(FilterMode.Custom))
+    @Test fun `preset toFilter carries label + bounds`() {
+        val f = TimePreset.Evening.toFilter()
+        assertEquals("Evening", f.label)
+        assertEquals("17:00", f.startGte)
+        assertEquals(null, f.startLte)
     }
 
-    @Test fun `custom one whole studio reads its name uppercased`() {
-        assertEquals("BARRY'S", summary(FilterMode.Custom, studios = setOf("barrys")))
+    @Test fun `custom range label reads both bounds`() {
+        assertEquals("6:00 PM – 9:00 PM", customTimeLabel("18:00", "21:00"))
+        assertEquals("After 6:00 AM", customTimeLabel("06:00", null))
+        assertEquals("Before 9:00 PM", customTimeLabel(null, "21:00"))
     }
 
-    @Test fun `custom one studio with two locations`() {
-        assertEquals("BARRY'S · 2 locations", summary(FilterMode.Custom, locations = setOf(1, 2)))
-    }
-
-    @Test fun `custom one studio with one location is singular`() {
-        assertEquals("BARRY'S · 1 location", summary(FilterMode.Custom, locations = setOf(1)))
-    }
-
-    @Test fun `custom multiple studios touched read N Studios`() {
-        assertEquals("2 Studios", summary(FilterMode.Custom, studios = setOf("barrys"), locations = setOf(10)))
-    }
-
-    @Test fun `modalities mode with none picked reads Modalities`() {
-        assertEquals("Modalities", summary(FilterMode.Modalities))
-    }
-
-    @Test fun `modalities mode with one pick is singular`() {
-        assertEquals("1 modality", summary(FilterMode.Modalities, modalities = setOf("Reformer")))
-    }
-
-    @Test fun `modalities mode with two picks is plural`() {
-        assertEquals(
-            "2 modalities",
-            summary(FilterMode.Modalities, modalities = setOf("Reformer", "Cycle")),
-        )
+    @Test fun `customTimeFilter builds label + bounds`() {
+        val f = customTimeFilter("18:00", "21:00")
+        assertEquals("18:00", f.startGte)
+        assertEquals("21:00", f.startLte)
+        assertEquals("6:00 PM – 9:00 PM", f.label)
     }
 }
