@@ -28,6 +28,7 @@ import arcana.composeapp.generated.resources.icon_refresh
 import arcana.composeapp.generated.resources.icon_settings
 import arcana.composeapp.generated.resources.icon_share
 import arcana.composeapp.generated.resources.icon_support
+import arcana.composeapp.generated.resources.icon_fullscreen
 import arcana.composeapp.generated.resources.icon_swap
 import arcana.composeapp.generated.resources.icon_user
 import org.jetbrains.compose.resources.DrawableResource
@@ -64,6 +65,7 @@ object ArcanaIcons {
     val Bookmark: DrawableResource get() = Res.drawable.icon_bookmark
     val Support: DrawableResource get() = Res.drawable.icon_support
     val Swap: DrawableResource get() = Res.drawable.icon_swap
+    val Expand: DrawableResource get() = Res.drawable.icon_fullscreen
 }
 
 /**
