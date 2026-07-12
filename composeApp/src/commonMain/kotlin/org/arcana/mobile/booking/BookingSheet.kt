@@ -18,6 +18,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,11 +37,13 @@ import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.ArcanaDropdownField
+import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Heading3
+import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 
@@ -66,6 +72,7 @@ fun BookingSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var spotMapExpanded by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Stone) {
         // Scrollable so tall content (e.g. a big spot grid + the studio-visit
         // prompt + CONFIRM) is always reachable — never clipped off the bottom.
@@ -94,9 +101,28 @@ fun BookingSheet(
                 Caption(session.location.studio.name, size = 12, color = Ash)
                 if (requiresSpot) {
                     Spacer(Modifier.height(16.dp))
-                    Overline("Pick your spot", size = 11, color = Graphite)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Overline("Pick your spot", size = 11, color = Graphite, modifier = Modifier.weight(1f))
+                        // Expand into the full-screen zoomable map — only when a map
+                        // will actually render (grid studios with coordinates).
+                        if (shouldUseMap(session.spots, session.template.spotSelectionMode)) {
+                            IconCircle(
+                                icon = ArcanaIcons.Expand,
+                                diameter = 32,
+                                iconSize = 16,
+                                borderColor = Mist,
+                                contentColor = Wood,
+                                onClick = { spotMapExpanded = true },
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
-                    SpotPicker(spots = session.spots, selected = selectedSpot, onSelect = onSelectSpot)
+                    SpotSelector(
+                        spots = session.spots,
+                        selectionMode = session.template.spotSelectionMode,
+                        selected = selectedSpot,
+                        onSelect = onSelectSpot,
+                    )
                 }
                 Spacer(Modifier.height(16.dp))
                 val creditLine = creditsRemaining?.let { "This uses 1 of $it credits" } ?: "This uses 1 credit"
@@ -140,6 +166,14 @@ fun BookingSheet(
                     } else null,
                 )
             }
+        }
+        if (spotMapExpanded) {
+            SpotMapFullScreen(
+                spots = session.spots,
+                selected = selectedSpot,
+                onSelect = { onSelectSpot(it); spotMapExpanded = false },
+                onClose = { spotMapExpanded = false },
+            )
         }
     }
 }
