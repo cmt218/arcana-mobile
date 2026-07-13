@@ -114,8 +114,8 @@ android {
         applicationId = "org.arcana.mobile"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.0.5"
 
         // Client-safe analytics keys, embedded for runtime SDK init (see
         // analytics/ in androidMain). Blank by default — init no-ops when empty.
