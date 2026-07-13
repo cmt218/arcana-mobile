@@ -119,6 +119,21 @@ class Telemetry(
 
     // ---- Signup funnel ----------------------------------------------------
 
+    /** The onboarding survey (August cohort+) rendered with a valid token —
+     *  the funnel step BEFORE signup_started (the claim screen). */
+    fun signupSurveyStarted() = track(Events.SIGNUP_SURVEY_STARTED)
+
+    fun signupSurveySubmitted(answeredCount: Int) =
+        track(Events.SIGNUP_SURVEY_SUBMITTED, mapOf("answered_count" to answeredCount))
+
+    fun signupSurveyFailed(reason: String, statusCode: Int? = null) =
+        track(Events.SIGNUP_SURVEY_FAILED, mapOf("reason" to reason, "status_code" to statusCode))
+
+    /** Member used the "Continue anyway" escape after a failed submit — the
+     *  survey never blocks a paid member's signup. */
+    fun signupSurveySkipped(reason: String) =
+        track(Events.SIGNUP_SURVEY_SKIPPED, mapOf("reason" to reason))
+
     fun signupStarted(source: String = "deep_link") =
         track(Events.SIGNUP_STARTED, mapOf("source" to source))
 
@@ -367,6 +382,11 @@ class Telemetry(
         const val SCHEDULE_LOAD_MORE = "schedule_load_more"
         const val SCHEDULE_FILTER_CHANGED = "schedule_filter_changed"
 
+        const val SIGNUP_SURVEY_STARTED = "signup_survey_started"
+        const val SIGNUP_SURVEY_SUBMITTED = "signup_survey_submitted"
+        const val SIGNUP_SURVEY_FAILED = "signup_survey_failed"
+        const val SIGNUP_SURVEY_SKIPPED = "signup_survey_skipped"
+
         const val SIGNUP_STARTED = "signup_started"
         const val SIGNUP_SUBMITTED = "signup_submitted"
         const val SIGNUP_FAILED = "signup_failed"
@@ -415,5 +435,6 @@ class Telemetry(
         const val AUTH = "Auth"
         const val PASSWORD_RESET_REQUEST = "PasswordResetRequest"
         const val SIGNUP = "SignupCompletion"
+        const val SIGNUP_SURVEY = "SignupSurvey"
     }
 }

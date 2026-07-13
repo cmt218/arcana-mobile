@@ -911,13 +911,16 @@ private fun ScopeToggle(
     onFavorites: () -> Unit,
     onAllStudios: () -> Unit,
 ) {
-    // No favorites → no toggle, just a static "All Studios" bar.
+    // No favorites → no toggle, just the "All Studios" bar. Still tappable:
+    // it opens/closes the studio accordion exactly like the toggle's segment
+    // (scope is already AllStudios, so onAllStudios just flips the panel).
     if (!hasFavorites) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .clip(CircleShape)
+                .clickable(onClick = onAllStudios)
                 .background(Ink)
                 .padding(vertical = 10.dp),
             contentAlignment = Alignment.Center,
