@@ -84,9 +84,6 @@ fun StudioAccordionCard(
             .border(1.dp, if (chosen) Ink else Mist, RoundedCornerShape(16.dp))
             .clickable(onClick = onToggleExpanded),
     ) {
-        if (chosen) {
-            DotField(modifier = Modifier.matchParentSize(), color = Lime, alpha = 0.08f, spacing = 14)
-        }
         Row(
             modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
