@@ -30,6 +30,9 @@ import org.arcana.mobile.studios.StudioSelectionViewModel
 import org.arcana.mobile.signup.CompleteSignupApi
 import org.arcana.mobile.signup.CompleteSignupCallable
 import org.arcana.mobile.signup.SignupCompletionViewModel
+import org.arcana.mobile.signup.SignupSurveyApi
+import org.arcana.mobile.signup.SignupSurveyCallable
+import org.arcana.mobile.signup.SignupSurveyViewModel
 import org.arcana.mobile.settings.DeveloperSettingsViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -54,6 +57,7 @@ val appModule = module {
     single<PasswordResetApi> { get<ArcanaApiClient>() }
     single { FavoritesRepository(get()) }
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
+    single<SignupSurveyCallable> { SignupSurveyApi(get()) }
     viewModel { AuthViewModel(get(), get()) }
     viewModel { (initialEmail: String) -> PasswordResetRequestViewModel(get(), initialEmail) }
     viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
@@ -67,6 +71,7 @@ val appModule = module {
     viewModel { DeveloperSettingsViewModel(get()) }
     viewModel { (sessionId: Int) -> ClassDetailViewModel(get(), sessionId, get()) }
     viewModel { (token: String) -> SignupCompletionViewModel(token, get(), get()) }
+    viewModel { (token: String) -> SignupSurveyViewModel(token, get(), get()) }
     viewModel { (sessionId: Int, spotsAvailable: Int, requiresSpot: Boolean, sessionStartIso: String, studioContext: BookingStudioContext) ->
         BookingViewModel(
             sessionId, spotsAvailable, requiresSpot,

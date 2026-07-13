@@ -51,6 +51,8 @@ import org.arcana.mobile.booking.MyBookingsScreen
 import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.signup.SignupCompletionScreen
 import org.arcana.mobile.signup.SignupCompletionViewModel
+import org.arcana.mobile.signup.SignupSurveyScreen
+import org.arcana.mobile.signup.SignupSurveyViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
 import org.arcana.mobile.theme.Stone
@@ -61,6 +63,14 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
 private const val RECOVERY_ATTEMPTED_KEY = "first_launch_recovery_attempted"
+
+/**
+ * SecureStorage key prefix marking the onboarding survey done for one signup
+ * token. Persisted (not just in-memory) so a member who finished the survey,
+ * backed out of claim-your-name, and re-tapped their email link goes straight
+ * to the claim screen — the survey is one-and-done per link.
+ */
+private const val SURVEY_DONE_KEY_PREFIX = "signup_survey_done:"
 
 /**
  * @param initialWelcomeToken token parsed from a welcome deep link by the platform
@@ -162,21 +172,51 @@ fun App(
                 MainScaffold()
             }
         } else if (welcome != null) {
-            // key = welcome recreates the VM if a different token arrives.
-            val signupVm = koinViewModel<SignupCompletionViewModel>(key = welcome) {
-                parametersOf(welcome)
+            // Survey-first signup (August cohort+): a NEW member answers the
+            // onboarding survey once, then claims their account. Existing July
+            // members buying August never receive a fresh signup link, so this
+            // flow only reaches genuinely new members.
+            val surveyDoneKey = SURVEY_DONE_KEY_PREFIX + welcome
+            var surveyDone by remember(welcome) {
+                mutableStateOf(secureStorage.load(surveyDoneKey) == "1")
             }
-            LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP) }
-            SignupCompletionScreen(
-                viewModel = signupVm,
-                onNavigateToLogin = {
-                    // "Log in instead" (expired/consumed link): clear the token,
-                    // notify, and fall back to AuthScreen.
-                    welcomeToken = null
-                    onWelcomeTokenConsumed()
-                },
-                // lockedEmail stays null until the server token-preview endpoint lands.
-            )
+            if (!surveyDone) {
+                val surveyVm = koinViewModel<SignupSurveyViewModel>(key = "survey-$welcome") {
+                    parametersOf(welcome)
+                }
+                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP_SURVEY) }
+                SignupSurveyScreen(
+                    viewModel = surveyVm,
+                    onDone = {
+                        // Persisted: re-tapping the email link later skips the
+                        // survey and lands straight on claim-your-name.
+                        secureStorage.save(surveyDoneKey, "1")
+                        surveyDone = true
+                    },
+                    onNavigateToLogin = {
+                        // "Log in" escape hatch: clear the token, notify, and
+                        // fall back to AuthScreen (mirrors the claim screen).
+                        welcomeToken = null
+                        onWelcomeTokenConsumed()
+                    },
+                )
+            } else {
+                // key = welcome recreates the VM if a different token arrives.
+                val signupVm = koinViewModel<SignupCompletionViewModel>(key = welcome) {
+                    parametersOf(welcome)
+                }
+                LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP) }
+                SignupCompletionScreen(
+                    viewModel = signupVm,
+                    onNavigateToLogin = {
+                        // "Log in instead" (expired/consumed link): clear the token,
+                        // notify, and fall back to AuthScreen.
+                        welcomeToken = null
+                        onWelcomeTokenConsumed()
+                    },
+                    // lockedEmail stays null until the server token-preview endpoint lands.
+                )
+            }
         } else {
             if (showPasswordReset) {
                 val resetVm = koinViewModel<PasswordResetRequestViewModel>(

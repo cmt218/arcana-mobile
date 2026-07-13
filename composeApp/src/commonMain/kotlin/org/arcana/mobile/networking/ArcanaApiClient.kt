@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.data.BookingDto
@@ -33,6 +34,7 @@ import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CompleteSignupRequest
 import org.arcana.mobile.data.SignupProfile
 import org.arcana.mobile.data.CompleteSignupResponse
+import org.arcana.mobile.data.SignupSurveyRequest
 import org.arcana.mobile.data.CreateConciergeRequest
 import org.arcana.mobile.data.CreateConciergeResponse
 import org.arcana.mobile.data.CreateBookingRequest
@@ -53,6 +55,7 @@ import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.data.TokenResponse
 import org.arcana.mobile.data.UpdateFavoritesRequest
 import org.arcana.mobile.signup.CompleteSignupResult
+import org.arcana.mobile.signup.SignupSurveyResult
 
 /** Raised by [ArcanaApiClient.login] for a non-2xx token response. [statusCode]
  * is the HTTP status — 401 means the email/password didn't match. */
@@ -160,6 +163,7 @@ class ArcanaApiClient(
                     !request.url.encodedPath.contains("token") &&
                         !request.url.encodedPath.contains("register") &&
                         !request.url.encodedPath.contains("complete-signup") &&
+                        !request.url.encodedPath.contains("signup-survey") &&
                         !request.url.encodedPath.contains("request-password-reset")
                 }
             }
@@ -235,6 +239,32 @@ class ArcanaApiClient(
             throw e
         } catch (e: Throwable) {
             CompleteSignupResult.NetworkError(e)
+        }
+    }
+
+    /**
+     * `POST /api/v1/beta/signup-survey` — the pre-claim onboarding survey.
+     * Token-gated but unauthenticated (no account exists yet); validating never
+     * consumes the token, so complete-signup still works afterwards.
+     */
+    suspend fun submitSignupSurvey(
+        token: String,
+        answers: JsonObject,
+    ): SignupSurveyResult {
+        return try {
+            val response = client.post(v1("beta/signup-survey")) {
+                contentType(ContentType.Application.Json)
+                setBody(SignupSurveyRequest(token = token, answers = answers))
+            }
+            when (response.status) {
+                HttpStatusCode.OK -> SignupSurveyResult.Success
+                HttpStatusCode.Gone -> SignupSurveyResult.TokenExpiredOrConsumed
+                else -> SignupSurveyResult.Other(response.status.value)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            SignupSurveyResult.NetworkError(e)
         }
     }
 
