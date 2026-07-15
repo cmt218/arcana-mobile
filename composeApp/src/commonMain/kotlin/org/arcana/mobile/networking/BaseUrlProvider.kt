@@ -2,30 +2,28 @@ package org.arcana.mobile.networking
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.arcana.mobile.analytics.Telemetry
+import org.arcana.mobile.analytics.classifyEnvironment
 import org.arcana.mobile.auth.SecureStorage
 
 /**
  * Persisted override for the API base URL.
  *
- * Pre-launch flow: the server runs locally on Cole's Mac and is exposed to
- * physical devices via Cloudflare quick tunnels (URLs that change on every
- * restart). Rather than rebuilding the app each time, the URL is editable at
- * runtime through the Developer Settings screen and persists across launches.
- *
- * The fallback default is platform-specific (see `defaultBaseUrl()` in the
- * platform actuals) — `10.0.2.2:8000` on Android (emulator loopback) and
- * `localhost:8000` on iOS (simulator). Physical devices always need an
- * override; the default is purely for local emulator / simulator dev.
- *
- * Post-launch: the platform defaults will move to the prod API hostname so
- * fresh installs work out of the box. See `arcana-mobile/CLAUDE.md` →
- * "Temporary debug treatment" for the cutover checklist.
+ * The fallback default is the PROD hostname (`https://api.arcana.fit`) on both
+ * platforms — see `defaultBaseUrl()` in the platform actuals — so a fresh
+ * install reaches prod with no setup. Local/dev work overrides it at runtime
+ * through the Developer Settings screen (the value persists across launches):
+ * `http://localhost:8000` on the iOS simulator, `http://10.0.2.2:8000` on the
+ * Android emulator, or a Cloudflare quick-tunnel URL on a physical device.
+ * Quick-tunnel URLs change on every `cloudflared` restart, which is why this
+ * runtime override exists rather than a rebuild.
  *
  * `ArcanaApiClient` calls [get] on every request, so URL changes apply to
  * the very next outbound call with no client recreation.
  */
 class BaseUrlProvider(
     private val storage: SecureStorage,
+    private val telemetry: Telemetry,
     val defaultUrl: String,
 ) {
 
@@ -33,6 +31,12 @@ class BaseUrlProvider(
 
     /** Observable for UI binding (Developer Settings shows the live value). */
     val current: StateFlow<String> = _current
+
+    init {
+        // Tag the analytics environment from the resolved base URL up front, so
+        // events are attributed to prod vs local/tunnel from the first one.
+        syncEnvironment()
+    }
 
     /** Read the current base URL — called per-request by `ArcanaApiClient`. */
     fun get(): String = _current.value
@@ -45,12 +49,21 @@ class BaseUrlProvider(
         }
         storage.save(KEY, normalized)
         _current.value = normalized
+        syncEnvironment()
     }
 
     /** Forget the override and fall back to [defaultUrl]. */
     fun reset() {
         storage.delete(KEY)
         _current.value = defaultUrl
+        syncEnvironment()
+    }
+
+    /** Re-derive and register the analytics `environment` from the current URL.
+     *  Called on construction and on every base-URL change so a dev override
+     *  (localhost / tunnel) re-tags subsequent events out of the prod metrics. */
+    private fun syncEnvironment() {
+        telemetry.setEnvironment(classifyEnvironment(_current.value))
     }
 
     /** True when an override is in effect (vs. the bundled default). */

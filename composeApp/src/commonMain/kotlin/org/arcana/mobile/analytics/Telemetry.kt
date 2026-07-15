@@ -57,6 +57,15 @@ class Telemetry(
         debugLog("▶ identify $memberId")  // id only — no PII in logs
     }
 
+    /** Register the analytics `environment` (prod/local/tunnel/other) as a
+     *  super-property on every subsequent event, so the perf dashboard can
+     *  exclude dev traffic. Driven by [org.arcana.mobile.networking.BaseUrlProvider]
+     *  whenever the API base URL is loaded or changed. */
+    fun setEnvironment(environment: String) {
+        analytics.setEnvironment(environment)
+        debugLog("▶ environment=$environment")
+    }
+
     /** Set/update which studios a member favorites, for cohort segmentation. */
     fun setFavoriteProfile(favoriteStudioCount: Int, favoriteStudios: List<String>) {
         analytics.setPersonProperties(
@@ -114,6 +123,73 @@ class Telemetry(
                 "studio_count" to studioCount,
                 "location_count" to locationCount,
                 "modality_count" to modalityCount,
+            ),
+        )
+
+    // ---- Performance & latency -------------------------------------------
+
+    /** One per HTTP call (via the ArcanaApiClient Ktor plugin). `serverMs` is
+     *  from the `X-Arcana-Server-Ms` header (null if absent); `networkMs` is the
+     *  derived `total − server`. `statusCode` 0 ⇒ the request never completed. */
+    fun apiRequest(
+        endpoint: String,
+        method: String,
+        statusCode: Int,
+        outcome: String,
+        totalMs: Long,
+        serverMs: Long?,
+        networkMs: Long?,
+        responseBytes: Long?,
+    ) = track(
+        Events.API_REQUEST,
+        mapOf(
+            "endpoint" to endpoint,
+            "method" to method,
+            "status_code" to statusCode,
+            "outcome" to outcome,
+            "total_ms" to totalMs,
+            "server_ms" to serverMs,
+            "network_ms" to networkMs,
+            "response_bytes" to responseBytes,
+        ),
+    )
+
+    /** Fired once per process when Home (or the auth screen) first renders. */
+    fun appStartCompleted(durationMs: Long, startType: String, authenticated: Boolean, splashMs: Long?) =
+        track(
+            Events.APP_START_COMPLETED,
+            mapOf(
+                "duration_ms" to durationMs,
+                "start_type" to startType,
+                "authenticated" to authenticated,
+                "splash_ms" to splashMs,
+            ),
+        )
+
+    /** A screen reached rendered content. `source` distinguishes a fresh entry
+     *  (cold_start/tab_switch) from an in-screen change (day_switch/filter/refresh). */
+    fun screenLoadCompleted(screen: String, source: String, durationMs: Long, outcome: String, sessionCount: Int?) =
+        track(
+            Events.SCREEN_LOAD_COMPLETED,
+            mapOf(
+                "screen" to screen,
+                "source" to source,
+                "duration_ms" to durationMs,
+                "outcome" to outcome,
+                "session_count" to sessionCount,
+            ),
+        )
+
+    /** Infinite-scroll pagination append completed. */
+    fun schedulePageLoaded(durationMs: Long, pageIndex: Int, sessionCount: Int, outcome: String, day: String) =
+        track(
+            Events.SCHEDULE_PAGE_LOADED,
+            mapOf(
+                "duration_ms" to durationMs,
+                "page_index" to pageIndex,
+                "session_count" to sessionCount,
+                "outcome" to outcome,
+                "day" to day,
             ),
         )
 
@@ -381,6 +457,11 @@ class Telemetry(
         const val SCHEDULE_DAY_CHANGED = "schedule_day_changed"
         const val SCHEDULE_LOAD_MORE = "schedule_load_more"
         const val SCHEDULE_FILTER_CHANGED = "schedule_filter_changed"
+
+        const val API_REQUEST = "api_request"
+        const val APP_START_COMPLETED = "app_start_completed"
+        const val SCREEN_LOAD_COMPLETED = "screen_load_completed"
+        const val SCHEDULE_PAGE_LOADED = "schedule_page_loaded"
 
         const val SIGNUP_SURVEY_STARTED = "signup_survey_started"
         const val SIGNUP_SURVEY_SUBMITTED = "signup_survey_submitted"

@@ -38,7 +38,7 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. Al
 - `iosMain/` — iOS `actual` implementations and `MainViewController` (wrapped by SwiftUI in `iosApp/`)
 - `commonTest/` — shared tests using `kotlin-test`
 
-**Platform abstraction pattern:** `Platform.kt` in `commonMain` declares an `expect interface`; `Platform.android.kt` and `Platform.ios.kt` provide `actual` implementations. Follow this pattern for any platform-divergent behavior. `getBaseUrl()` is an existing example — returns `http://10.0.2.2:8000` on Android (emulator host alias) and `http://localhost:8000` on iOS.
+**Platform abstraction pattern:** `Platform.kt` in `commonMain` declares an `expect interface`; `Platform.android.kt` and `Platform.ios.kt` provide `actual` implementations. Follow this pattern for any platform-divergent behavior. `defaultBaseUrl()` is an existing example — it currently returns `https://api.arcana.fit` on **both** platforms (the prod cutover is already done; it is NOT a localhost default). To run against a local server, override the base URL in Developer Settings (see "Temporary debug treatment").
 
 **Dependency injection:** Koin 4.x. `di/AppModule.kt` in `commonMain` defines all bindings. Koin is started at the platform entry point — `ArcanaApplication.onCreate()` on Android, `MainViewController()` on iOS — before any Compose code runs. Use `koinInject()` for values and `koinViewModel()` for ViewModels in composables.
 
@@ -137,7 +137,7 @@ These are pre-launch dev affordances that must be removed (or hardened) before p
 **1. Runtime API base URL override + Developer Settings screen.**
 - Files: `networking/BaseUrlProvider.kt`, `settings/DeveloperSettingsScreen.kt`, `settings/DeveloperSettingsViewModel.kt`, the entry-point link in `auth/AuthScreen.kt`'s footer.
 - Why it exists: pre-launch we run the server on Cole's Mac and expose it to physical devices via a Cloudflare *quick* tunnel. Quick-tunnel URLs change on every `cloudflared` restart, so rebuilding the app each time would be miserable. The override is editable at runtime via the Developer Settings overlay (reachable from the auth screen footer — so testers locked out of login because the default doesn't reach the server can fix it without first authenticating). The override persists in `SecureStorage` (Keychain on iOS, EncryptedSharedPreferences on Android).
-- Default fallback: platform-specific. Android `http://10.0.2.2:8000` (emulator loopback); iOS `http://localhost:8000` (simulator). Physical devices always need the override — the default just keeps emulator/simulator dev frictionless.
+- Default fallback: **`https://api.arcana.fit` on both platforms** — the prod cutover is already done (see `defaultBaseUrl()` in `Platform.android.kt` / `Platform.ios.kt`), so a fresh install (debug included) reaches prod with no setup. It is NOT a localhost default. To run any build against a local server you MUST set an override in Developer Settings: `http://localhost:8000` (iOS simulator), `http://10.0.2.2:8000` (Android emulator host-loopback alias), or a Cloudflare quick-tunnel URL (physical device). Debug builds permit cleartext to `localhost` / `10.0.2.2` for exactly that.
 
 **2. Server-side `*.trycloudflare.com` allowlist.**
 - File: `arcana-server/arcana/settings/dev.py` — `ALLOWED_HOSTS` includes `.trycloudflare.com` (wildcard) and a placeholder `api.arcana.fit`. Also sets `SECURE_PROXY_SSL_HEADER` because Cloudflare terminates TLS at the edge.
@@ -145,7 +145,7 @@ These are pre-launch dev affordances that must be removed (or hardened) before p
 
 **Cutover checklist when prod ships (probably alongside Phase 4 / Stripe or Phase 5 / booking):**
 
-- [ ] Flip the platform `defaultBaseUrl()` actuals to point at the prod hostname (currently `https://api.arcana.fit`). Test that a fresh install on a physical device works with no override set.
+- [x] Flip the platform `defaultBaseUrl()` actuals to point at the prod hostname. **DONE** — both `Platform.android.kt` and `Platform.ios.kt` return `https://api.arcana.fit`. A fresh install reaches prod with no override; local dev now requires an explicit Developer Settings override.
 - [ ] Decide on the future of the Developer Settings screen: either remove the auth-screen link entirely, gate the entire feature on a debug build flavor, or keep it as a "support" affordance for troubleshooting. The screen itself is self-contained — removing the AuthScreen entry point is sufficient to hide it from users.
 - [ ] Remove the `BaseUrlProvider` if the runtime override is no longer needed (also drop the `defaultUrl` constructor param and revert `ArcanaApiClient` to a static base URL).
 - [ ] In `arcana-server`, tighten `dev.py`'s `ALLOWED_HOSTS` (remove the `.trycloudflare.com` wildcard) once prod uses `prod.py` and tunnels aren't used for active dev.
@@ -199,3 +199,21 @@ Product analytics (PostHog) and crash/nonfatal reporting (Sentry) for both platf
 **Why not `sentry-kotlin-multiplatform`:** deliberately deferred. It would only improve iOS *Kotlin-uncaught-crash* stacks (a narrow gain — Android JVM stacks and iOS native stacks are already good), and it's still 0.x, unverified on Kotlin 2.3.0, and needs finicky SPM↔Kotlin/Native linking against our static-framework setup. The `CrashReporter` interface is the seam, so swapping later is localized — revisit when the SDK hits 1.0 / confirms our toolchain, or when an iOS Kotlin crash is genuinely hard to debug.
 
 **Verifying.** `commonTest/.../analytics/` has `FakeAnalytics`-backed regression tests that lock the taxonomy — add one when you add an event. Manual QA walkthrough: `docs/analytics-qa-checklist.md`. As always, compile **both** targets after touching `commonMain`.
+
+### Performance & latency instrumentation
+
+A perf-observability layer sits on top of the telemetry facade, feeding the **"Mobile Performance & Latency"** PostHog dashboard (project 439926, id 1849473). Spec/plan: `docs/superpowers/specs|plans/2026-07-14-mobile-performance-observability*`.
+
+**Events:**
+- **`api_request`** — emitted for EVERY HTTP call by `networking/PerfTimingPlugin.kt` (a Ktor client plugin on `ArcanaApiClient`), no per-call-site code. Carries `total_ms` (client round-trip), `server_ms` (from the `X-Arcana-Server-Ms` response header that arcana-server's `ServerTimingMiddleware` stamps), derived `network_ms = total − server`, `endpoint`, `outcome`, `status_code`, `response_bytes`.
+- **`app_start_completed`** — cold-start → first Home frame, via `analytics/AppStartTracker.kt` (`markStart()` at the platform entry points, `onFirstContent()` in `App.kt`). Fires once per process (`start_type=cold`; warm deferred).
+- **`screen_load_completed`** (`source` = cold_start/tab_switch/refresh/day_switch/filter) + **`schedule_page_loaded`** — fired from `ScheduleViewModel`. Reuses existing `class_viewed.load_ms` for class-detail latency.
+
+**Maintenance rules (so this stays sustainable):**
+- **New API endpoint** → add a `when` case to `analytics/ApiRequestMetrics.kt` `normalizeEndpoint(method, path)`, else it buckets as `other` on the dashboard (safe, but not individually visible). The FULL map is locked by `ApiRequestMetricsTest` — a rename fails the build. `other` is an intentional bounded fallback (auto-derived names would blow up cardinality on slug/uuid paths).
+- **New journey/timing event** → typed method on `Telemetry` + `Events` constant + a `PerformanceTelemetryTest`/`ScheduleTelemetryTest` assertion (same rule as all telemetry).
+- **New PostHog super-property** → register it AND **re-register it after `reset()`** in BOTH `PostHogAnalytics.kt` and `SwiftAnalytics.swift` — `reset()` (fired on logout) clears super-properties, so anything not re-registered is lost until the next cold start. `platform` and `environment` already do this.
+
+**`environment` super-property** (`analytics/AppEnvironment.kt` `classifyEnvironment`): `prod` (`api.arcana.fit`) / `local` (localhost/127.0.0.1/10.0.2.2) / `tunnel` (`*.trycloudflare.com`) / `other`, derived from the resolved base-URL host. Owned by `BaseUrlProvider` (set at init + on every override change). The dashboard is filtered to `environment='prod'`, so **local/tunnel dev traffic is excluded** — your simulator/emulator testing never pollutes the prod metrics.
+
+**iOS boolean gotcha:** a Kotlin `Boolean` in an event-property map boxes to `KotlinBoolean` crossing into Swift and is silently dropped by PostHog's serializer, so `SwiftAnalytics.bridge()` coerces it to a native `Bool`. Any new impl of `Analytics` on iOS must keep that coercion or boolean properties vanish on iOS only.

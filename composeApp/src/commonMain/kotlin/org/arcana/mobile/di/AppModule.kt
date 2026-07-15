@@ -46,7 +46,7 @@ val appModule = module {
     single { TokenStorage(get()) }
     // Default URL is platform-specific (emulator loopback on Android,
     // localhost on iOS). Physical devices override via Developer Settings.
-    single { BaseUrlProvider(get(), defaultBaseUrl()) }
+    single { BaseUrlProvider(get(), get(), defaultBaseUrl()) }
     single { ArcanaApiClient(get(), get(), get()) }
     single<BookingApi> { get<ArcanaApiClient>() }
     single<MembershipApi> { get<ArcanaApiClient>() }
