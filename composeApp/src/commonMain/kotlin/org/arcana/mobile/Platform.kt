@@ -7,16 +7,16 @@ interface Platform {
 expect fun getPlatform(): Platform
 
 /**
- * Platform-specific fallback base URL used when no override is persisted
- * via Developer Settings (see [org.arcana.mobile.networking.BaseUrlProvider]).
+ * Fallback base URL used when no override is persisted via Developer Settings
+ * (see [org.arcana.mobile.networking.BaseUrlProvider]).
  *
- * Pre-launch: defaults to a localhost-style URL so emulator / simulator dev
- * works without any setup. Physical devices need an override (paste the
- * Cloudflare quick-tunnel URL in the Developer Settings screen).
- *
- * Post-launch: this default will move to the prod API hostname so that fresh
- * installs work out of the box. See `arcana-mobile/CLAUDE.md` → "Temporary
- * debug treatment" for the cutover checklist.
+ * Returns the PROD hostname (`https://api.arcana.fit`) on BOTH platforms — the
+ * pre-launch localhost default has already been cut over, so a fresh install
+ * (debug or release) talks to prod out of the box. To point a build at a server
+ * on your Mac, set an override in the Developer Settings screen: `http://localhost:8000`
+ * on the iOS simulator, `http://10.0.2.2:8000` on the Android emulator (its host
+ * loopback alias), or a Cloudflare quick-tunnel URL on a physical device. Debug
+ * builds permit cleartext to `localhost` / `10.0.2.2` for exactly that.
  */
 expect fun defaultBaseUrl(): String
 

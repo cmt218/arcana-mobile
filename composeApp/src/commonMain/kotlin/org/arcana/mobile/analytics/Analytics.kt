@@ -25,6 +25,11 @@ interface Analytics {
     /** Set/update person properties on the currently identified member (`$set`). */
     fun setPersonProperties(properties: Map<String, Any?>)
 
+    /** Register the `environment` super-property (prod/local/tunnel/other) sent on
+     *  every subsequent event, so dashboards can filter to prod-only. The impl
+     *  must re-register it after [reset] (reset clears super-properties). */
+    fun setEnvironment(environment: String)
+
     /** Detach from the current member (call on logout / forced logout). */
     fun reset()
 }

@@ -97,11 +97,23 @@ class ArcanaApiClient(
 
     // Re-read the URL per-request so Developer Settings edits apply to the
     // very next outbound call without recreating the HttpClient.
+    //
+    // Telemetry: every call below auto-emits an `api_request` event via
+    // PerfTimingPlugin (no per-call-site code). When you ADD an endpoint, add a
+    // case to `analytics.normalizeEndpoint` so it's tracked individually on the
+    // Mobile Performance dashboard — otherwise it buckets as `other`. See
+    // arcana-mobile CLAUDE.md → "Telemetry" → performance instrumentation.
     private fun v1(path: String) = "${baseUrlProvider.get()}/api/v1/$path"
 
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
+        }
+        install(PerfTimingPlugin) {
+            telemetry = this@ArcanaApiClient.telemetry
+            // 100% during beta (tiny volume); dial down here if we approach
+            // the PostHog free-tier ceiling.
+            sampleRate = 1.0
         }
         install(Auth) {
             bearer {

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.ktor.client.plugins.ResponseException
 import kotlin.time.Clock
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
@@ -231,7 +232,7 @@ class ScheduleViewModel(
             filterEpoch
                 .drop(1)
                 .debounce(FILTER_DEBOUNCE_MS)
-                .collectLatest { refetchForFilters() }
+                .collectLatest { refetchForFilters("filter") }
         }
         // Bookings ride their OWN job, independent of the schedule fetch: a
         // slow or failing /bookings/me call must never block (or break) the
@@ -247,7 +248,7 @@ class ScheduleViewModel(
             val favorites = favoritesRepository.refresh()
             if (favorites != null && !favorites.isEmpty()) scope = ScopeMode.Favorites
             lastAppliedFavorites = favorites
-            refetchForFilters()
+            refetchForFilters("cold_start")
             // React to favorites saved/cleared in the manager while this VM is
             // on the back stack. Re-evaluate only when NOT in Custom mode —
             // a member actively building a manual filter must not be disrupted.
@@ -273,7 +274,7 @@ class ScheduleViewModel(
     fun reload() {
         viewModelScope.launch {
             _uiState.value = ScheduleUiState.Loading
-            refetchForFilters()
+            refetchForFilters("cold_start")
         }
     }
 
@@ -289,7 +290,7 @@ class ScheduleViewModel(
                 // class-detail sheet (or cancelled elsewhere) shows after a
                 // pull-to-refresh. Best-effort — failure leaves the map intact.
                 refreshBookedSessions()
-                refetchForFilters()
+                refetchForFilters("refresh")
             } finally {
                 _isRefreshing.value = false
             }
@@ -313,6 +314,7 @@ class ScheduleViewModel(
      *  page 1 of that day if it isn't cached for the current filter set. */
     fun selectDay(date: LocalDate, method: String = "chip_tap") {
         if (date != selectedDate) {
+            val switchMark = TimeSource.Monotonic.markNow()
             val previous = selectedDate
             val today = Clock.System.todayIn(ScheduleTimeZone)
             telemetry.scheduleDayChanged(
@@ -322,6 +324,16 @@ class ScheduleViewModel(
             )
             selectedDate = date
             publish()
+            // Felt latency of the swipe. For a cached day this is a client-side
+            // re-bucket (near-0, proving swipes are instant); an uncached day's
+            // network fetch shows up separately as api_request / a page load.
+            telemetry.screenLoadCompleted(
+                screen = Telemetry.Screens.SCHEDULE,
+                source = "day_switch",
+                durationMs = switchMark.elapsedNow().inWholeMilliseconds,
+                outcome = "success",
+                sessionCount = dayStates[date]?.sessions?.size,
+            )
         }
         // Falls through on a same-day re-tap too: that's the natural retry
         // gesture after a failed page-1 fetch. ensureSelectedDayLoaded
@@ -336,6 +348,7 @@ class ScheduleViewModel(
         val date = selectedDate
         val day = dayStates[date] ?: return
         if (!day.loaded || day.nextCursor == null || day.loadingMore) return
+        val pageMark = TimeSource.Monotonic.markNow()
         dayStates = dayStates + (date to day.copy(loadingMore = true))
         publish()
         val generation = fetchGeneration
@@ -365,6 +378,13 @@ class ScheduleViewModel(
                 val pageIndex = (loadMorePageByDay[date] ?: 1) + 1
                 loadMorePageByDay[date] = pageIndex
                 telemetry.scheduleLoadMore(pageIndex = pageIndex, day = date.toString())
+                telemetry.schedulePageLoaded(
+                    durationMs = pageMark.elapsedNow().inWholeMilliseconds,
+                    pageIndex = pageIndex,
+                    sessionCount = page.toSessions().size,
+                    outcome = "success",
+                    day = date.toString(),
+                )
                 publish()
             } catch (e: CancellationException) {
                 throw e
@@ -510,8 +530,9 @@ class ScheduleViewModel(
      * (they were fetched under the old filters) and the generation bumps so
      * stale in-flight page fetches discard themselves.
      */
-    private suspend fun refetchForFilters() {
+    private suspend fun refetchForFilters(source: String = "cold_start") {
         val generation = ++fetchGeneration
+        val loadMark = TimeSource.Monotonic.markNow()
         try {
             val today = Clock.System.todayIn(ScheduleTimeZone)
             val newDays = (0 until WINDOW_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
@@ -564,6 +585,13 @@ class ScheduleViewModel(
             )
             refreshingFilters = false
             publish()
+            telemetry.screenLoadCompleted(
+                screen = Telemetry.Screens.SCHEDULE,
+                source = source,
+                durationMs = loadMark.elapsedNow().inWholeMilliseconds,
+                outcome = "success",
+                sessionCount = page.toSessions().size,
+            )
             // If the member switched days while this refetch was in flight,
             // the page we fetched isn't the selected one — pull it now (under
             // the new generation).
@@ -576,10 +604,24 @@ class ScheduleViewModel(
             // Same staleness rule as the success path: a stale refetch's
             // failure must not clear a newer mutation's dim or emit Error
             // over newer state.
-            if (generation == fetchGeneration) applyRefetchFailure("server error $code")
+            if (generation == fetchGeneration) {
+                applyRefetchFailure("server error $code")
+                telemetry.screenLoadCompleted(
+                    screen = Telemetry.Screens.SCHEDULE, source = source,
+                    durationMs = loadMark.elapsedNow().inWholeMilliseconds,
+                    outcome = "error", sessionCount = null,
+                )
+            }
         } catch (e: Exception) {
             logWarning("ScheduleViewModel", e.message ?: "Unknown error")
-            if (generation == fetchGeneration) applyRefetchFailure("server error")
+            if (generation == fetchGeneration) {
+                applyRefetchFailure("server error")
+                telemetry.screenLoadCompleted(
+                    screen = Telemetry.Screens.SCHEDULE, source = source,
+                    durationMs = loadMark.elapsedNow().inWholeMilliseconds,
+                    outcome = "error", sessionCount = null,
+                )
+            }
         }
     }
 

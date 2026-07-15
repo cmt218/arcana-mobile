@@ -45,6 +45,9 @@ fun MainViewController(
     analytics: Analytics? = null,
     crashReporter: CrashReporter? = null,
 ): UIViewController {
+    // Mark the process-start reference as early as we control it, for the
+    // cold-start → Home measurement (see AppStartTracker).
+    org.arcana.mobile.analytics.AppStartTracker.markStart()
     // Guard against a double startKoin if the VC is ever recreated.
     if (KoinPlatformTools.defaultContext().getOrNull() == null) {
         val a = analytics ?: NoopAnalytics

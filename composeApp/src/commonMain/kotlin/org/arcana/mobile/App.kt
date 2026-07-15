@@ -166,6 +166,9 @@ fun App(
         // timing can't regress: worst case (slow network) is exactly today's behavior.
         val welcome = welcomeToken
         if (isAuthenticated) {
+            LaunchedEffect(Unit) {
+                org.arcana.mobile.analytics.AppStartTracker.onFirstContent(telemetry, authenticated = true)
+            }
             CompositionLocalProvider(
                 LocalViewModelStoreOwner provides sessionStoreOwner
             ) {
@@ -231,6 +234,9 @@ fun App(
                 )
             } else {
                 LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }
+                LaunchedEffect(Unit) {
+                    org.arcana.mobile.analytics.AppStartTracker.onFirstContent(telemetry, authenticated = false)
+                }
                 AuthScreen(
                     viewModel = authVm,
                     onForgotPassword = { email ->

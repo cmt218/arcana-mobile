@@ -8,6 +8,7 @@ class FakeAnalytics : Analytics {
     val screens = mutableListOf<String>()
     var identifiedId: String? = null
     var resetCount = 0
+    var lastEnvironment: String? = null
     val personProperties = mutableListOf<Map<String, Any?>>()
 
     override fun capture(event: String, properties: Map<String, Any?>) {
@@ -16,6 +17,7 @@ class FakeAnalytics : Analytics {
     override fun screen(name: String, properties: Map<String, Any?>) { screens += name }
     override fun identify(distinctId: String, properties: Map<String, Any?>) { identifiedId = distinctId }
     override fun setPersonProperties(properties: Map<String, Any?>) { personProperties += properties }
+    override fun setEnvironment(environment: String) { lastEnvironment = environment }
     override fun reset() { resetCount++ }
 
     fun names(): List<String> = events.map { it.name }
