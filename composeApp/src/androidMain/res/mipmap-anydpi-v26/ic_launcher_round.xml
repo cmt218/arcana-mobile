@@ -3,6 +3,6 @@
     <!-- Same brand layers as ic_launcher.xml — this round variant previously
          still pointed at the template drawables (the green robot/grid the Pixel
          launcher was showing). -->
-    <background android:drawable="@mipmap/ic_launcher_bg" />
+    <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_fg" />
 </adaptive-icon>

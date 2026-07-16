@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Standard two-layer adaptive icon: gradient background + the 'a' glyph as
+    <!-- Standard two-layer adaptive icon: solid Moss background + the 'a' glyph as
          a padded foreground (sits in the safe zone, so launchers don't oversize
          it when masking/rounding). -->
-    <background android:drawable="@mipmap/ic_launcher_bg" />
+    <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_fg" />
 </adaptive-icon>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand Moss. Keep in lockstep with `Moss` in theme/AppColors.kt. -->
+    <color name="ic_launcher_background">#283B15</color>
+</resources>
