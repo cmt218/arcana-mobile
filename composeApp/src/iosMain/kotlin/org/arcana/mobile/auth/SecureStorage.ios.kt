@@ -23,6 +23,7 @@ import platform.Foundation.NSData
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
+import platform.Security.errSecItemNotFound
 import platform.Security.errSecSuccess
 import platform.Security.kSecAttrAccessible
 import platform.Security.kSecAttrAccessibleWhenUnlockedThisDeviceOnly
@@ -49,7 +50,15 @@ actual class SecureStorage actual constructor() {
             val query = buildQuery(key, capacity = 5)
             CFDictionaryAddValue(query, kSecValueData, cfData)
             CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
-            SecItemAdd(query, null)
+            // This add is NOT atomic with the delete above: if it fails, the old
+            // value is already gone and the slot is left empty. The status was
+            // previously discarded, which is why a lost token was invisible.
+            // Report it (behavior unchanged — a failed write still silently
+            // leaves no value; fixing that is the follow-up change).
+            val status = SecItemAdd(query, null)
+            if (status != errSecSuccess) {
+                SecureStorageDiagnostics.report(SecureStorageDiagnostics.Op.SAVE, key, status)
+            }
             CFRelease(cfData)
             CFRelease(query)
         }
@@ -67,7 +76,24 @@ actual class SecureStorage actual constructor() {
             @Suppress("UNCHECKED_CAST")
             val status = SecItemCopyMatching(query, resultRef.ptr as kotlinx.cinterop.CValuesRef<CFTypeRefVar>)
             CFRelease(query)
-            if (status != errSecSuccess) return@memScoped null
+            if (status != errSecSuccess) {
+                // Every failure still collapses to null for the caller (behavior
+                // unchanged), but record WHICH failure it was. This is the field
+                // that separates "device locked, token is fine"
+                // (errSecInteractionNotAllowed) from "genuinely signed out"
+                // (errSecItemNotFound) — indistinguishable until now.
+                SecureStorageDiagnostics.report(
+                    op = SecureStorageDiagnostics.Op.LOAD,
+                    key = key,
+                    status = status,
+                    // errSecItemNotFound just means nothing was ever written here
+                    // (signed-out member, or no dev base-URL override) — normal, so
+                    // not its own event. Still recorded, so a forced logout can say
+                    // "genuinely absent" rather than "unreadable".
+                    notable = status != errSecItemNotFound,
+                )
+                return@memScoped null
+            }
             val nsData = resultRef.value ?: return@memScoped null
             val length = nsData.length.toInt()
             if (length == 0) return@memScoped null
@@ -81,7 +107,12 @@ actual class SecureStorage actual constructor() {
 
     actual fun delete(key: String) {
         val query = buildQuery(key, capacity = 3)
-        SecItemDelete(query)
+        val status = SecItemDelete(query)
+        // errSecItemNotFound is the normal "nothing to remove" case — save()
+        // always deletes first — so reporting it would be pure noise.
+        if (status != errSecSuccess && status != errSecItemNotFound) {
+            SecureStorageDiagnostics.report(SecureStorageDiagnostics.Op.DELETE, key, status)
+        }
         CFRelease(query)
     }
 

@@ -2,6 +2,7 @@ package org.arcana.mobile.di
 
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.SecureStorage
+import org.arcana.mobile.auth.SecureStorageDiagnostics
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.auth.PasswordResetRequestViewModel
@@ -41,7 +42,17 @@ val appModule = module {
     // Analytics + CrashReporter are bound by the per-platform module (Android in
     // ArcanaApplication, iOS in MainViewController) so Telemetry resolves the real
     // PostHog/Sentry-backed instances.
-    single { Telemetry(get(), get()) }
+    single {
+        Telemetry(get(), get()).also { telemetry ->
+            // SecureStorage is an `expect class` with a no-arg constructor and so
+            // can't be given a Telemetry; wire the reporting seam here instead, as
+            // soon as Telemetry exists (before any auth flow runs). Failures raised
+            // earlier are still kept in `lastFailure` for the forced_logout event.
+            SecureStorageDiagnostics.listener = { failure ->
+                telemetry.tokenStorageFailure(failure.op, failure.key, failure.status)
+            }
+        }
+    }
     single { SecureStorage() }
     single { TokenStorage(get()) }
     // Default URL is platform-specific (emulator loopback on Android,
