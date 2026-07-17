@@ -28,6 +28,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.arcana.mobile.analytics.Telemetry
+import org.arcana.mobile.auth.SecureStorageDiagnostics
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.CancelBookingResponse
@@ -60,6 +61,17 @@ import org.arcana.mobile.signup.SignupSurveyResult
 /** Raised by [ArcanaApiClient.login] for a non-2xx token response. [statusCode]
  * is the HTTP status — 401 means the email/password didn't match. */
 class LoginError(val statusCode: Int) : Exception("login_failed_$statusCode")
+
+/**
+ * Not a crash — a synthetic Throwable so a forced logout reaches Sentry with its
+ * breadcrumb trail attached.
+ *
+ * Sentry only ships breadcrumbs alongside a captured event, and a forced logout
+ * throws nothing, so the most member-hostile thing the app can do was previously
+ * invisible there. Grouped by [cause], so `refresh_missing` and `refresh_error`
+ * stay separate issues.
+ */
+class ForcedLogoutSignal(cause: String) : Exception("forced_logout: $cause")
 
 /**
  * How the client should react to a token-refresh attempt. A member is only
@@ -146,6 +158,7 @@ class ArcanaApiClient(
                     } catch (e: Exception) {
                         // Couldn't complete the request (network/IO/timeout). Not an
                         // auth failure — keep the session and let the caller retry.
+                        telemetry.authRefreshFailed(Telemetry.RefreshFailureOutcome.TRANSIENT_EXCEPTION)
                         return@refreshTokens null
                     }
                     when (refreshOutcomeForStatus(response.status.value)) {
@@ -155,20 +168,48 @@ class ArcanaApiClient(
                             } catch (e: Exception) {
                                 // 2xx but the body didn't parse / never fully arrived
                                 // (seen on flaky cellular). Transient — do NOT sign out.
+                                telemetry.authRefreshFailed(
+                                    Telemetry.RefreshFailureOutcome.TRANSIENT_BODY,
+                                    response.status.value,
+                                )
                                 return@refreshTokens null
                             }
                             tokenStorage.accessToken = tokens.access
                             tokens.refresh?.let { tokenStorage.refreshToken = it }
-                            BearerTokens(tokens.access, tokenStorage.refreshToken ?: return@refreshTokens null)
+                            // Read the rotated token back out of storage. If it
+                            // doesn't come back, the server refreshed us but we have
+                            // no usable session — every later request then goes out
+                            // unauthenticated. This used to be a silent `?: return
+                            // null`; it is the prime suspect for the 2026-07-16
+                            // logout, so report it (behavior unchanged).
+                            val stored = tokenStorage.refreshToken
+                            if (stored == null) {
+                                telemetry.authRefreshFailed(
+                                    Telemetry.RefreshFailureOutcome.STORED_REFRESH_MISSING,
+                                    response.status.value,
+                                )
+                                return@refreshTokens null
+                            }
+                            BearerTokens(tokens.access, stored)
                         }
                         RefreshOutcome.REJECTED -> {
                             // Server explicitly rejected the refresh token — the
                             // session is dead through no user action.
+                            telemetry.authRefreshFailed(
+                                Telemetry.RefreshFailureOutcome.REJECTED,
+                                response.status.value,
+                            )
                             forceLogout("refresh_error")
                             null
                         }
                         // 5xx / 429 / timeout-shaped status: keep tokens, let retry.
-                        RefreshOutcome.TRANSIENT -> null
+                        RefreshOutcome.TRANSIENT -> {
+                            telemetry.authRefreshFailed(
+                                Telemetry.RefreshFailureOutcome.TRANSIENT_STATUS,
+                                response.status.value,
+                            )
+                            null
+                        }
                     }
                 }
                 sendWithoutRequest { request ->
@@ -468,7 +509,32 @@ class ArcanaApiClient(
      *  invalidation/expiry or a refresh network failure. Tracked distinctly from
      *  [logout] so we can monitor unexpected sign-outs as an app-health signal. */
     private fun forceLogout(cause: String) {
-        telemetry.forcedLogout(cause)
+        // What did the secure store last do *for the refresh token*? `cause` only
+        // says the token was null; this says why — locked vs genuinely absent vs a
+        // failed write. Scoped to the refresh-token key so an unrelated miss on
+        // another key (e.g. the usually-absent base-URL override) can't be
+        // misattributed to this logout.
+        val failure = SecureStorageDiagnostics.lastFailureFor(TokenStorage.REFRESH_TOKEN_KEY)
+        telemetry.forcedLogout(
+            cause = cause,
+            osStatus = failure?.status,
+            storageOp = failure?.op,
+            storageKey = failure?.key,
+        )
+        // Report to Sentry BEFORE reset(): reset() calls clearUser(), so a
+        // nonfatal raised after it arrives with no member attached. A forced
+        // logout throws nothing, so without this explicit capture Sentry never
+        // hears about it at all — breadcrumbs only ship when something is
+        // captured, which is exactly why the 2026-07-16 logout left no trace.
+        telemetry.recordError(
+            ForcedLogoutSignal(cause),
+            mapOf(
+                "cause" to cause,
+                "storage_os_status" to failure?.status,
+                "storage_op" to failure?.op,
+                "storage_key" to failure?.key,
+            ),
+        )
         telemetry.reset()
         tokenStorage.clear()
         _isAuthenticated.value = false

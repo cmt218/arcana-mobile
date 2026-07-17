@@ -231,8 +231,52 @@ class Telemetry(
 
     fun logoutManual() = track(Events.LOGOUT, mapOf("type" to "manual"))
 
-    fun forcedLogout(cause: String) =
-        track(Events.FORCED_LOGOUT, mapOf("type" to "forced", "cause" to cause))
+    /**
+     * The session ended without the member asking for it.
+     *
+     * [osStatus]/[storageOp]/[storageKey] carry the secure store's last
+     * non-success result (see `SecureStorageDiagnostics`). `cause` alone only
+     * says "the token was null"; these say *why* it was null — which is the
+     * difference between "device was locked, the session was fine" and "the
+     * token was genuinely gone". Null when the store reported no failure.
+     */
+    fun forcedLogout(
+        cause: String,
+        osStatus: Int? = null,
+        storageOp: String? = null,
+        storageKey: String? = null,
+    ) = track(
+        Events.FORCED_LOGOUT,
+        mapOf(
+            "type" to "forced",
+            "cause" to cause,
+            "storage_os_status" to osStatus,
+            "storage_op" to storageOp,
+            "storage_key" to storageKey,
+        ),
+    )
+
+    /**
+     * The platform secure store returned a non-success result. Fires only on
+     * failure, so this is ~zero volume in the healthy case (respecting the
+     * volume note above) and a direct signal when it isn't.
+     */
+    fun tokenStorageFailure(op: String, key: String, osStatus: Int) =
+        track(
+            Events.TOKEN_STORAGE_FAILURE,
+            mapOf("op" to op, "key" to key, "os_status" to osStatus),
+        )
+
+    /**
+     * A token refresh did not yield usable tokens. Deliberately fires ONLY on
+     * failure — a successful silent refresh stays unreported, per the volume
+     * note above. [outcome] is one of [RefreshFailureOutcome].
+     */
+    fun authRefreshFailed(outcome: String, statusCode: Int? = null) =
+        track(
+            Events.AUTH_REFRESH_FAILED,
+            mapOf("outcome" to outcome, "status_code" to statusCode),
+        )
 
     // ---- Class view → booking funnel -------------------------------------
 
@@ -452,6 +496,25 @@ class Telemetry(
     }
 
     /** Event-name constants — the canonical PostHog event keys. */
+    /** Values for [authRefreshFailed]'s `outcome`. */
+    object RefreshFailureOutcome {
+        /** The refresh endpoint rejected the token (401/403) — session really is dead. */
+        const val REJECTED = "rejected"
+        /** The request never completed (network/IO/timeout). Session kept. */
+        const val TRANSIENT_EXCEPTION = "transient_exception"
+        /** A non-auth status (5xx/429/...). Session kept. */
+        const val TRANSIENT_STATUS = "transient_status"
+        /** 2xx, but the body didn't parse / never fully arrived. Session kept. */
+        const val TRANSIENT_BODY = "transient_body"
+        /**
+         * The server refreshed us (2xx) but the rotated refresh token was not
+         * readable back out of storage immediately after being written. This is
+         * the signature of the 2026-07-16 incident — it previously returned null
+         * silently, leaving the client with no usable token and no trace.
+         */
+        const val STORED_REFRESH_MISSING = "stored_refresh_missing"
+    }
+
     object Events {
         const val TAB_TAPPED = "tab_tapped"
         const val SCHEDULE_DAY_CHANGED = "schedule_day_changed"
@@ -478,6 +541,8 @@ class Telemetry(
         const val LOGIN_SUCCEEDED = "login_succeeded"
         const val LOGOUT = "logout"
         const val FORCED_LOGOUT = "forced_logout"
+        const val TOKEN_STORAGE_FAILURE = "token_storage_failure"
+        const val AUTH_REFRESH_FAILED = "auth_refresh_failed"
 
         const val CLASS_VIEWED = "class_viewed"
         const val CLASS_VIEW_FAILED = "class_view_failed"
