@@ -1,5 +1,7 @@
 package org.arcana.mobile.schedule
 
+import kotlin.math.roundToInt
+
 /**
  * Expand a selection (whole-studio slugs + individual location ids) into the
  * flat, deduped `location_id` list the schedule fetch sends. Whole studios
@@ -62,3 +64,50 @@ internal fun customTimeLabel(startGte: String?, startLte: String?): String = whe
 /** Build a custom TimeFilter from two optional "HH:MM" bounds. */
 internal fun customTimeFilter(startGte: String?, startLte: String?): TimeFilter =
     TimeFilter(startGte, startLte, customTimeLabel(startGte, startLte))
+
+// --- Custom-range slider arithmetic -------------------------------------
+// The slider works in minutes-since-midnight rather than whole hours, so its
+// tick granularity is a property of TIME_SLIDER_STEP_MINUTES instead of being
+// baked into the type. "HH:MM" already carries minutes end to end (TimeFilter,
+// the presets' 11:59/16:59, formatTime12h, and the server's start_time_gte /
+// start_time_lte), so nothing downstream had to change to allow half-hours.
+
+/** Earliest selectable start time on the custom slider (06:00). */
+internal const val TIME_SLIDER_MIN_MINUTE = 6 * 60
+
+/** Latest selectable start time on the custom slider (22:00). */
+internal const val TIME_SLIDER_MAX_MINUTE = 22 * 60
+
+/** Slider tick granularity. Both bounds above are multiples of this, so every
+ *  reachable value stays step-aligned. */
+internal const val TIME_SLIDER_STEP_MINUTES = 30
+
+/** Narrowest range the two handles may span. Deliberately still a full hour,
+ *  independent of the tick granularity: finer ticks let a member place the
+ *  window at 9:30, not shrink it to 30 minutes. */
+internal const val TIME_SLIDER_MIN_GAP_MINUTES = 60
+
+/** "HH:MM" → minutes since midnight; null when absent or unparseable. A missing
+ *  minute component reads as :00, matching [formatTime12h]'s leniency. */
+internal fun hhmmToMinutes(hhmm: String?): Int? {
+    val parts = hhmm?.split(":") ?: return null
+    val h = parts.getOrNull(0)?.toIntOrNull() ?: return null
+    val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    return h * 60 + m
+}
+
+/** Minutes since midnight → zero-padded 24h "HH:MM". */
+internal fun minutesToHhmm(minutes: Int): String {
+    val h = minutes / 60
+    val m = minutes % 60
+    return "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
+}
+
+/** Snap [minutes] to the nearest [step] tick, clamped to [min]..[max]. Rounds to
+ *  nearest rather than flooring, so dragging feels symmetric between ticks. */
+internal fun snapMinutes(
+    minutes: Int,
+    step: Int = TIME_SLIDER_STEP_MINUTES,
+    min: Int = TIME_SLIDER_MIN_MINUTE,
+    max: Int = TIME_SLIDER_MAX_MINUTE,
+): Int = ((minutes.toFloat() / step).roundToInt() * step).coerceIn(min, max)

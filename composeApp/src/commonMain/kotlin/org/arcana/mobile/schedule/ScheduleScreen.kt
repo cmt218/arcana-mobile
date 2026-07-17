@@ -1055,8 +1055,8 @@ private fun ScopeLabel(label: String, onInk: Boolean) {
 }
 
 /** Time-of-day picker: quick presets (Morning/Afternoon/Evening) + a compact
- *  custom From–To range slider ([HourRangeSlider], min 1h gap). Applying sets a
- *  single TimeFilter overlay. */
+ *  custom From–To range slider ([TimeRangeSlider], half-hour ticks, min 1h gap).
+ *  Applying sets a single TimeFilter overlay. */
 @Composable
 private fun TimeFilterPanel(
     active: TimeFilter?,
@@ -1064,16 +1064,17 @@ private fun TimeFilterPanel(
     onClear: () -> Unit,
     onDone: () -> Unit,
 ) {
-    val minHour = 6
-    val maxHour = 22
-    val minGap = 1
-    fun hourInt(hhmm: String?, default: Int): Int =
-        hhmm?.substringBefore(":")?.toIntOrNull()?.coerceIn(minHour, maxHour) ?: default
-    fun hhmm(h: Int): String = "${h.toString().padStart(2, '0')}:00"
+    val minMinute = TIME_SLIDER_MIN_MINUTE
+    val maxMinute = TIME_SLIDER_MAX_MINUTE
+    val minGap = TIME_SLIDER_MIN_GAP_MINUTES
 
-    // Seed from the active custom range if any, else the full span.
-    var from by remember(active) { mutableStateOf(hourInt(active?.startGte, minHour)) }
-    var to by remember(active) { mutableStateOf(hourInt(active?.startLte, maxHour)) }
+    // Seed from the active custom range if any, else the full span. Snapping
+    // matters for the presets, whose bounds are off-tick by design (11:59/16:59).
+    fun seed(hhmm: String?, default: Int): Int =
+        hhmmToMinutes(hhmm)?.let { snapMinutes(it) } ?: default
+
+    var from by remember(active) { mutableStateOf(seed(active?.startGte, minMinute)) }
+    var to by remember(active) { mutableStateOf(seed(active?.startLte, maxMinute)) }
 
     Column(
         modifier = Modifier.padding(horizontal = 24.dp),
@@ -1091,34 +1092,35 @@ private fun TimeFilterPanel(
         }
         Overline(text = "CUSTOM RANGE", size = 11, color = Ash)
         BodyText(
-            text = "${formatTime12h(hhmm(from))}  –  ${formatTime12h(hhmm(to))}",
+            text = "${formatTime12h(minutesToHhmm(from))}  –  ${formatTime12h(minutesToHhmm(to))}",
             size = 14, color = Ink,
         )
-        HourRangeSlider(
+        TimeRangeSlider(
             from = from, to = to,
-            minHour = minHour, maxHour = maxHour, minGap = minGap,
+            minValue = minMinute, maxValue = maxMinute, minGap = minGap,
             onChange = { f, t -> from = f; to = t },
         )
         FilterDoneButton(
             onClick = {
                 // A full-span selection means "no custom time filter".
-                if (from <= minHour && to >= maxHour) onDone()
-                else onApply(customTimeFilter(hhmm(from), hhmm(to)))
+                if (from <= minMinute && to >= maxMinute) onDone()
+                else onApply(customTimeFilter(minutesToHhmm(from), minutesToHhmm(to)))
             },
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         )
     }
 }
 
-/** A compact dual-handle hour range slider. Enforces a [minGap] between the
- *  handles, snaps to whole hours, and grabs the NEAREST handle to the touch
- *  (so the end handle is easy to grab even at the extreme). 36dp tall. */
+/** A compact dual-handle time range slider. Values are minutes-since-midnight;
+ *  drags snap to the nearest [TIME_SLIDER_STEP_MINUTES] tick (half-hours).
+ *  Enforces a [minGap] between the handles and grabs the NEAREST handle to the
+ *  touch (so the end handle is easy to grab even at the extreme). 36dp tall. */
 @Composable
-private fun HourRangeSlider(
+private fun TimeRangeSlider(
     from: Int,
     to: Int,
-    minHour: Int,
-    maxHour: Int,
+    minValue: Int,
+    maxValue: Int,
     minGap: Int,
     onChange: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -1126,7 +1128,7 @@ private fun HourRangeSlider(
     val curFrom by rememberUpdatedState(from)
     val curTo by rememberUpdatedState(to)
     var active by remember { mutableStateOf(-1) }  // 0 = from handle, 1 = to handle
-    val span = (maxHour - minHour).toFloat()
+    val span = (maxValue - minValue).toFloat()
 
     Canvas(
         modifier = modifier
@@ -1135,21 +1137,27 @@ private fun HourRangeSlider(
             .pointerInput(Unit) {
                 val thumbR = 11.dp.toPx()
                 fun usable() = (size.width - 2 * thumbR).coerceAtLeast(1f)
-                fun hourToX(h: Int) = thumbR + (h - minHour) / span * usable()
-                fun xToHour(x: Float) =
-                    (minHour + ((x - thumbR) / usable() * span)).roundToInt().coerceIn(minHour, maxHour)
+                fun valueToX(v: Int) = thumbR + (v - minValue) / span * usable()
+                fun xToValue(x: Float): Int =
+                    snapMinutes(
+                        (minValue + ((x - thumbR) / usable() * span)).roundToInt(),
+                        min = minValue,
+                        max = maxValue,
+                    )
                 detectDragGestures(
                     onDragStart = { off ->
-                        active = if (abs(off.x - hourToX(curFrom)) <= abs(off.x - hourToX(curTo))) 0 else 1
+                        active = if (abs(off.x - valueToX(curFrom)) <= abs(off.x - valueToX(curTo))) 0 else 1
                     },
                     onDragEnd = { active = -1 },
                     onDragCancel = { active = -1 },
                     onDrag = { change, _ ->
                         change.consume()
-                        val h = xToHour(change.position.x)
+                        val v = xToValue(change.position.x)
+                        // curTo/curFrom and minGap are all step-aligned, so the
+                        // clamped result lands on a tick too.
                         when (active) {
-                            0 -> onChange(h.coerceAtMost(curTo - minGap), curTo)
-                            1 -> onChange(curFrom, h.coerceAtLeast(curFrom + minGap))
+                            0 -> onChange(v.coerceAtMost(curTo - minGap), curTo)
+                            1 -> onChange(curFrom, v.coerceAtLeast(curFrom + minGap))
                         }
                     },
                 )
@@ -1157,14 +1165,14 @@ private fun HourRangeSlider(
     ) {
         val thumbR = 11.dp.toPx()
         val usable = (size.width - 2 * thumbR).coerceAtLeast(1f)
-        fun hourToX(h: Int) = thumbR + (h - minHour) / span * usable
+        fun valueToX(v: Int) = thumbR + (v - minValue) / span * usable
         val cy = size.height / 2
         val trackH = 4.dp.toPx()
         drawLine(Mist, Offset(thumbR, cy), Offset(size.width - thumbR, cy), strokeWidth = trackH, cap = StrokeCap.Round)
-        drawLine(Moss, Offset(hourToX(from), cy), Offset(hourToX(to), cy), strokeWidth = trackH, cap = StrokeCap.Round)
-        listOf(from, to).forEach { h ->
-            drawCircle(Stone, radius = thumbR, center = Offset(hourToX(h), cy))
-            drawCircle(Moss, radius = thumbR, center = Offset(hourToX(h), cy), style = Stroke(width = 3.dp.toPx()))
+        drawLine(Moss, Offset(valueToX(from), cy), Offset(valueToX(to), cy), strokeWidth = trackH, cap = StrokeCap.Round)
+        listOf(from, to).forEach { v ->
+            drawCircle(Stone, radius = thumbR, center = Offset(valueToX(v), cy))
+            drawCircle(Moss, radius = thumbR, center = Offset(valueToX(v), cy), style = Stroke(width = 3.dp.toPx()))
         }
     }
 }
