@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.*
 import org.arcana.mobile.data.*
 import org.arcana.mobile.favorites.FavoritesRepository
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
 import kotlin.test.*
@@ -62,6 +63,9 @@ class ProfileViewModelTest {
         vm.load()
         val s = vm.uiState.value
         assertTrue(s is ProfileUiState.Error)
+        // No HTTP response was ever received, so this is the member's
+        // connection, not our server.
+        assertEquals(ErrorType.CONNECTION, (s as ProfileUiState.Error).type)
     }
 
     @Test fun `null currentPeriod gives null credits`() = runTest {

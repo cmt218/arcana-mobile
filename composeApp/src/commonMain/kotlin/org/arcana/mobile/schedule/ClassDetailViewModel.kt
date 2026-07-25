@@ -11,11 +11,13 @@ import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.ArcanaApiClient
+import org.arcana.mobile.networking.ErrorType
+import org.arcana.mobile.networking.toErrorType
 
 sealed interface ClassDetailUiState {
     data object Loading : ClassDetailUiState
     data class Success(val session: ScheduleSessionDto) : ClassDetailUiState
-    data class Error(val message: String) : ClassDetailUiState
+    data class Error(val type: ErrorType) : ClassDetailUiState
 }
 
 class ClassDetailViewModel(
@@ -84,13 +86,13 @@ class ClassDetailViewModel(
             // On a refresh failure keep whatever's already on screen rather than
             // replacing good content with a full-screen error.
             if (_uiState.value !is ClassDetailUiState.Success) {
-                _uiState.value = ClassDetailUiState.Error("server error $code")
+                _uiState.value = ClassDetailUiState.Error(e.toErrorType())
             }
             if (isView) telemetry.classViewFailed(sessionId, "server_$code")
         } catch (e: Exception) {
             logWarning("ClassDetailViewModel", e.message ?: "Unknown error")
             if (_uiState.value !is ClassDetailUiState.Success) {
-                _uiState.value = ClassDetailUiState.Error("server error")
+                _uiState.value = ClassDetailUiState.Error(e.toErrorType())
             }
             if (isView) telemetry.classViewFailed(sessionId, "network")
         }

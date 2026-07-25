@@ -8,6 +8,7 @@ import org.arcana.mobile.data.*
 import org.arcana.mobile.home.HomeUiState
 import org.arcana.mobile.home.HomeViewModel
 import org.arcana.mobile.networking.BookingApi
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.MembershipApi
 import kotlin.test.*
 
@@ -65,5 +66,46 @@ class HomeViewModelTest {
         // Still showing the previously-loaded content, not a full-screen error.
         assertTrue(vm.uiState.value is HomeUiState.Success)
         assertFalse(vm.isRefreshing.value)
+        // ...but the member is told the content is stale.
+        assertTrue(vm.refreshFailed.value)
+    }
+
+    @Test fun `a cold-load transport failure is a connection error not a server error`() = runTest {
+        // The regression this whole system exists to prevent: a request that
+        // never reached the server must not blame the server.
+        val api = object : BookingApi, MembershipApi {
+            override suspend fun membershipMe(): MembershipMeDto = throw RuntimeException("connection reset")
+            override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+            override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
+            override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+        }
+        val vm = HomeViewModel(api)
+        vm.load()
+        val s = vm.uiState.value
+        assertTrue(s is HomeUiState.Error)
+        assertEquals(ErrorType.CONNECTION, (s as HomeUiState.Error).type)
+        // A cold-load failure owns the screen; it is not a stale-content notice.
+        assertFalse(vm.refreshFailed.value)
+    }
+
+    @Test fun `retry re-fetches and clears the error`() = runTest {
+        var failNext = true
+        val api = object : BookingApi, MembershipApi {
+            override suspend fun membershipMe(): MembershipMeDto {
+                if (failNext) throw RuntimeException("connection reset")
+                return meDto
+            }
+            override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+            override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
+            override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+        }
+        val vm = HomeViewModel(api)
+        vm.load()
+        assertTrue(vm.uiState.value is HomeUiState.Error)
+
+        failNext = false
+        vm.retry()
+        assertTrue(vm.uiState.value is HomeUiState.Success)
+        assertFalse(vm.retrying.value)
     }
 }

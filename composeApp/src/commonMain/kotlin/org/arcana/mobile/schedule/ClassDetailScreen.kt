@@ -55,6 +55,7 @@ import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
 import org.arcana.mobile.booking.outsideWindowCopy
 import org.arcana.mobile.data.ScheduleSessionDto
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ash
@@ -79,6 +80,7 @@ import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.Overline
@@ -207,7 +209,7 @@ fun ClassDetailScreen(
     Box(modifier = modifier.fillMaxSize().background(Stone)) {
         when (val s = state) {
             ClassDetailUiState.Loading -> LoadingBlock(onClose)
-            is ClassDetailUiState.Error -> ErrorBlock(message = s.message, onClose = onClose, onRetry = viewModel::reload)
+            is ClassDetailUiState.Error -> ErrorBlock(type = s.type, onClose = onClose, onRetry = viewModel::reload)
             is ClassDetailUiState.Success -> SuccessBlock(
                 session = s.session,
                 onClose = onClose,
@@ -236,24 +238,10 @@ private fun LoadingBlock(onClose: () -> Unit) {
 }
 
 @Composable
-private fun ErrorBlock(message: String, onClose: () -> Unit, onRetry: () -> Unit) {
+private fun ErrorBlock(type: ErrorType, onClose: () -> Unit, onRetry: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
         TopBar(onClose = onClose)
-        Column(modifier = Modifier.padding(24.dp)) {
-            Heading2(text = "Couldn't load class", size = 22, color = Ink)
-            Spacer(Modifier.height(8.dp))
-            BodyText(text = message, size = 14, color = Ash)
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Ink)
-                    .clickable(onClick = onRetry)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Overline(text = "RETRY", size = 12, color = Stone)
-            }
-        }
+        FullScreenError(type = type, onRetry = onRetry)
     }
 }
 

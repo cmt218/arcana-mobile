@@ -28,7 +28,9 @@ import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.BookingApi
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.ScheduleApi
+import org.arcana.mobile.networking.toErrorType
 import org.arcana.mobile.ui.studioLocationLabel
 
 /**
@@ -119,7 +121,7 @@ sealed interface ScheduleUiState {
          *  breaking the schedule itself. */
         val bookedSessions: Map<Int, String> = emptyMap(),
     ) : ScheduleUiState
-    data class Error(val message: String) : ScheduleUiState
+    data class Error(val type: ErrorType) : ScheduleUiState
 }
 
 /** A studio in the filter accordion: the studio plus its selectable locations. */
@@ -605,7 +607,7 @@ class ScheduleViewModel(
             // failure must not clear a newer mutation's dim or emit Error
             // over newer state.
             if (generation == fetchGeneration) {
-                applyRefetchFailure("server error $code")
+                applyRefetchFailure(e.toErrorType())
                 telemetry.screenLoadCompleted(
                     screen = Telemetry.Screens.SCHEDULE, source = source,
                     durationMs = loadMark.elapsedNow().inWholeMilliseconds,
@@ -615,7 +617,7 @@ class ScheduleViewModel(
         } catch (e: Exception) {
             logWarning("ScheduleViewModel", e.message ?: "Unknown error")
             if (generation == fetchGeneration) {
-                applyRefetchFailure("server error")
+                applyRefetchFailure(e.toErrorType())
                 telemetry.screenLoadCompleted(
                     screen = Telemetry.Screens.SCHEDULE, source = source,
                     durationMs = loadMark.elapsedNow().inWholeMilliseconds,
@@ -627,12 +629,12 @@ class ScheduleViewModel(
 
     /** Cold-start (or error-retry) failure → full-screen Error; failure with
      *  content already on screen → keep the content, just stop the dim. */
-    private fun applyRefetchFailure(message: String) {
+    private fun applyRefetchFailure(type: ErrorType) {
         if (_uiState.value is ScheduleUiState.Success) {
             refreshingFilters = false
             publish()
         } else {
-            _uiState.value = ScheduleUiState.Error(message)
+            _uiState.value = ScheduleUiState.Error(type)
         }
     }
 

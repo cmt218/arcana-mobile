@@ -9,7 +9,9 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.favorites.FavoritesRepository
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.MembershipApi
+import org.arcana.mobile.networking.toErrorType
 
 sealed interface ProfileUiState {
     data object Loading : ProfileUiState
@@ -29,7 +31,7 @@ sealed interface ProfileUiState {
         val lifetimeSessions: Int,
         val weekStreak: Int,
     ) : ProfileUiState
-    data class Error(val message: String) : ProfileUiState
+    data class Error(val type: ErrorType) : ProfileUiState
 }
 
 class ProfileViewModel(
@@ -97,7 +99,7 @@ class ProfileViewModel(
             // On a refresh failure keep whatever's already on screen rather than
             // replacing good content with a full-screen error.
             if (_uiState.value !is ProfileUiState.Success) {
-                _uiState.value = ProfileUiState.Error("server error")
+                _uiState.value = ProfileUiState.Error(e.toErrorType())
             }
         }
     }

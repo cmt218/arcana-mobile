@@ -102,6 +102,7 @@ import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.FilterChip
 import org.arcana.mobile.ui.FlowChipRow
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
@@ -289,7 +290,7 @@ fun ScheduleScreen(
     ) {
         when (val s = state) {
             is ScheduleUiState.Loading -> LoadingPlaceholder()
-            is ScheduleUiState.Error -> ErrorBlock(message = s.message, onRetry = viewModel::reload)
+            is ScheduleUiState.Error -> FullScreenError(type = s.type, onRetry = viewModel::reload)
             is ScheduleUiState.Success -> SuccessContent(
                 state = s,
                 viewModel = viewModel,
@@ -318,25 +319,6 @@ private fun LoadingPlaceholder() {
             contentAlignment = Alignment.Center,
         ) {
             DotMatrixLoader()
-        }
-    }
-}
-
-@Composable
-private fun ErrorBlock(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.padding(24.dp)) {
-        Heading2(text = "Couldn't load schedule", size = 22, color = Ink)
-        Spacer(Modifier.height(8.dp))
-        BodyText(text = message, size = 14, color = Ash)
-        Spacer(Modifier.height(16.dp))
-        Row(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(Ink)
-                .clickable(onClick = onRetry)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Overline(text = "RETRY", size = 12, color = Stone)
         }
     }
 }

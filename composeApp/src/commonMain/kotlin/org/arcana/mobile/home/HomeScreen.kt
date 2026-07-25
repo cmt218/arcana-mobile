@@ -58,9 +58,11 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
+import org.arcana.mobile.ui.RefreshFailedToast
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StatusPill
@@ -89,6 +91,8 @@ fun HomeScreen(
     LaunchedEffect(Unit) { vm.load() }
     val state by vm.uiState.collectAsState()
     val refreshing by vm.isRefreshing.collectAsState()
+    val refreshFailed by vm.refreshFailed.collectAsState()
+    val retrying by vm.retrying.collectAsState()
 
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember(tz) { Clock.System.todayIn(tz) }
@@ -96,6 +100,12 @@ fun HomeScreen(
     val dateLabel = "${today.dayOfWeek.name.take(3)} · ${today.month.name.take(3)} ${today.day}"
     val greeting = timeOfDay(hour)
 
+    val errorState = state as? HomeUiState.Error
+    Box(modifier = Modifier.fillMaxSize()) {
+    if (errorState != null) {
+        // Cold load with nothing cached: the error owns the screen.
+        FullScreenError(type = errorState.type, onRetry = vm::retry, retrying = retrying)
+    } else {
     PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = vm::refresh,
@@ -181,18 +191,10 @@ fun HomeScreen(
                 }
             }
 
-            is HomeUiState.Error -> {
-                item { Spacer(Modifier.height(4.dp)) }
-                item {
-                    Caption(
-                        text = s.message,
-                        size = 13,
-                        color = Ash,
-                        maxLines = 3,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
-            }
+            // Cold-load failure takes over the whole screen (handled above the
+            // LazyColumn) rather than sitting under a shimmering hero, which
+            // would read as "still loading".
+            is HomeUiState.Error -> Unit
 
             is HomeUiState.Success -> {
                 val hero = s.upcoming.firstOrNull()
@@ -297,6 +299,19 @@ fun HomeScreen(
                 }
             }
         }
+    }
+    }
+    }
+    // A refresh failed while good content is on screen: keep the content and
+    // say so, rather than wiping the screen for a full-screen error.
+    if (refreshFailed) {
+        RefreshFailedToast(
+            onRetry = vm::retry,
+            retrying = retrying,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 24.dp),
+        )
     }
     }
 }
