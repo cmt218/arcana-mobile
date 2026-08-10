@@ -1,7 +1,7 @@
 #!/bin/sh
 # Uploads iOS dSYMs to Sentry so crash stack traces are symbolicated.
 # Wired as an Xcode "Run Script" build phase on the iosApp target (see
-# scripts/README_DSYM_UPLOAD.md). Safe to commit — holds no secrets.
+# the Sentry section of CLAUDE.md). Safe to commit — holds no secrets.
 #
 # Auth/org/project come from a gitignored ~/.sentryclirc or iosApp/.sentryclirc
 # (or SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT env vars). If sentry-cli

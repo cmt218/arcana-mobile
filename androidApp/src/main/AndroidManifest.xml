@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deliberately minimal: the application element (ArcanaApplication,
+     MainActivity, deep-link intent filters, icons, Sentry auto-init opt-out)
+     merges in from :sharedUI's androidMain manifest. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application />
+</manifest>

@@ -6,21 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Android:**
 ```bash
-./gradlew :composeApp:assembleDebug
+./gradlew :androidApp:assembleDebug
 ```
 
 **iOS:** Open `/iosApp/iosApp.xcodeproj` in Xcode and run from there. The Kotlin framework is compiled as a static framework and linked by Xcode.
 
-**Tests (shared/common):**
+**Tests:**
 ```bash
-./gradlew :composeApp:testDebugUnitTest   # runs commonTest on the Android JVM target
+./gradlew :sharedLogic:testDebugUnitTest       # the main suite (logic + ViewModels + session)
+./gradlew :sharedUI:testDebugUnitTest   # the few UI-coupled tests (DotMatrixLoader, LateCancelWindow, OpensAtLabel)
 ```
-(The aggregate `:composeApp:test` task does NOT accept `--tests`; filter on `:composeApp:testDebugUnitTest`.)
+(The aggregate `test` tasks do NOT accept `--tests`; filter on the `testDebugUnitTest` variants.)
 
-**ALWAYS compile BOTH targets when touching `commonMain`** — Android alone won't catch Kotlin/Native errors:
+**ALWAYS compile BOTH targets when touching shared code** — Android alone won't catch Kotlin/Native errors:
 ```bash
-./gradlew :composeApp:compileDebugKotlinAndroid       # JVM/Android
-./gradlew :composeApp:compileKotlinIosSimulatorArm64  # Kotlin/Native (iOS)
+./gradlew :sharedLogic:compileDebugKotlinAndroid :sharedUI:compileDebugKotlinAndroid       # JVM/Android
+./gradlew :sharedLogic:compileKotlinIosSimulatorArm64 :sharedUI:compileKotlinIosSimulatorArm64  # Kotlin/Native (iOS)
 ```
 JVM-only APIs compile on Android but break the iOS build — notably `String.format` / `"%02d".format(x)` / `java.*` / `Locale`. Use string templates, `padStart`, and `kotlinx-datetime` instead. (`compileKotlinMetadata` is a no-op SKIP in this project — don't rely on it.)
 
@@ -30,21 +31,23 @@ No linter is configured (no ktlint/detekt).
 
 ## Architecture
 
-This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. All UI is written once in Compose and shared via `commonMain`.
+This is a **Kotlin Compose Multiplatform** project targeting Android and iOS, split into three Gradle modules (2026-08-10, matching JetBrains' sharedLogic/sharedUI default naming exactly and AGP 9's app-plugin-out-of-KMP-modules requirement):
 
-**Source sets in `composeApp/src/`:**
-- `commonMain/` — shared Kotlin/Compose code for all platforms. This is where new features should live.
-- `androidMain/` — Android `actual` implementations and `MainActivity`
-- `iosMain/` — iOS `actual` implementations and `MainViewController` (wrapped by SwiftUI in `iosApp/`)
-- `commonTest/` — shared tests using `kotlin-test`
+- **`:sharedLogic`** — the Compose-free Kotlin core: `networking/`, `data/` DTOs, `auth/` (token storage + diagnostics), `analytics/` (Telemetry facade + taxonomy), `di/AppModule.kt`, `navigation/` (destinations + DeepLinkHandler), `session/AppSessionController.kt`, ALL ViewModels, and the pure display-logic helpers (`ScheduleDisplayLogic`, `ClassDetailLogic`, `SpotLayout`, `ScheduleFilter`). Platform actuals live in its `androidMain`/`iosMain` (SecureStorage, PendingTokenSource, Platform; Android ones read the app context from `SharedAndroidContext`, set by `ArcanaApplication`). `commonTest/` here is the main test suite. **No Compose dependency may be added to this module** — it is what survives any UI-framework change.
+- **`:sharedUI`** — all Compose UI (screens, `ui/` design system, `theme/`), plus the platform entry points: `MainActivity`/`ArcanaApplication` + Android telemetry impls (androidMain), `MainViewController` + the iOS framework (iosMain). An `androidLibrary` — it is NOT the installable app. The iOS framework `export(project(":sharedLogic"))`s so Swift sees real types; new logic in :sharedLogic that Swift must call needs no extra wiring (api + export cover it).
+- **`:androidApp`** — the installable Android application shell: applicationId, versionCode/versionName, release signing, minimal manifest. No code. The manifest application element (activities, deep links, icons) merges in from :sharedUI's androidMain manifest.
 
-**Platform abstraction pattern:** `Platform.kt` in `commonMain` declares an `expect interface`; `Platform.android.kt` and `Platform.ios.kt` provide `actual` implementations. Follow this pattern for any platform-divergent behavior. `defaultBaseUrl()` is an existing example — it currently returns `https://api.arcana.fit` on **both** platforms (the prod cutover is already done; it is NOT a localhost default). To run against a local server, override the base URL in Developer Settings (see "Temporary debug treatment").
+New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 
-**Dependency injection:** Koin 4.x. `di/AppModule.kt` in `commonMain` defines all bindings. Koin is started at the platform entry point — `ArcanaApplication.onCreate()` on Android, `MainViewController()` on iOS — before any Compose code runs. Use `koinInject()` for values and `koinViewModel()` for ViewModels in composables.
+**Known follow-up (AGP 10 horizon):** KGP deprecates `kotlinMultiplatform` + `com.android.library` on AGP 9 (warning-only today) in favor of the single-variant `com.android.kotlin.multiplatform.library` plugin. Migrating will require redesigning three build-type-dependent pieces: the `sharedUI/src/debug/` networkSecurityConfig manifest overlay, `BuildConfig.DEBUG` gating `flushAt=1` in AndroidTelemetry, and the library BuildConfig analytics fields (candidates: move to `:androidApp`, or runtime FLAG_DEBUGGABLE checks). Do this deliberately when AGP forces it, not before.
+
+**Platform abstraction pattern:** `Platform.kt` (:sharedLogic commonMain) declares a plain `interface Platform` plus top-level `expect` declarations (`getPlatform()`, `defaultBaseUrl()`, `logWarning()`, `logDebug()`, `isDebugBuild`, `appVersionName()`); the actuals live in :sharedLogic's `androidMain`/`iosMain` (`Platform.android.kt` / `Platform.ios.kt`). Follow this pattern for any platform-divergent behavior. `defaultBaseUrl()` is an existing example — it currently returns `https://api.arcana.fit` on **both** platforms (the prod cutover is already done; it is NOT a localhost default). To run against a local server, override the base URL in Developer Settings (see "Temporary debug treatment").
+
+**Dependency injection:** Koin 4.x. `di/AppModule.kt` in :sharedLogic's commonMain defines all bindings. Koin is started at the platform entry point — `ArcanaApplication.onCreate()` on Android, `MainViewController()` on iOS — before any Compose code runs. Use `koinInject()` for values and `koinViewModel()` for ViewModels in composables.
 
 **Auth architecture:**
-- `ArcanaApiClient` owns a `StateFlow<Boolean>` (`isAuthenticated`) that is the single source of truth for session state. It is initialized from `TokenStorage.isLoggedIn` at startup and updated by `login()`, `register()`, `logout()`, and token refresh failure.
-- `App.kt` collects `isAuthenticated` and gates the entire main scaffold behind it. A session-scoped `ViewModelStore` (provided via `LocalViewModelStoreOwner`) wraps `MainScaffold` so all authenticated ViewModels are destroyed on logout and recreated fresh on next login.
+- `ArcanaApiClient` owns a `StateFlow<Boolean>` (`isAuthenticated`) that is the single source of truth for session state. It is initialized from `TokenStorage.isLoggedIn` at startup and updated by `login()`, `completeSignup()`, `logout()`/`forceLogout(cause)`, and token refresh failure.
+- `App.kt` collects `isAuthenticated` (via the Koin-injected `AppSessionController`, whose flow is ArcanaApiClient's) and gates the entire main scaffold behind it; all session rules (welcome-token machine, survey gate, first-launch recovery, teardown) live in :sharedLogic `session/AppSessionController.kt` — App.kt only collects state and forwards events. A session-scoped `ViewModelStore` (provided via `LocalViewModelStoreOwner`) wraps `MainScaffold` so all authenticated ViewModels are destroyed on logout and recreated fresh on next login.
 - `auth/SecureStorage` is an `expect/actual` class: `EncryptedSharedPreferences` on Android, iOS Keychain via CoreFoundation/Security on iOS. `TokenStorage` wraps it with typed `accessToken`/`refreshToken` properties.
 - The Ktor `Auth` plugin handles Bearer header injection and 401/token-refresh automatically for all authenticated requests. `sendWithoutRequest` excludes the login, register, and refresh endpoints from receiving auth headers.
 
@@ -52,7 +55,9 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. Al
 
 **Date/time:** `kotlinx-datetime` in commonMain. Use `Clock.System.todayIn(TimeZone.currentSystemDefault())` for today, `Clock.System.now().toLocalDateTime(tz)` for current local time. `DayOfWeek` and `Month` are enums with `.name` returning uppercase strings (take(3) for the design's three-letter abbreviations).
 
-**Android dev networking:** The debug source set (`src/debug/`) contains a `network_security_config.xml` that permits cleartext to `localhost` and `10.0.2.2`. This is debug-only and cannot ship in release builds.
+**Android dev networking:** The debug source set (`sharedUI/src/debug/`) contains a `network_security_config.xml` that permits cleartext to `localhost` and `10.0.2.2`. This is debug-only and cannot ship in release builds.
+
+**Android release fields** (`versionCode`/`versionName`, signing) live in `androidApp/build.gradle.kts`. Release bundle: `./gradlew :androidApp:bundleRelease` → `androidApp/build/outputs/bundle/release/androidApp-release.aab`. `keystore.properties` is honored from `androidApp/` (canonical) or `sharedUI/` (pre-split location); `analytics.properties` stays at `sharedUI/analytics.properties`.
 
 **iOS entry point flow:** `iosApp/ContentView.swift` → `MainViewControllerKt.MainViewController()` (Kotlin) → Compose UI.
 
@@ -65,14 +70,14 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS. Al
 - Navigation Compose: 2.9.2 (JetBrains CMP port — pinned to a version matched to the CMP release in the CMP CHANGELOG; do not bump independently of `composeMultiplatform`)
 - Lifecycle (`org.jetbrains.androidx.lifecycle`): 2.11.0 — like nav-compose, bump in lockstep with the CMP release notes' listed version (prefer the stable if one exists at that minor).
 - Material3 (`org.jetbrains.compose.material3`): 1.11.0-alpha07 — the multiplatform material3 port publishes **alpha-only** since it decoupled from CMP releases (no stable exists past 1.8.x); always use the exact version listed in the CMP release notes. We have shipped alpha material3 from day one; this is normal, not a red flag.
-- Android min/target SDK: 24/36
+- Android min/target SDK: 24/36 (compileSdk 37 — required by lifecycle 2.11.0's Jetpack delegate; AGP 9.1 warns it was tested up to 36.1, warning-only)
 - Package: `org.arcana.mobile`
 
 **Planned upgrade — CMP 1.12.0 when stable (~Sept–Oct 2026):** it ships the iOS lazy-list prefetch scheduler (compose-multiplatform-core PR #3149), the expected fix for remaining schedule scroll hitches. Before/after measurement is repeatable via the runbook in `docs/perf/README.md` (scripted simulator scroll A/B; 1.10.0→1.11.1 already measured −40% dropped frames there).
 
 ## Design system
 
-The brand-aligned theming lives in `commonMain/kotlin/org/arcana/mobile/theme/` and the reusable UI primitives in `commonMain/kotlin/org/arcana/mobile/ui/`. **Screens should never hand-roll `TextStyle`s, hex colors, or raw icon paths** — compose them from these primitives. The brand color hexes and the typography hierarchy are sourced from the brand identity doc and the typography doc respectively (see the parent `arcana/CLAUDE.md` for live links).
+The brand-aligned theming lives in :sharedUI at `sharedUI/src/commonMain/kotlin/org/arcana/mobile/theme/` and the reusable UI primitives in `.../ui/`. (Note :sharedLogic also has an `org.arcana.mobile.ui` package for the pure `studioLocationLabel` helper.) **Screens should never hand-roll `TextStyle`s, hex colors, or raw icon paths** — compose them from these primitives. The brand color hexes and the typography hierarchy are sourced from the brand identity doc and the typography doc respectively (see the parent `arcana/CLAUDE.md` for live links).
 
 **`theme/AppColors.kt`** — five primaries are the brand doc's source of truth: `Lime #B6C24F`, `Moss #283B15`, `Stone #F5F2ED`, `Wood #2E1B0F`, `BurntNectar #F65713`. Derived variants (`LimeBright/Deep`, `MossDeep/Light`, `Stone2`, `Paper`) are HSL-style shifts of those primaries — recompute them, don't hand-edit, if a primary changes. `Ink/Graphite/Charcoal/Ash/Ash2/Mist/Mist2` are the warm neutrals. `StoneAlpha*` are translucent helpers for dark surfaces.
 
@@ -126,7 +131,7 @@ Pad in **4dp increments** (`4 / 8 / 12 / 16 / 20 / 24 / 28 / 32 / 40 / 48`). Tex
 
 ## Navigation
 
-`App.kt` hosts a `NavHost` keyed off `navigation/ArcanaDestinations.kt` — a sealed `ArcanaDestination` with `@Serializable` data objects per destination (no string routes). The bottom bar's active tab is derived from `currentBackStackEntryAsState` via `hasRoute<T>()`; it hides on non-tab destinations (currently just `StudioSelection`) so a stray tab tap mid-flow can't silently pop the in-progress entry off the stack.
+`App.kt` hosts a `NavHost` keyed off `navigation/ArcanaDestinations.kt` — a sealed `ArcanaDestination` with `@Serializable` data objects per destination (no string routes). The bottom bar's active tab is derived from `currentBackStackEntryAsState` via `hasRoute<T>()`; it hides on every non-tab destination (StudioSelection, MyBookings, EditProfile, ConciergeRequest, ClassDetail) so a stray tab tap mid-flow can't silently pop the in-progress entry off the stack.
 
 Tab navigation uses the standard `popUpTo(start) { saveState = true }` / `launchSingleTop` / `restoreState` block so each tab keeps its own back stack + scroll position.
 
@@ -139,7 +144,7 @@ Transitions are pinned at the `NavHost` level (150ms fade, all four slots) for c
 These are pre-launch dev affordances that must be removed (or hardened) before public release. Each is tagged inline with a comment pointing back here for findability.
 
 **1. Runtime API base URL override + Developer Settings screen.**
-- Files: `networking/BaseUrlProvider.kt`, `settings/DeveloperSettingsScreen.kt`, `settings/DeveloperSettingsViewModel.kt`, the entry-point link in `auth/AuthScreen.kt`'s footer.
+- Files (straddling the split): `networking/BaseUrlProvider.kt` + `settings/DeveloperSettingsViewModel.kt` in :sharedLogic; `settings/DeveloperSettingsScreen.kt` + the hidden entry gesture in `auth/AuthScreen.kt` (10 taps on the wordmark) in :sharedUI.
 - Why it exists: pre-launch we run the server on Cole's Mac and expose it to physical devices via a Cloudflare *quick* tunnel. Quick-tunnel URLs change on every `cloudflared` restart, so rebuilding the app each time would be miserable. The override is editable at runtime via the Developer Settings overlay (reachable from the auth screen footer — so testers locked out of login because the default doesn't reach the server can fix it without first authenticating). The override persists in `SecureStorage` (Keychain on iOS, EncryptedSharedPreferences on Android).
 - Default fallback: **`https://api.arcana.fit` on both platforms** — the prod cutover is already done (see `defaultBaseUrl()` in `Platform.android.kt` / `Platform.ios.kt`), so a fresh install (debug included) reaches prod with no setup. It is NOT a localhost default. To run any build against a local server you MUST set an override in Developer Settings: `http://localhost:8000` (iOS simulator), `http://10.0.2.2:8000` (Android emulator host-loopback alias), or a Cloudflare quick-tunnel URL (physical device). Debug builds permit cleartext to `localhost` / `10.0.2.2` for exactly that.
 
@@ -157,13 +162,13 @@ These are pre-launch dev affordances that must be removed (or hardened) before p
 
 ## Open items
 
-- **Live data wiring.** Home + Profile are now real-data-backed (Phase 5 — `HomeViewModel`/`ProfileViewModel` read `/memberships/me` + `/bookings/me/`). The Profile **"Your studios"** section is still static mock (favorite-studios-with-real-data is a future feature). Schedule + ClassDetail have been real-data-backed since Phase 3.
-- **Pull-to-refresh + resume-refresh on Schedule.** Today the Schedule fetch happens once on `ScheduleViewModel.init` and again only on a fresh login. Add a pull-to-refresh gesture and an auto-refresh when the app returns from background if last fetch > N min ago.
+- **Live data wiring.** Home + Profile are now real-data-backed (Phase 5 — `HomeViewModel`/`ProfileViewModel` read `/memberships/me` + `/bookings/me/`). The Profile **"Your favorites"** section is real-data-backed via `FavoritesRepository` (whole-studio favorites first, then location-grain rows) with a Manage link into StudioSelection. Schedule + ClassDetail have been real-data-backed since Phase 3.
+- **Time-based background refetch on Schedule.** Pull-to-refresh and resume-refresh both shipped (`PullToRefreshBox` → `ScheduleViewModel.refresh()`; `LifecycleResumeEffect` refreshes booked-pills on every return). Remaining: an optional full refetch when returning from background after N minutes (only bookings refresh on resume today).
 - **Network image loader.** `ClassDetailScreen` currently renders a studio-color-tinted Box as the class hero placeholder because no Compose Multiplatform network-image library is configured. When adopting Coil-MP or Kamel, swap the placeholder for `AsyncImage` reading `session.template.heroImageUrl`.
 
 ## Schedule + Detail screens
 
-`ScheduleScreen` is real-data-backed since Phase 3. `ScheduleViewModel.init` fetches the 15-day window (today + 14, `WINDOW_DAYS = 15`) once via `ArcanaApiClient.fetchSchedule(from, to, ...)`; subsequent day-chip taps re-bucket the cached result client-side, filter chips refilter (studio chips client-side, `available_only` triggers a refetch because that filter is server-side). The capacity overline on each row shows a four-tier coarse label (`AVAILABLE / FILLING UP / ALMOST FULL / FULL`) instead of a precise number — this hides cross-screen capacity inconsistencies that would otherwise appear because the Schedule list and the Detail screen update independently.
+`ScheduleScreen` is real-data-backed since Phase 3 and **cursor-paged since Phase 2 of schedule-loading**. `ScheduleViewModel.init` loads favorites (defaulting the scope toggle to Favorites when the member has any), then fetches the chip-rail overview (`ScheduleApi.fetchOverview`) plus page 1 of the selected day (`fetchSessionsPage`) in parallel. Day-chip taps fetch that day's first page from the server (per-day `DayState` caches are kept only for days visited under the current filter set); infinite scroll paginates via the keyset cursor (`DayState.nextCursor` / `loadMore`, with generation counters discarding stale in-flight pages). Since Phase 2 EVERY filter (scope, studio/location picks, time-of-day, modality categories) narrows **server-side** through a debounced (250ms) refetch pipeline — nothing re-buckets or refilters client-side. `WINDOW_DAYS = 15` now only defines the day-chip range. Pull-to-refresh re-fetches the overview + selected day's page 1; booked-status pills refresh independently on every resume. The capacity overline on each row shows a four-tier coarse label (`AVAILABLE / FILLING UP / ALMOST FULL / FULL`) instead of a precise number — this hides cross-screen capacity inconsistencies that would otherwise appear because the Schedule list and the Detail screen update independently.
 
 `ClassDetailScreen` (Phase 3.5) is reached by tapping a class row on Schedule. `ClassDetailViewModel` takes the session id as a Koin parameter (`koinViewModel { parametersOf(id) }`) and fetches `GET /api/v1/classes/<id>/`. The server refreshes from the upstream platform if its cached row is > 30s old, so capacity numbers on the detail screen are always near-real-time — hence we DO show precise spot counts here. Cancelled sessions render a cancellation notice in place of the capacity block.
 
@@ -181,20 +186,20 @@ Member booking UI built against the locked `arcana-server` `/api/v1/bookings/` +
 
 **Auth: sign-in only.** There is no in-app sign-up — `auth/AuthScreen.kt` is login-only; members onboard via the invite welcome flow (welcome deep link → onboarding survey → `SignupCompletionScreen`). `ArcanaApiClient.login/logout/completeSignup` call `clearBearerTokenCache()` (clears the Ktor `Auth` plugin's in-memory bearer token via `client.authProviders…clearToken()`) so requests use the current user's token after a re-login — without it, the plugin keeps sending the previous user's cached token.
 
-**Onboarding survey (August cohort+).** New members answer a 13-question survey between the welcome deep link and claim-your-name: `signup/SignupSurveyScreen.kt` + `SignupSurveyViewModel.kt`, questions in `signup/SignupSurveyQuestions.kt` — a 1:1 port of arcana-web `app/beta/survey.ts` (ids/options/order must stay in lockstep; the server's Google-Sheet mirror depends on it). Submits to `POST /api/v1/beta/signup-survey` (token-gated, unauthenticated — token is validated, never consumed) via the `SignupSurveyCallable` seam. Completion (or the post-failure "Continue anyway" skip — the survey must never block a paid member's signup) is persisted in `SecureStorage` keyed `signup_survey_done:<token>` from the gate in `App.kt`, so re-tapping the email link goes straight to claim-your-name. Telemetry: `signup_survey_started/submitted/failed/skipped` + `$screen` `SignupSurvey`; taxonomy locked by `SignupSurveyTelemetryTest`.
+**Onboarding survey (August cohort+).** New members answer a 13-question survey between the welcome deep link and claim-your-name: `signup/SignupSurveyScreen.kt` + `SignupSurveyViewModel.kt`, questions in `signup/SignupSurveyQuestions.kt` — a 1:1 port of arcana-web `app/beta/survey.ts` (ids/options/order must stay in lockstep; the server's Google-Sheet mirror depends on it). Submits to `POST /api/v1/beta/signup-survey` (token-gated, unauthenticated — token is validated, never consumed) via the `SignupSurveyCallable` seam. Completion (or the post-failure "Continue anyway" skip — the survey must never block a paid member's signup) is persisted in `SecureStorage` keyed `signup_survey_done:<token>` via `AppSessionController.markSurveyDone/isSurveyDone` (App.kt collects the gate and advances), so re-tapping the email link goes straight to claim-your-name. Telemetry: `signup_survey_started/submitted/failed/skipped` + `$screen` `SignupSurvey`; taxonomy locked by `SignupSurveyTelemetryTest`.
 
 ## Telemetry (PostHog analytics + Sentry observability)
 
 Product analytics (PostHog) and crash/nonfatal reporting (Sentry) for both platforms. **All instrumentation goes through one shared, type-safe layer — never call PostHog/Sentry SDKs directly from feature code.**
 
-**Architecture.** `analytics/` in `commonMain` defines two interfaces — `Analytics` (PostHog) and `CrashReporter` (Sentry) — and the **`Telemetry` facade** that owns the *entire* event taxonomy (one typed method per event; event-name strings live only in `Telemetry.Events`). Feature code injects `Telemetry` (Koin `single`) and calls `telemetry.bookingSucceeded(...)`, `telemetry.screen(...)`, etc. Per-platform impls supply the interfaces:
-- **Android** (`androidMain/analytics/`): `PostHogAnalytics` + `SentryCrashReporter` over `posthog-android` + `sentry-android`; initialized in `ArcanaApplication.onCreate()` via `androidTelemetryModule(context)` (returns a Koin module binding the interfaces).
+**Architecture.** `analytics/` in :sharedLogic's commonMain defines two interfaces — `Analytics` (PostHog) and `CrashReporter` (Sentry) — and the **`Telemetry` facade** that owns the *entire* event taxonomy (one typed method per event; event-name strings live only in `Telemetry.Events`). Feature code injects `Telemetry` (Koin `single`) and calls `telemetry.bookingSucceeded(...)`, `telemetry.screen(...)`, etc. Per-platform impls supply the interfaces:
+- **Android** (:sharedUI's `androidMain/analytics/`): `PostHogAnalytics` + `SentryCrashReporter` over `posthog-android` + `sentry-android`; initialized in `ArcanaApplication.onCreate()` via `androidTelemetryModule(context)` (returns a Koin module binding the interfaces).
 - **iOS** (`iosApp/iosApp/Analytics/` — Swift): `SwiftAnalytics` + `SwiftCrashReporter` over the PostHog + Sentry **Swift SDKs (SPM)**; `TelemetryBootstrap.start()` inits them in `iOSApp.swift` and the instances are passed into Kotlin via `MainViewController(analytics:crashReporter:)`, then registered into Koin. Mirrors the existing deep-link bridge.
 - If a platform supplies no impl (blank key), the binding falls back to `NoopAnalytics`/`NoopCrashReporter` and the app runs with telemetry disabled.
 
-**Adding/changing instrumentation (the rule):** add a typed method to `Telemetry` (+ its `Events`/`Screens` constant) and call it from the relevant ViewModel/screen — do **not** scatter raw `capture("...")` strings. ViewModels take `telemetry: Telemetry = Telemetry.Noop` (the default keeps tests/previews and the existing `commonTest` fakes compiling). Screen views fire from one `LaunchedEffect(currentDestination)` in `App.kt`'s `MainScaffold` (+ `Auth`/`Signup` in `App`). `identify` is called from `ProfileViewModel` on the first `/me` and is **deduped per session inside `Telemetry`** (cleared on `reset()`); don't re-add per-VM identify guards. Forced-vs-manual logout is distinguished in `ArcanaApiClient` (`forceLogout(cause)` vs `logout()`). Every event also carries a `platform` super property (`android`/`ios`).
+**Adding/changing instrumentation (the rule):** add a typed method to `Telemetry` (+ its `Events`/`Screens` constant) and call it from the relevant ViewModel/screen — do **not** scatter raw `capture("...")` strings. ViewModels take `telemetry: Telemetry = Telemetry.Noop` (the default keeps tests/previews and the existing `commonTest` fakes compiling). Screen views fire from one `LaunchedEffect` keyed on the resolved screen name in `App.kt`'s `MainScaffold` (+ `Auth`/`Signup` in `App`). `identify` is called from `ProfileViewModel` on the first `/me` and is **deduped per session inside `Telemetry`** (cleared on `reset()`); don't re-add per-VM identify guards. Forced-vs-manual logout is distinguished in `ArcanaApiClient` (`forceLogout(cause)` vs `logout()`). Every event also carries a `platform` super property (`android`/`ios`).
 
-**Keys/config (client-safe, gitignored — never commit).** Android: `composeApp/analytics.properties` → `BuildConfig` (`build.gradle.kts` `analyticsProp(...)`). iOS: `iosApp/Configuration/Secrets.xcconfig` (optionally `#include?`'d by `Config.xcconfig`, referenced from `Info.plist` via `$(VAR)`). **xcconfig URL gotcha:** `//` starts a comment, so URLs/DSNs use a `SLASH = /` var (`https:${SLASH}${SLASH}host`) — never the `$()` trick (it silently truncates the host). A blank key/DSN disables that SDK. CI supplies values via `-P`/env vars instead.
+**Keys/config (client-safe, gitignored — never commit).** Android: `sharedUI/analytics.properties` → `BuildConfig` (`build.gradle.kts` `analyticsProp(...)`). iOS: `iosApp/Configuration/Secrets.xcconfig` (optionally `#include?`'d by `Config.xcconfig`, referenced from `Info.plist` via `$(VAR)`). **xcconfig URL gotcha:** `//` starts a comment, so URLs/DSNs use a `SLASH = /` var (`https:${SLASH}${SLASH}host`) — never the `$()` trick (it silently truncates the host). A blank key/DSN disables that SDK. CI supplies values via `-P`/env vars instead.
 
 **Dev behavior (debug builds only).** Every `Telemetry` call echoes to logcat / Xcode console via `logDebug` under a `▶ Telemetry` tag (gated on `isDebugBuild` in `Platform.kt`) — watch with `adb logcat -s Telemetry:D` or the Xcode console filtered on `D/Telemetry`. PostHog `flushAt = 1` in debug so events appear in PostHog Activity in ~seconds (release batches). Session replay is **on, fully masked** (text inputs + images). The PostHog dashboard is "Beta — App Health & Usage (Mobile)" (project 439926, US).
 

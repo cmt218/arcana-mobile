@@ -13,7 +13,7 @@ https://us.posthog.com/project/439926/dashboard/1710023
 ## 0. Setup
 
 **Keys must be present** (otherwise SDKs no-op):
-- Android: `composeApp/analytics.properties` has `ARCANA_POSTHOG_API_KEY`, `ARCANA_POSTHOG_HOST`, `ARCANA_SENTRY_DSN`.
+- Android: `sharedUI/analytics.properties` has `ARCANA_POSTHOG_API_KEY`, `ARCANA_POSTHOG_HOST`, `ARCANA_SENTRY_DSN`.
 - iOS: `iosApp/Configuration/Secrets.xcconfig` has the same, and the PostHog + Sentry **SPM packages** are added to the iosApp target.
 
 **Watch the live event log** (every event prints via the central `Telemetry` tag in debug builds):

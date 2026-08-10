@@ -15,12 +15,12 @@ struct iOSApp: App {
             )
                 // Custom-scheme links (arcana://welcome?token=...)
                 .onOpenURL { url in
-                    MainViewControllerKt.onIosDeepLink(url: url.absoluteString)
+                    IosDeepLinkBridgeKt.onIosDeepLink(url: url.absoluteString)
                 }
                 // Universal Links (https://arcana.fit/welcome?token=...)
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     if let url = activity.webpageURL {
-                        MainViewControllerKt.onIosDeepLink(url: url.absoluteString)
+                        IosDeepLinkBridgeKt.onIosDeepLink(url: url.absoluteString)
                     }
                 }
         }
