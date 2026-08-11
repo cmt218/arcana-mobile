@@ -337,8 +337,9 @@ private fun MainScaffold() {
     }
 }
 
-/** Canonical $screen name for the current destination (see Telemetry.Screens). */
-private fun currentScreenName(dest: NavDestination?): String? = when {
+/** Canonical $screen name for the current destination (see Telemetry.Screens).
+ *  Internal: reused by the iOS shell's per-tab roots (shell/TabRoots.kt). */
+internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest == null -> null
     dest.hasRoute<ArcanaDestination.Home>() -> Telemetry.Screens.HOME
     dest.hasRoute<ArcanaDestination.Schedule>() -> Telemetry.Screens.SCHEDULE
