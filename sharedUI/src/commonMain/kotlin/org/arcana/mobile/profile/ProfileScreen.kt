@@ -243,6 +243,7 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // decorative — the row is the tap target and "Sign out" names it.
                 StrokeIcon(ArcanaIcons.Logout, size = 16.dp, tint = Danger)
                 Overline(text = "Sign out", size = 12, color = Danger)
             }
@@ -401,6 +402,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                     borderColor = StoneAlpha18,
                     contentColor = Stone,
                     onClick = onOpenSettings,
+                    contentDescription = "Settings",
                 )
             }
 
@@ -623,12 +625,14 @@ private fun AccountRow(item: AccountItem, showDivider: Boolean = true, modifier:
                 .background(Mist2),
             contentAlignment = Alignment.Center,
         ) {
+            // decorative — `item.label` below is the row's accessible name.
             StrokeIcon(item.icon, size = 18.dp, tint = Ink)
         }
         BodyText(text = item.label, size = 16, color = Ink, modifier = Modifier.weight(1f))
         Overline(text = item.right, size = 10, color = item.rightColor)
         // Caret only when the row is actually tappable.
         if (item.onClick != null) {
+            // decorative — affordance hint only; the row carries the label.
             StrokeIcon(ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
         }
     }

@@ -274,6 +274,7 @@ fun ArcanaDropdownField(
                             )
                         }
                     }
+                    // decorative — the field's label/selected value names it.
                     StrokeIcon(
                         icon = ArcanaIcons.ChevronDown,
                         size = 18.dp,

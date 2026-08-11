@@ -29,6 +29,96 @@ No linter is configured (no ktlint/detekt).
 
 **Clearing the iOS Simulator Keychain** (useful when testing auth flows): Simulator app → Device → Erase All Content and Settings. Uninstalling the app alone does not clear Keychain items.
 
+## Android CLI — agent tooling (installed 2026-08-10)
+
+Google's `android` CLI is installed at `~/.local/bin/android` (v1.0.15985488). Verify with `command -v android`; if missing:
+`curl -fsSL https://dl.google.com/android/cli/latest/darwin_arm64/install.sh | bash`
+
+**It is Android-only.** It does nothing for the iOS half of this app — no iOS build, no simulator, no Swift. For iOS use the Claude Code iOS Simulator MCP, or the idb fallback documented in `docs/perf/README.md`.
+
+Four skills are installed under `.claude/skills/`: `android-cli`, `perfetto-trace-analysis`, `perfetto-sql`, `r8-analyzer`. **That set is deliberate and minimal — read "Skills that must NOT be used" below before adding any others.** Install more with `android skills add --agent=claude-code --project=. <skill-name>`.
+
+### When to reach for what
+
+| Task | Use |
+|---|---|
+| "Does this Android UI change look right?" / verify a screen without asking Cole to check | `android screen capture -a` + `android layout` (below) |
+| Reproduce/inspect an Android-only bug on a real device | `android layout --diff` loop (below) |
+| Android jank, frame drops, ANRs, slow startup, memory | `perfetto-trace-analysis` + `perfetto-sql` skills |
+| The Android arm of the **CMP 1.12.0 A/B** (see `docs/perf/README.md`) | `perfetto-trace-analysis` — the existing runbook is iOS-only |
+| APK/AAB size, release build optimization, minification | `r8-analyzer` skill (read the R8 note below first) |
+| Looking up official Android/AGP/Jetpack behavior | `android docs search <query>` |
+| Finding Android build outputs across the 3 modules | `android describe --project_dir=.` (verified: correctly picks `:androidApp` as the only APK producer) |
+
+### Driving a real Android device — VERIFIED 2026-08-10
+
+Verified end-to-end against a physical Pixel 9 Pro (Android 16, serial `49141FDAP0000L`) running a debug build. A `Pixel_9_Pro` AVD also exists (`android emulator list`).
+
+**The CLI can inspect but NOT interact.** There is no `android tap`/`input` command. Input is always `adb shell input ...`. This is by design and is what the bundled skill instructs.
+
+1. **Primary — the semantics dump.** Fast (~4s), small, cheap on context:
+   ```
+   android layout --pretty -o /tmp/layout.json
+   ```
+   Returns a **flat JSON list** (NOT a tree, despite the name) with `text`, `center`, `bounds`, `interactions`, `content-desc`, `off-screen`. There is no parent/child nesting — correlate label to control **by coordinate proximity**. The `key` field is identical for every node on a screen (it is a window key, not an element id) — do not use it to identify elements.
+
+   **A clickable entry carrying no `text` is NOT necessarily an unlabeled control.** The dump emits a control's accessible label and its clickable node as *separate sibling entries at nearly identical coordinates* — e.g. the Profile settings button appears as `{"interactions":["clickable"],"center":"[866,239]"}` plus `{"content-desc":"Settings","center":"[865,238]"}`. Always coordinate-match before concluding something is unlabeled, and widen the match window for full-width rows (their center can sit 100+px from their text).
+
+2. **`--diff` for loops.** After an interaction, `android layout --diff --pretty` returns `{"added": [...], "removed": [...]}` — an *object*, not a list. Use this instead of a full dump when stepping through a flow; it keeps context small.
+
+3. **Coordinates are directly tappable.** They are in the same space `adb shell wm size` reports (this device: 960×2142), so `center` feeds straight into `adb shell input tap X Y`. No scaling needed.
+
+4. **Fallback — the annotated screenshot.** When `layout` is missing something (icon-only controls, animations, Canvas-drawn UI):
+   ```
+   android screen capture -a -o /tmp/shot.png
+   adb shell input $(android screen resolve --screenshot=/tmp/shot.png --string="tap #38")
+   ```
+   `--annotate` is **vision-based, not semantics-based, and finds substantially more than `layout` does** — on the Profile screen `layout` returned 33 nodes while the annotated PNG boxed ~66 regions, including every icon `layout` missed (settings gear, tab icons, studio monograms, the Manage chevron). **Always visually read the PNG before resolving a label.** The label numbers are drawn adjacent to (not inside) their boxes and overlap heavily on dense screens — reading them off the image by eye is genuinely error-prone, so confirm with `screen resolve` (it prints the coordinates) before tapping.
+
+5. **Restore state when done.** You are driving Cole's real device with his real account. Put the app back where you found it (`adb shell dumpsys activity activities | grep topResumedActivity` to check) and never tap anything that books, cancels, pays, or deletes.
+
+### Accessibility semantics — the labeling pass (done 2026-08-10)
+
+Icon-only controls used to be genuinely unlabeled: `StrokeIcon`'s `contentDescription` existed as a parameter but was never passed at any call site, so a tappable well containing nothing but a glyph had no accessible name at all. Verified before/after on device: the Profile settings gear was the one unlabeled control on that screen, and is now labeled.
+
+The pass followed the rule now documented on `StrokeIcon` and `IconCircle`: **label icons that ARE the control, keep decorative icons null.** Labeling every icon would make TalkBack announce redundant names ("Continue, arrow right") because Compose merges descendant semantics into the clickable ancestor. Decorative call sites carry a `// decorative` comment so the null reads as deliberate.
+
+Two structural pieces worth knowing:
+- `IconCircle` takes a `contentDescription` — **pass it whenever `onClick` is non-null.**
+- `StudioAccordion`'s select-toggle is labeled via `Modifier.semantics` on the well rather than on the icon, because the check glyph is absent in the unselected and partial states.
+
+Still open: tab-bar items have no `Role.Tab` / selected-state semantics (the visible label supplies the name, so they read acceptably but not ideally), and there are no `testTag`s anywhere.
+
+### Doc-vs-binary discrepancies (the published docs are wrong; the binary is right)
+
+- Skill name is a **positional arg**, not `--skill=`: `android skills add --agent=claude-code --project=. r8-analyzer`
+- Agent id is **`claude-code`**, not `CLAUDE` (run `android skills add` with a bad value to see the full valid list)
+- `screen resolve` takes **`--screenshot=`**, not `--screen=` as the bundled `android-cli` skill's `references/interact.md` claims
+- The accessibility-description field in `layout` output is **`content-desc`** (hyphenated), not `contentDesc` as that same reference file claims — filtering on the wrong key silently reports zero labels
+- `android screen capture --help` errors; use `android screen capture` with no args to print usage
+
+### R8 / minification — Android-only, and currently OFF
+
+`androidApp/build.gradle.kts` sets `isMinifyEnabled = false` with no proguard rules file anywhere in the repo. **Release AABs ship unshrunk and unobfuscated.** The `r8-analyzer` skill's first finding will be "there is no R8 configuration."
+
+**R8 affects Android only** — it is a JVM-bytecode→DEX shrinker and has no iOS equivalent. iOS binary size is governed by Kotlin/Native release-mode DCE plus Xcode linker stripping; note that `export(project(":sharedLogic"))` in `sharedUI/build.gradle.kts` makes every exported public declaration a DCE **root**, so the Swift-visible surface is deliberately retained (correct tradeoff, not a leak). The only size cost genuinely shared by both platforms is the `composeResources` payload (8 TTFs, wordmark PNG, 22 vector drawables).
+
+Enabling minification here is **real work, not a switch flip**: kotlinx-serialization, Koin, Ktor, PostHog and Sentry are all reflection- or annotation-sensitive and are the usual breakages. If attempting it, do it on a branch, keep `isMinifyEnabled` behind a full regression pass on a real device, and verify telemetry still initializes and events still land in PostHog before shipping.
+
+### Skills that must NOT be used — READ THIS BEFORE INSTALLING ANY SKILL
+
+This is a **Kotlin Compose Multiplatform** repo. Most of Google's skill catalogue assumes a Jetpack-Compose-and-Views Android app, and following it here produces wrong or destructive advice. Do not install or act on:
+
+- **`version-lookup`** (an `android studio` subcommand) — **actively hazardous here.** It reports *latest* dependency versions. This repo's hard rule is that `composeMultiplatform`, `org.jetbrains.androidx.navigation`, `org.jetbrains.androidx.lifecycle` and `org.jetbrains.compose.material3` must be taken from the **CMP CHANGELOG's matched versions**, never "latest" (see "Key versions" in Architecture). Bumping nav-compose to latest pulls a conflicting Compose runtime transitive. Never take a version from this tool.
+- **`navigation-3`** — Nav3 is Jetpack-side. Navigation here is the JetBrains CMP port (`org.jetbrains.androidx.navigation` 2.9.2), pinned to the CMP release. This skill's advice does not transfer and following it breaks the pinning rule.
+- **`migrate-xml-views-to-jetpack-compose`** — there are no XML views to migrate. Irrelevant.
+- **`styles`, `adaptive`** — written against Jetpack Compose and its Material3 artifact. This app uses `org.jetbrains.compose.material3` (alpha-only by design) plus a hand-rolled design system in `sharedUI/.../theme/` + `ui/`. High wrong-advice risk; compose from the existing primitives instead.
+- **`edge-to-edge`** — already done correctly via `enableEdgeToEdge()` + `WindowInsets.safeDrawing.only(...)` in `ui/Insets.kt`, and targetSdk 36 forces it regardless. Nothing to gain.
+- **`agp-9-upgrade`** — already on AGP 9.1.0. The real open item is the **AGP 10** horizon (`com.android.kotlin.multiplatform.library`), which this skill does not cover — see the "Known follow-up" note in Architecture.
+- **`android studio` bridge commands generally** (`analyze-file`, `find-usages`, `render-compose-preview`) — require an Android Studio Quail 2 Canary install with Gemini signed in. Installed Studio is 2026.1 stable. Not worth a separate canary install.
+
+**Journeys** (natural-language on-device E2E tests, `*.journey.xml` under `src/journeysTest/`) is legitimately interesting — this repo has **zero** on-device coverage (no `androidTest` source sets anywhere; Espresso is declared in `libs.versions.toml` and referenced by no build file). Good candidates would be the welcome-deep-link → survey → claim-your-name flow and login → schedule → filter → detail → book → cancel. But it is agent-driven (slow, nondeterministic, costs tokens per run), Android-only, and inherits the unlabeled-icon problem above. **Do not set this up unprompted** — raise it with Cole first.
+
 ## Architecture
 
 This is a **Kotlin Compose Multiplatform** project targeting Android and iOS, split into three Gradle modules (2026-08-10, matching JetBrains' sharedLogic/sharedUI default naming exactly and AGP 9's app-plugin-out-of-KMP-modules requirement):

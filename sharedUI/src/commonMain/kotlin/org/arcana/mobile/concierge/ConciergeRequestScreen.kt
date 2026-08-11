@@ -82,6 +82,7 @@ fun ConciergeRequestScreen(
             borderColor = Mist,
             contentColor = Ink,
             onClick = onClose,
+            contentDescription = "Close",
         )
         Spacer(Modifier.height(20.dp))
         Overline(text = "Concierge", color = Moss)
@@ -148,6 +149,7 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
             borderColor = Mist,
             contentColor = Ink,
             onClick = onClose,
+            contentDescription = "Close",
         )
         Spacer(Modifier.weight(1f))
         Column(
@@ -158,6 +160,7 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
                 modifier = Modifier.size(56.dp).clip(CircleShape).background(Moss),
                 contentAlignment = Alignment.Center,
             ) {
+                // decorative — "Message sent." below states the outcome.
                 StrokeIcon(icon = ArcanaIcons.Check, size = 26.dp, tint = Lime)
             }
             Spacer(Modifier.height(24.dp))

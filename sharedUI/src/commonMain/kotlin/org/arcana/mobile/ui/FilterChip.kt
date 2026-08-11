@@ -46,7 +46,12 @@ fun FilterChip(
                 .clickable(onClick = onRemove),
             contentAlignment = Alignment.Center,
         ) {
-            StrokeIcon(ArcanaIcons.Close, size = 11.dp, tint = Stone)
+            StrokeIcon(
+                ArcanaIcons.Close,
+                size = 11.dp,
+                tint = Stone,
+                contentDescription = "Remove $label filter",
+            )
         }
     }
 }

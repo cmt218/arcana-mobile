@@ -50,6 +50,7 @@ fun MyBookingsScreen(onClose: () -> Unit, onOpenClass: (Int) -> Unit) {
             borderColor = Mist,
             contentColor = Ink,
             onClick = onClose,
+            contentDescription = "Close reservations",
         )
         Spacer(Modifier.height(16.dp))
         Heading2("Your bookings", size = 26, color = Wood)

@@ -76,7 +76,12 @@ fun DeveloperSettingsScreen(
                     .clickable(onClick = onClose)
                     .padding(4.dp),
             ) {
-                StrokeIcon(icon = ArcanaIcons.Close, size = 20.dp, tint = Ink)
+                StrokeIcon(
+                    icon = ArcanaIcons.Close,
+                    size = 20.dp,
+                    tint = Ink,
+                    contentDescription = "Close developer settings",
+                )
             }
             Heading2(text = "Developer settings", size = 22, color = Ink)
         }

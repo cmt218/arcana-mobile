@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,10 +80,17 @@ fun StudioAccordionCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
+                // Labeled on the well, not the glyph: the check is absent in
+                // the unselected and partial states, so an icon-only
+                // description would leave the control unnamed 2/3 of the time.
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onToggle),
+                    .clickable(onClick = onToggle)
+                    .semantics {
+                        contentDescription =
+                            if (chosen) "Deselect $name" else "Select $name"
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
@@ -98,6 +107,7 @@ fun StudioAccordionCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     if (chosen) {
+                        // decorative — the well above carries the label.
                         StrokeIcon(ArcanaIcons.Check, size = 18.dp, tint = Ink)
                     } else if (partial) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(Lime))
@@ -143,6 +153,8 @@ fun StudioAccordionCard(
                     size = 18.dp,
                     tint = if (chosen) Lime else Moss,
                     modifier = Modifier.rotate(if (expanded) 180f else 0f),
+                    contentDescription =
+                        if (expanded) "Hide $name locations" else "Show $name locations",
                 )
             }
         }
@@ -183,6 +195,7 @@ fun StudioLocationRow(
             contentAlignment = Alignment.Center,
         ) {
             if (checked) {
+                // decorative — the row is the tap target and `label` names it.
                 StrokeIcon(ArcanaIcons.Check, size = 12.dp, tint = Ink)
             }
         }

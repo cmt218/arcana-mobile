@@ -95,6 +95,7 @@ fun StudioSelectionScreen(
                     borderColor = Mist,
                     contentColor = Ink,
                     onClick = onClose,
+                    contentDescription = "Close studio selection",
                 )
             }
 

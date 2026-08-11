@@ -500,6 +500,8 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
                         color = StoneAlpha65,
                     )
                 }
+                // decorative — the enclosing card is the tap target and is
+                // named by the class/studio text beside this well.
                 IconCircle(
                     icon = ArcanaIcons.ArrowUpRight,
                     diameter = 44,
