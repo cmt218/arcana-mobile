@@ -66,6 +66,7 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.StoneAlpha18
 import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.ui.AccentText
+import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.BodyText
@@ -160,7 +161,7 @@ fun ProfileScreen(
         ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp),
+            contentPadding = PaddingValues(bottom = 16.dp + LocalFloatingBarInset.current),
         ) {
         // Profile hero — full-bleed ink that extends behind the status bar.
         item { ProfileHero(state, onOpenSettings = onOpenSettings) }

@@ -54,6 +54,7 @@ import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.theme.StoneAlpha65
 import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.AccentText
+import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
@@ -106,7 +107,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(Stone)
             .safeContentPadding(),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp + LocalFloatingBarInset.current),
     ) {
         // ── Static chrome — always visible ─────────────────────────────────
         item { TopBar() }

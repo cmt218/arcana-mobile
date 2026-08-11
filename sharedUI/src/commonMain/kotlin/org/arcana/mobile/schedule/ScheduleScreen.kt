@@ -95,6 +95,7 @@ import org.arcana.mobile.theme.Warning
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
@@ -374,7 +375,7 @@ private fun SuccessContent(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().then(daySwipe),
-        contentPadding = PaddingValues(bottom = 24.dp),
+        contentPadding = PaddingValues(bottom = 24.dp + LocalFloatingBarInset.current),
     ) {
         item("title") {
             // Track the *selected* day so the header flips when the user taps
