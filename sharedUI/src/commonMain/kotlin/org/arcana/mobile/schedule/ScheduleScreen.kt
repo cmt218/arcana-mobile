@@ -459,7 +459,12 @@ private fun SuccessContent(
                             .clickable { nudgeDismissed = true },
                         contentAlignment = Alignment.Center,
                     ) {
-                        StrokeIcon(icon = ArcanaIcons.Close, size = 14.dp, tint = Ash2)
+                        StrokeIcon(
+                            icon = ArcanaIcons.Close,
+                            size = 14.dp,
+                            tint = Ash2,
+                            contentDescription = "Dismiss",
+                        )
                     }
                 }
             }
@@ -1408,6 +1413,8 @@ private fun ClassRow(
                 )
             }
         } else {
+            // decorative — the enclosing class row is the tap target and is
+            // named by its class/studio/time text.
             IconCircle(
                 icon = ArcanaIcons.ArrowRight,
                 diameter = 36, iconSize = 16,

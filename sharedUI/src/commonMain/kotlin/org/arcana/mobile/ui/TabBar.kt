@@ -150,6 +150,8 @@ private fun TabItem(
                 )
             }
         } else {
+            // decorative — the visible tab label below is the accessible name,
+            // so describing the glyph too would double the announcement.
             StrokeIcon(icon = tab.icon, size = 22.dp, tint = tint)
         }
         Text(

@@ -160,6 +160,7 @@ private fun EditingForm(
                 borderColor = Ash.copy(alpha = 0.4f),
                 contentColor = Ink,
                 onClick = onClose,
+                contentDescription = "Close without saving",
             )
             SaveAction(enabled = canSave, saving = editing.isSaving, onClick = onSave)
         }
@@ -398,6 +399,7 @@ private fun LoadErrorState(
                 borderColor = Ash.copy(alpha = 0.4f),
                 contentColor = Ink,
                 onClick = onClose,
+                contentDescription = "Close without saving",
             )
         }
         Column(modifier = Modifier.fillMaxWidth().align(Alignment.Center)) {

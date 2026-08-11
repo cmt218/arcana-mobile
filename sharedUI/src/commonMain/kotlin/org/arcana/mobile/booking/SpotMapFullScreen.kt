@@ -91,6 +91,7 @@ fun SpotMapFullScreen(
                     borderColor = Mist,
                     contentColor = Wood,
                     onClick = onClose,
+                    contentDescription = "Close room map",
                     modifier = Modifier.align(Alignment.CenterEnd),
                 )
             }

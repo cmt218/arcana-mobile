@@ -575,7 +575,11 @@ private fun TopBar(onClose: () -> Unit) {
             .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CircleIconButton(icon = ArcanaIcons.Close, onClick = onClose)
+        CircleIconButton(
+            icon = ArcanaIcons.Close,
+            onClick = onClose,
+            contentDescription = "Close class details",
+        )
     }
 }
 
@@ -583,6 +587,7 @@ private fun TopBar(onClose: () -> Unit) {
 private fun CircleIconButton(
     icon: org.jetbrains.compose.resources.DrawableResource,
     onClick: () -> Unit,
+    contentDescription: String,
 ) {
     Box(
         modifier = Modifier
@@ -593,7 +598,12 @@ private fun CircleIconButton(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        StrokeIcon(icon = icon, size = 18.dp, tint = Ink)
+        StrokeIcon(
+            icon = icon,
+            size = 18.dp,
+            tint = Ink,
+            contentDescription = contentDescription,
+        )
     }
 }
 
@@ -934,6 +944,7 @@ private fun LocationRow(
                 .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
+            // decorative — the "LOCATION" overline and address name this block.
             StrokeIcon(icon = ArcanaIcons.Pin, size = 22.dp, tint = studioColor)
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -1082,6 +1093,7 @@ private fun StickyReserveCta(
                             .background(arrowWellColor),
                         contentAlignment = Alignment.Center,
                     ) {
+                        // decorative — the reserve CTA's own label names it.
                         StrokeIcon(icon = arrowIcon, size = 18.dp, tint = Ink)
                     }
                 }

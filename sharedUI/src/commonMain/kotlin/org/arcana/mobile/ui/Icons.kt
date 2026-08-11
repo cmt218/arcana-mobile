@@ -72,6 +72,18 @@ object ArcanaIcons {
  * Renders an [ArcanaIcons] entry (or any [DrawableResource]) at [size], tinted
  * via [tint]. The XML's baked stroke is replaced by the tint at draw time, so
  * call sites only need to pass the color they want.
+ *
+ * **[contentDescription] rule — do not label every icon.** Pass a description
+ * only when the icon *is* the whole control (an icon-only button with nothing
+ * else to name it). Leave it null when the icon sits beside a visible text
+ * label or inside an already-labeled clickable: Compose merges descendant
+ * semantics into the clickable ancestor, so a description there makes TalkBack
+ * announce the label twice ("Continue, arrow right"). Decorative call sites in
+ * this repo carry a short `// decorative` comment so the null is obviously
+ * deliberate rather than an oversight.
+ *
+ * Describe the **action**, not the glyph ("Remove Barry's filter", not "Close
+ * icon"), and never include the role — TalkBack announces "button" itself.
  */
 @Composable
 fun StrokeIcon(

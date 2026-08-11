@@ -396,6 +396,7 @@ private fun LockedEmailRow(email: String) {
                     .background(Moss),
                 contentAlignment = Alignment.Center,
             ) {
+                // decorative — the email text beside it is the content.
                 StrokeIcon(icon = ArcanaIcons.Check, size = 13.dp, tint = Lime)
             }
             BodyText(text = email, modifier = Modifier.weight(1f), size = 18, color = Ink)

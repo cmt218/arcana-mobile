@@ -113,6 +113,7 @@ fun BookingSheet(
                                 borderColor = Mist,
                                 contentColor = Wood,
                                 onClick = { spotMapExpanded = true },
+                                contentDescription = "Expand room map",
                             )
                         }
                     }

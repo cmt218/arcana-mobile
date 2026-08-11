@@ -78,6 +78,7 @@ fun PrimaryCta(
                     .background(if (enabled) accentColor else Stone.copy(alpha = 0.25f)),
                 contentAlignment = Alignment.Center,
             ) {
+                // decorative — the CTA's own label is the accessible name.
                 StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 18.dp, tint = Ink)
             }
         }
@@ -123,6 +124,7 @@ fun TextLink(
             ),
         )
         Spacer(Modifier.width(8.dp))
+        // decorative — the link's own label is the accessible name.
         StrokeIcon(icon = icon, size = 14.dp, tint = color)
     }
 }
@@ -131,6 +133,11 @@ fun TextLink(
  * Circular icon affordance — the recurring round well seen on cards, rows,
  * and modal headers. Provide [background] for a filled well or [borderColor]
  * for a hairline-outlined one.
+ *
+ * **Pass [contentDescription] whenever [onClick] is non-null** — a tappable
+ * well contains nothing but a glyph, so without one it is an unlabeled control
+ * to TalkBack and an anonymous clickable to `android layout`. Leave it null for
+ * the decorative (non-tappable) wells. See [StrokeIcon]'s doc for the rule.
  */
 @Composable
 fun IconCircle(
@@ -142,6 +149,7 @@ fun IconCircle(
     borderColor: Color? = null,
     contentColor: Color = Ink,
     onClick: (() -> Unit)? = null,
+    contentDescription: String? = null,
 ) {
     Box(
         modifier = modifier
@@ -152,6 +160,11 @@ fun IconCircle(
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        StrokeIcon(icon = icon, size = iconSize.dp, tint = contentColor)
+        StrokeIcon(
+            icon = icon,
+            size = iconSize.dp,
+            tint = contentColor,
+            contentDescription = contentDescription,
+        )
     }
 }
