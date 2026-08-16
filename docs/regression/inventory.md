@@ -1,0 +1,1361 @@
+# Arcana Mobile — Regression Inventory
+
+Entry IDs are stable and never reused. Deleted entries leave a tombstone line in place: `### <ID> — RETIRED (<date>): <reason>`. Any PR changing user-facing functionality must update this file (see CLAUDE.md "Regression inventory" section). This file is the checklist consumed by the `/full-regression` suite (docs/regression/runbook.md).
+
+**Source-path convention (the Phase 1 reverse pass depends on it).** Every path on a `- **Source:**` line must be a **full repo-relative path to a concrete file** that resolves with `test -f`. Do not abbreviate a package prefix as `sharedLogic/.../schedule/Foo.kt` — an elided path can never detect a rename, which is the whole point of the reverse pass. Do not cite a bundle directory (`*.xcassets`, `*.icon`) either; name a concrete file inside it (e.g. `.../LaunchBackground.colorset/Contents.json`). Parenthetical annotations after a path are fine and may contain commas.
+
+**Line numbers in those annotations are hints, not contract.** Where a Source
+line carries a parenthetical like `(lines 584-635)` or `(line 144 …)`, treat it
+as a navigation aid that drifts the moment anything above it in the file moves.
+The **file paths** are the contract the Phase 1 reverse audit enforces (it
+strips parentheses before extracting, so it never checks a line number); a
+stale line number is not a finding. Prefer naming a symbol over a line number
+when adding a new annotation.
+
+**Consciously-accepted exclusions.** None. Every user-facing surface the Phase 1 forward pass enumerates (ViewModel declarations, `*Screen.kt`, nav destinations) currently traces to at least one entry — including the debug-only Developer Settings screen, which is covered by the DEVSET area rather than excluded, because a wrong base URL there silently sends a tester's whole session at the wrong server. If a future surface is deliberately left untested, list it here with a one-line reason instead of letting it surface as a recurring Phase 1 finding.
+
+**218 entries across 14 areas** (keep this line and the runbook's pinned count in sync when adding an entry): LAUNCH 5, AUTH 13, SIGNUP 23, HOME 20, SCHED 19, CLASS 26, FAV 9, PROFILE 26, CONCIERGE 4, DEVSET 11, NAV 12, ERR 20, TEL 21, PLAT 9. CONCIERGE was added during the 2026-08-11 completeness sweep (the Concierge Request screen, reached from Profile, had no coverage in the original 13-area plan); a new top-level surface warrants a new area section rather than squeezing into a neighbor.
+
+## LAUNCH
+
+### LAUNCH-01 — Cold start, unauthenticated, splash minimum display
+- **Steps:** Fresh install (or Keychain/app-data cleared), launch the app with no stored session.
+- **Expected:** The dot-matrix splash (moss field, flickering dots settling into the wordmark, then a breath pulse) is visible for at least `SPLASH_MIN_DISPLAY_MS` before it fades (300ms fade) to reveal the Auth screen. The splash never disappears earlier than the dance+settle+200ms tail, even on a fast device.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/SplashScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/SplashHost.kt, iosApp/iosApp/ArcanaShell.swift
+- **Platforms:** shared
+
+### LAUNCH-02 — Cold start, authenticated (session restore)
+- **Steps:** With a previously-logged-in session (valid stored token), force-quit and relaunch the app.
+- **Expected:** Splash plays its minimum duration, then the app lands directly on the Home tab (no Auth screen shown). Underlying data fetches (Home/Profile) begin during the splash window so content is ready, not shimmering, the instant the splash fades.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`isAuthenticated` gate, `AppStartTracker.onFirstContent`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`isAuthenticated()`), iosApp/iosApp/ArcanaShell.swift (`buildControllers(authenticated:)`)
+- **Platforms:** shared
+
+### LAUNCH-03 — App-start telemetry fires exactly once per process
+- **Steps:** Cold-launch the app (authenticated or not) and watch the debug telemetry echo (`▶ Telemetry` in logcat / Xcode console).
+- **Expected:** `app_start_completed` fires exactly once, carrying `start_type=cold` and `authenticated` matching the actual session state at first content. A second call (e.g. tab switch, backgrounding) does not re-fire it.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/AppStartTracker.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt
+- **Platforms:** shared
+
+### LAUNCH-04 — First-launch welcome-token recovery grace period
+- **Steps:** Fresh install, sign out state, launch the app with NO deep link pending (plain app-icon tap). On Android, this exercises the Play Install Referrer lookup.
+- **Expected:** The app waits `RECOVERY_DEEP_LINK_GRACE_MS` (700ms) before consulting the platform recovery source, so a deep link that arrives within that window wins and the recovery source is never queried (avoiding, on iOS, a pasteboard-permission prompt). The recovery attempt is marked persistently and only ever runs once per install, even across later launches.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/session/AppSessionController.kt (`attemptFirstLaunchRecovery`, `RECOVERY_ATTEMPTED_KEY`, `RECOVERY_DEEP_LINK_GRACE_MS`)
+- **Platforms:** shared
+
+### LAUNCH-05 — iOS launch screen has no white flash
+- **Steps:** Cold-launch the iOS app and watch the very first frames before the Compose splash mounts.
+- **Expected:** The native launch screen background renders the `LaunchBackground` (MossDeep) colorset, not white/system default, so there is no flash before the dot-matrix splash takes over.
+- **Source:** iosApp/iosApp/Assets.xcassets/LaunchBackground.colorset/Contents.json, iosApp/iosApp/iOSApp.swift (per CLAUDE.md "iOS Liquid Glass shell" section)
+- **Platforms:** iOS-only
+
+## AUTH
+
+### AUTH-01 — Cold-start lands on login (no welcome token, unauthenticated)
+- **Steps:** Fresh install / signed-out cold start with no pending welcome deep link. Observe the first screen shown.
+- **Expected:** `AuthScreen` renders directly (sign-in only — there is no in-app sign-up entry). Header reads "Sign in" / "Welcome back." with email + password fields and a "Sign in" CTA.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
+- **Platforms:** shared
+
+### AUTH-02 — Login success
+- **Steps:** On AuthScreen, enter a valid member email + password, tap "Sign in" (or Done on the keyboard from the password field).
+- **Expected:** CTA swaps to a Moss pill with a Lime spinner while in flight (`AuthUiState.Loading`). On success `AuthViewModel.uiState` becomes `Success`, `ArcanaApiClient.isAuthenticated` flips true, and the app transitions into the authenticated shell (AuthFlowRoot renders inert Stone for one frame during the swap on iOS; App.kt swaps directly on Android).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
+- **Platforms:** shared
+
+### AUTH-03 — Wrong email/password shows inline credential error
+- **Steps:** On AuthScreen, submit an email/password combination that returns 401.
+- **Expected:** `AuthViewModel.login` sets `AuthUiState.Error(isCredentialError = true)`. The message "That email and password don't match. Double-check and try again." renders as the Password field's inline `error`, not as a general banner. The form is not cleared.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt
+- **Platforms:** shared
+
+### AUTH-04 — Server 5xx / network failure on login shows general banner
+- **Steps:** Submit valid-looking credentials while the server returns a 5xx, or with no network connectivity.
+- **Expected:** `AuthUiState.Error(isCredentialError = false)`. Copy is "Something went wrong on our end. Please try again in a moment." for 5xx, or "Couldn't reach the server. Check your connection and try again." for a network exception; other non-401 status codes show "Couldn't sign you in (error <code>)." Rendered as a general `BodyText` banner below the fields, not attached to a field.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt
+- **Platforms:** shared
+
+### AUTH-05 — Re-entering AuthScreen resets stale state
+- **Steps:** Trigger a login error (AUTH-03/AUTH-04), then leave and return to AuthScreen (e.g. back-navigate from password reset).
+- **Expected:** `LaunchedEffect(Unit) { viewModel.resetState() }` clears the prior error/loading state back to `Idle` on every fresh composition of AuthScreen — no stale error banner or spinner reappears.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
+- **Platforms:** shared
+
+### AUTH-06 — Forgot password navigates to reset with email prefilled
+- **Steps:** On AuthScreen, type an email into the Email field, then tap "Forgot your password?" without submitting login.
+- **Expected:** Navigates to `PasswordResetRequestScreen` with the trimmed email from the Email field pre-populated as `passwordResetInitialEmail`, passed into `PasswordResetRequestViewModel(initialEmail=...)`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestViewModel.kt
+- **Platforms:** shared
+
+### AUTH-07 — Password reset request: Send button disabled for invalid/blank email
+- **Steps:** On PasswordResetRequestScreen, leave the email field blank, or type an obviously invalid address (no "@", no domain dot).
+- **Expected:** `PasswordResetRequestViewModel.canSubmit` is false (`isValidEmail` regex fails), so the "Send reset email" `PrimaryCta` renders disabled and tapping it is a no-op.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestScreen.kt
+- **Platforms:** shared
+
+### AUTH-08 — Password reset request: submit shows loading pill then confirmation
+- **Steps:** Enter a valid-looking email, tap "Send reset email".
+- **Expected:** State moves Idle → Submitting (Moss pill + Lime spinner replaces the CTA) → on success, `Sent` state renders a confirmation block: "If an account exists with this email, we'll send password reset instructions to it." plus a "Back to sign in" button. Note the copy is intentionally non-committal (does not confirm whether the account exists) and fires regardless of the actual account state.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestViewModel.kt
+- **Platforms:** shared
+
+### AUTH-09 — Password reset request: network failure shows retry-able error
+- **Steps:** Submit a valid email while the request throws (network unreachable / server error).
+- **Expected:** `PasswordResetSubmit.Failed`; a Danger-colored line "Couldn't reach the server. Check your connection and try again." appears above the CTA, which reverts to its enabled "Send reset email" state so the member can retry. Editing the email field while in the Failed state clears it back to Idle.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestScreen.kt
+- **Platforms:** shared
+
+### AUTH-10 — Password reset: back to sign in
+- **Steps:** From either the editing form or the post-submit "Sent" confirmation on PasswordResetRequestScreen, tap "Back to sign in".
+- **Expected:** Returns to AuthScreen (`onBackToLogin` callback); no reset state persists into the fresh AuthScreen (AuthScreen resets its own state per AUTH-05).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestScreen.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
+- **Platforms:** shared
+
+### AUTH-11 — Manual sign out clears session
+- **Steps:** From the Profile tab, scroll to the account section and tap "Sign out".
+- **Expected:** `ArcanaApiClient.logout()` fires: `telemetry.logoutManual()` + `telemetry.reset()`, `tokenStorage.clear()`, the Ktor bearer-token cache is cleared, and `isAuthenticated` flips false — the app falls back to AuthScreen. This is distinguished from a forced logout by telemetry (`logoutManual` vs `forcedLogout`).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt
+- **Platforms:** shared
+
+### AUTH-12 — Forced logout on refresh-token failure
+- **Steps:** Put the app in a state where the stored refresh token is missing/invalid or a token-refresh network call fails (e.g. clear Keychain/EncryptedSharedPreferences externally while a session is active, then trigger any authenticated request).
+- **Expected:** `ArcanaApiClient.forceLogout(cause)` runs: records `SecureStorageDiagnostics.lastFailureFor(REFRESH_TOKEN_KEY)`, fires `telemetry.forcedLogout(cause, osStatus, storageOp, storageKey)`, reports a `ForcedLogoutSignal` nonfatal to Sentry BEFORE `telemetry.reset()` (so the member is still attached to the report), then clears tokens and flips `isAuthenticated` false — landing back on AuthScreen with no explicit member action.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt
+- **Platforms:** shared
+
+### AUTH-13 — Hidden Developer Settings gesture (10 taps on wordmark)
+- **Steps:** On AuthScreen, tap the wordmark logo 10 times in a row.
+- **Expected:** On the 10th tap, `DeveloperSettingsScreen` replaces AuthScreen (`showDeveloperSettings = true`, `devTapCount` resets to 0). The gesture has no visible affordance (ripple/indication is null) and is undiscoverable without knowing to tap it. Fewer than 10 taps has no visible effect.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt
+- **Platforms:** shared
+
+## SIGNUP
+
+### SIGNUP-01 — Cold deep link routes straight to the onboarding survey
+- **Steps:** Cold-launch the app via a welcome link (`https://arcana.fit/welcome?token=XXX` or the dev `arcana://welcome?token=XXX` scheme) while signed out.
+- **Expected:** `DeepLinkHandler.extractWelcomeToken` parses the token; `AppSessionController.onDeepLinkToken` seeds `welcomeToken` synchronously (same-frame, not via a LaunchedEffect, to avoid a spurious Auth screen flash/telemetry). Since the token has never been marked done (`isSurveyDone` false), `SignupSurveyScreen` renders first — not AuthScreen and not the claim screen.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/navigation/DeepLinkHandler.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/session/AppSessionController.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt
+- **Platforms:** shared
+
+### SIGNUP-02 — Warm deep link (app already open) also routes to survey/claim
+- **Steps:** With the app already open and signed out (on AuthScreen or mid password-reset), receive the welcome link again (tap the email link a second time, or re-deliver the same URL to the platform bridge).
+- **Expected:** `AppSessionController.onDeepLinkToken` updates `welcomeToken` from the newly-delivered token; the composition re-renders into SignupSurveyScreen (if `isSurveyDone(token)` is false) or straight to SignupCompletionScreen (if the survey was already completed/skipped for that exact token) — same routing logic as cold start, driven by the same StateFlow.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/session/AppSessionController.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt
+- **Platforms:** shared
+
+### SIGNUP-03 — Survey: required questions block Continue
+- **Steps:** On SignupSurveyScreen, leave one or more required questions (Q1-Q11) unanswered and observe the "Continue" CTA.
+- **Expected:** `missingRequired(answers)` is non-empty so `SignupSurveyViewModel.canSubmit` is false and the "Continue" `PrimaryCta` renders disabled; the "X of 13 answered" progress stamp above it reflects the count via `answeredCount`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-04 — Survey: Q12/Q13 (open-floor) are optional and never block Continue
+- **Steps:** Answer every required question (Q1-Q11) but leave "Anything else you want us to know?" (Q12) and "Did someone refer you to Arcana?" (Q13) blank.
+- **Expected:** Continue becomes enabled — `missingRequired` only iterates `required = true` questions, and both Q12/Q13 have `required = false`. Their Overline label shows "· optional" next to the question number.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-05 — Survey: "How did you hear about Arcana?" Other reveals required specify field
+- **Steps:** On Q11 ("How did you hear about Arcana?"), select "Other". Leave the newly-revealed "Please specify" text field blank and check Continue's enabled state; then fill it in.
+- **Expected:** Selecting "Other" (the question's `otherOption`) reveals an `ArcanaTextField` bound to `howHeard__other`. While that text is blank, `missingRequired` still lists `howHeard` (Continue stays disabled) even though a single option is selected; once text is entered, the question clears from `missingRequired` and Continue can enable (assuming all else answered).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-06 — Survey: multi-select questions toggle independently
+- **Steps:** On a Multi-type question (e.g. Q1 "Which modalities do you train in regularly?"), tap several option chips, then tap one of the already-selected chips again.
+- **Expected:** Each tap toggles that single option in/out of `answers.multis[id]` via `SignupSurveyViewModel.toggleMulti` — other selected options in the same question are unaffected. Selected chips render Burnt Nectar filled with Stone text; unselected chips render a Mist-outlined box.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-07 — Survey: submit failure keeps answers and offers retry, then "Continue anyway"
+- **Steps:** Answer all required questions, tap Continue while the submit endpoint fails (network error or non-410 server error). Observe the screen, then tap Continue again to fail a second time.
+- **Expected:** On first failure: `SubmitErrorBanner` shows the mapped message (network/server/generic), all typed answers are preserved, and a "Continue anyway" `TextLink` appears below the CTA once `failedAttempts >= 1`. Tapping "Continue anyway" calls `continueAnyway()`, which fires `signupSurveySkipped("submit_failed")` telemetry and completes the survey (advances past it) without a successful submit — the survey must never block a paid member's signup.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-08 — Survey: expired/consumed token (410) advances silently to claim screen
+- **Steps:** Submit the survey using a token that the server reports as expired or already consumed (410).
+- **Expected:** `SignupSurveyResult.TokenExpiredOrConsumed` fires `telemetry.signupSurveyFailed("token_expired", 410)` and calls `complete()` immediately — no error banner is shown on the survey itself; the flow advances to SignupCompletionScreen, which is responsible for rendering the actual token-expired UX (SIGNUP-13).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt
+- **Platforms:** shared
+
+### SIGNUP-09 — Survey: completion persists per-token so re-tapping the link skips it
+- **Steps:** Complete (or "Continue anyway" past) the survey for a given welcome token, then background/kill and relaunch the app via the same welcome link.
+- **Expected:** `AppSessionController.markSurveyDone(token)` persisted `signup_survey_done:<token> = "1"` in SecureStorage. On the next launch with that same token, `isSurveyDone(token)` is true and the flow renders SignupCompletionScreen directly — the survey does not reappear for that link.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/session/AppSessionController.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
+- **Platforms:** shared
+
+### SIGNUP-10 — Survey: "Already a member? Log in" abandons the token
+- **Steps:** On SignupSurveyScreen, tap "Log in" in the footer link.
+- **Expected:** `session.consumeWelcomeToken()` clears the pending token and `onNavigateToLogin`/`onWelcomeTokenConsumed` fires, returning the member to AuthScreen. The abandoned survey progress is not persisted (no `markSurveyDone` call on this path).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/session/AppSessionController.kt
+- **Platforms:** shared
+
+### SIGNUP-11 — Claim form: birthday auto-mask inserts slashes as digits are typed
+- **Steps:** On SignupCompletionScreen (claim-your-name), tap into the Birthday field and type `04121995`.
+- **Expected:** `DateMaskVisualTransformation` renders the display as `04/12/1995` while the underlying stored value stays the raw digit string (`updateBirthday` strips non-digits and caps at 8 chars). Typing beyond 8 digits is ignored (no more characters accepted).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt
+- **Platforms:** shared
+
+### SIGNUP-12 — Claim form: birthday validates real date + minimum age inline
+- **Steps:** Type a birthday with an impossible date (e.g. `02301995` for Feb 30) or an underage date (a date less than 18 years before today), completing all 8 digits.
+- **Expected:** Once 8 digits are entered, `birthdayErrorFor` computes: an impossible calendar date shows "Enter a valid date as MM/DD/YYYY.", an under-18 date shows "You must be 18 or older to use Arcana." Both render as the Birthday field's inline error. While fewer than 8 digits are typed, no error shows (no mid-type nagging). Continue ("Create account") stays disabled until a valid 18+ date is present alongside all other required fields.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-13 — Claim form: gender dropdown offers Male/Female/Other
+- **Steps:** On SignupCompletionScreen, tap the Gender field.
+- **Expected:** `ArcanaDropdownField` opens with exactly three options — "Male", "Female", "Other" (server codes `male`/`female`/`other`). Selecting one sets `editing.gender` and closes the dropdown. Gender is required: `isValidEditing` rejects submission while `gender.isBlank()`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt
+- **Platforms:** shared
+
+### SIGNUP-14 — Claim form: address fields required except Apt/unit
+- **Steps:** Fill every claim-form field except leave "Apt / unit (optional)" blank, then attempt Create account; separately, leave Street address, City, State, or ZIP blank and check the CTA.
+- **Expected:** Apt/unit blank never blocks submission (not checked by `isValidEditing`). Blank Street address, City, State, or Postal code each independently keep `canSubmit` false — validation is lenient on shape (no regex/format check on state/ZIP) but strict on non-blank presence for those four.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-15 — Claim form: password rules (min length, confirm match)
+- **Steps:** Type a password under 8 characters, or type a password of 8+ characters where "Confirm password" doesn't match it, and check the Create account CTA.
+- **Expected:** `isValidEditing` requires `password.length >= MIN_PASSWORD_LENGTH (8)` and `password == confirmPassword`; either violation keeps Create account disabled. A server-side password rejection (e.g. `password_invalid`) after submit surfaces as an inline `passwordError` on the Password field via `parseServerErrors`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-16 — Claim form: first/last name and phone required
+- **Steps:** Leave First name, Last name blank, or type a phone number with fewer than 10 digits, and check the CTA.
+- **Expected:** `isValidEditing` rejects blank first/last name and phone numbers under `MIN_PHONE_DIGITS` (10) once non-digit characters are stripped for the count; phone input itself is capped at `PHONE_MAX_LENGTH` (20 chars) as typed so an over-long number can never reach the server.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt
+- **Platforms:** shared
+
+### SIGNUP-17 — Claim form: locked email row shown when carried from checkout
+- **Steps:** Reach SignupCompletionScreen with a non-null `lockedEmail` (email already confirmed via web checkout).
+- **Expected:** A non-editable "Email" row renders above First name: a Moss circle check chip, the email value, and a faint "From checkout" stamp over a 1px Mist hairline. When `lockedEmail` is null this row is omitted entirely.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-18 — Claim form: successful submit shows a brand loader, no explicit navigation
+- **Steps:** Fill the claim form validly and submit while the server accepts it.
+- **Expected:** `SignupCompletionState.Success` renders `SuccessLoader` (centered Moss circle + Lime spinner on Stone) — a deliberate brief loading frame with no navigation call from this screen; the app-wide `isAuthenticated` flip (from `completeSignup()`) is what actually swaps the whole flow into the authenticated shell.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt
+- **Platforms:** shared
+
+### SIGNUP-19 — Claim form: already-consumed/expired token routes to "Log in instead"
+- **Steps:** Submit the claim form (or arrive on the claim screen) using a welcome token the server reports as expired or already used (`CompleteSignupResult.TokenExpiredOrConsumed`).
+- **Expected:** `SignupCompletionState.Error(SignupErrorKind.TokenExpired)` renders a terminal ErrorState: "Already signed up" / "Log in instead." with body "Looks like this link's already been used." and a "Log in" `PrimaryCta`. The editing form is fully replaced — there is no way back to re-edit under this token.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-20 — Claim form: account-already-exists (409) also routes to "Log in instead"
+- **Steps:** Submit the claim form with an email that the server reports already has an account (`409` + `error: account_exists`).
+- **Expected:** `SignupCompletionState.Error(SignupErrorKind.AlreadyHasAccount)` renders the same terminal ErrorState layout but with body "You already have an account with this email." — distinct copy from the expired-token case, same "Log in" CTA routing to AuthScreen.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-21 — Claim form: network/server failure keeps form editable with a banner
+- **Steps:** Submit a valid claim form while the network is unreachable, or the server 5xxs with no field-specific error.
+- **Expected:** Stays on `Editing` state (not a terminal Error) — `formError` is set to "Couldn't reach the server..." (network) or "Something went wrong on our end..." (5xx with no field error), rendered as a Danger banner above the fields. All typed values are preserved so the member can retry without re-entering the form.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** shared
+
+### SIGNUP-22 — Claim form: Tab key advances exactly one field (keyboard/hardware input)
+- **Steps:** Using a hardware keyboard (or simulator keyboard shortcuts) on the claim form, press Tab, then Shift+Tab.
+- **Expected:** Focus moves exactly one field forward on Tab / one field backward on Shift+Tab. The screen's `onPreviewKeyEvent` consumes the Tab keydown itself (returns true) specifically to prevent double-advancing on iOS, where the platform would otherwise also traverse focus in addition to each field's own `onImeAction`-driven `moveFocus`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
+- **Platforms:** iOS-only
+
+### SIGNUP-23 — Survey/claim screens fire dedicated $screen telemetry
+- **Steps:** Land on SignupSurveyScreen, then advance to SignupCompletionScreen; watch Debug-build telemetry console echo (or PostHog Activity).
+- **Expected:** `Telemetry.Screens.SIGNUP_SURVEY` fires once on entering the survey; `Telemetry.Screens.SIGNUP` fires once on entering the claim screen — each via a `LaunchedEffect(Unit)` scoped to that branch of AuthFlowRoot/App.kt, so re-composition without a real navigation does not re-fire them.
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt
+- **Platforms:** shared
+
+## HOME
+
+### HOME-01 — Cold load shows shimmer, not blank screen
+- **Steps:** Navigate to the Home tab immediately after login/app start, before the `/memberships/me` + `/bookings/me/` calls resolve.
+- **Expected:** `HomeUiState.Loading` renders: static "Good {greeting}," headline with a shimmer box standing in for the name, a "Next up" section rule over a shimmer card, three shimmer rows under "Upcoming", and a shimmer manifesto card. No crash, no empty layout.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 130-183), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`HomeUiState.Loading`)
+- **Platforms:** shared
+
+### HOME-02 — Greeting renders member's first name only
+- **Steps:** Load Home as a member whose account `displayName` is a full name (e.g. "Cole Tomlinson").
+- **Expected:** Headline reads "Good {morning/afternoon/evening}, Cole." — only the first token before the first space is shown, even though the stored display name has two words.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/FirstName.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (line 119, `firstName(s.displayName)`)
+- **Platforms:** shared
+
+### HOME-03 — Greeting display-name fallback (server-fed)
+- **Steps:** Load Home as a member whose first/last name are blank server-side (blank them via `manage.py shell` on the regression member, then refresh Home).
+- **Expected:** The greeting renders whatever `display_name` the server sends. The server never sends null: with blank names its serializer falls back to the member's full email address, so the greeting shows the raw email (e.g. "GOOD EVENING, REGRESSION-ANDROID-MEMBER@EXAMPLE.COM."). The client-side `email.substringBefore("@")` fallback in `HomeViewModel` is dead code on this path — it only fires if the server ever sent null. (Corrected 2026-08-11 after the first live run: the original entry assumed a reachable null-displayName precondition; the raw-email greeting is current intended behavior, with a UX follow-up flagged for a friendlier server-side fallback.)
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (line 64)
+- **Platforms:** shared
+
+### HOME-04 — Greeting salutation matches local time-of-day
+- **Steps:** Load Home at a device-local hour before 5am, between 5am-12pm, 12pm-5pm, and after 5pm (or mock the clock across those buckets).
+- **Expected:** Headline second line reads "evening," before 5am, "morning," from 5am up to noon, "afternoon," from noon up to 5pm, and "evening," from 5pm onward.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`timeOfDay`, lines 348-354, and its use at lines 98/383/392/396)
+- **Platforms:** shared
+
+### HOME-05 — Date overline shows today's date
+- **Steps:** Load Home on any date.
+- **Expected:** A small overline above the greeting reads "{3-letter weekday} · {3-letter month} {day}" (e.g. "TUE · AUG 11") computed from the device's current date/timezone.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 94-97, `TopBar`/`HeroHeader` usage)
+- **Platforms:** shared
+
+### HOME-06 — Error state shows a message instead of crashing or blanking
+- **Steps:** Force `/memberships/me` to fail (e.g. server unreachable, non-2xx) with no prior successful load cached in this session.
+- **Expected:** `HomeUiState.Error("server error")` is set; the screen shows the static greeting chrome plus a small caption reading "server error" below it — no crash, no infinite shimmer.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (lines 71-77, `fetch()` catch block), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 185-196, `HomeUiState.Error` branch)
+- **Platforms:** shared
+
+### HOME-07 — Next Up hero card renders the soonest upcoming booking
+- **Steps:** Load Home as a member with at least one upcoming booking.
+- **Expected:** A "Next · {relative time}" section rule appears (e.g. "Next · in 18min", "Next · in 3h", or "Next · Mon 6:00am" depending on how far out the class is) followed by a dark Moss card showing the studio (and spot label if assigned), a booking-status pill, the local start time with am/pm, the class name, and a studio/location/duration meta line.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`NextUpCard`, lines 198-221 and 410-528; `relativeTime`, lines 313-337)
+- **Platforms:** shared
+
+### HOME-08 — Next Up card shows member-facing booking info when present
+- **Steps:** Load Home where the soonest booking carries a member-facing note (e.g. a door code) via `bookingInfoOrNull`.
+- **Expected:** The Next Up card shows an extra "Booking info" overline plus the note text (max 2 lines, ellipsized); when no note exists on the booking, that block is omitted entirely.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 514-525), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingNotes.kt (`bookingInfoOrNull`)
+- **Platforms:** shared
+
+### HOME-09 — No-upcoming-classes empty state on the Next Up section
+- **Steps:** Load Home as a member with zero upcoming bookings.
+- **Expected:** The "Next up" section rule still renders, but in place of the hero card a caption reads "No upcoming classes — browse the schedule." instead of a broken/empty card.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 222-239)
+- **Platforms:** shared
+
+### HOME-10 — Nothing-booked-yet empty state below the hero
+- **Steps:** Load Home as a member with zero total upcoming bookings (hero also null).
+- **Expected:** Below the Next Up empty state, a second caption reads "Nothing booked yet." in place of the upcoming rows list (no "See all" confusion, no empty list flash).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 246-254)
+- **Platforms:** shared
+
+### HOME-11 — Upcoming preview list shows up to 4 further bookings, grouped by day
+- **Steps:** Load Home as a member with 6+ upcoming bookings spanning multiple days.
+- **Expected:** Up to `UPCOMING_PREVIEW_COUNT` = 4 bookings (after the hero) render as rows under "Upcoming"; each new day introduces a day-header divider ("{Weekday} · {Month} {day}") with a hairline, consecutive same-day rows share a bottom hairline, and the day's last row (or the list's final row) drops its own hairline so dividers don't double up.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`UPCOMING_PREVIEW_COUNT` line 75, itemsIndexed block lines 256-273, `UpcomingRow` lines 530-643)
+- **Platforms:** shared
+
+### HOME-12 — Upcoming row shows time, duration, status pill, studio/location/spot
+- **Steps:** Load Home as `accounts.<device>.member` from the manifest — its seeded confirmed reservation is the upcoming booking this entry reads (it carries a location; the regression templates are `spot_selection_mode='none'`, so the spot label is absent unless you first book a spot studio, which no seeded fixture is).
+- **Expected:** Each row shows a fitted booking-status pill above the local start time, the class duration below it, and on the right the studio name, a dot-separated location (ellipsized if long) and spot label, plus the class name.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 584-635)
+- **Platforms:** shared
+
+### HOME-13 — "See all" link opens the full bookings list
+- **Steps:** From Home, tap the "See all" text link below the upcoming rows.
+- **Expected:** `onSeeAllBookings` fires, navigating to the My Bookings screen (regardless of whether there are 0, few, or many upcoming bookings — the link always renders in the Success state).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 276-285)
+- **Platforms:** shared
+
+### HOME-14 — Tapping the Next Up card or an upcoming row opens that class's detail
+- **Steps:** From Home, tap the Next Up hero card; separately, tap any row in the Upcoming list.
+- **Expected:** `onOpenClass(session.id)` fires with that specific booking's session id, navigating into Class Detail for that class.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 216-220, 264-271)
+- **Platforms:** shared
+
+### HOME-15 — Manifesto card shows remaining credits and streak
+- **Steps:** Load Home as a member with an active current-period wallet and a nonzero week streak.
+- **Expected:** The dark card at the bottom reads "{N} classes remaining." plus a line "{N}-week streak. Keep it going." beneath it.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`ManifestoCard`, lines 645-689)
+- **Platforms:** shared
+
+### HOME-16 — Manifesto card shows "Build your streak." when streak is zero
+- **Steps:** Load Home as a member with an active wallet but `weekStreak == 0`.
+- **Expected:** The manifesto card's sub-line reads "Build your streak." instead of a "0-week streak" phrasing.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (line 680)
+- **Platforms:** shared
+
+### HOME-17 — Manifesto card shows "No active membership." empty state
+- **Steps:** Load Home as a member with no current-period wallet (`creditsRemaining == null`, e.g. lapsed or between cohorts).
+- **Expected:** The manifesto card shows only "No active membership." — the streak sub-line and any "Next:" chip are suppressed entirely, not shown as zero/blank values.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 663-668)
+- **Platforms:** shared
+
+### HOME-18 — Manifesto card shows "Next: {month} · {N} credits" when a next-period wallet exists
+- **Steps:** Load Home as a member who has purchased next month's credits while still inside the current month.
+- **Expected:** Below "{N} classes remaining." an extra line reads "Next: {upcomingMonth} · {upcomingCredits} credits"; for members without a next-period wallet this line is absent.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 672-679), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (lines 66-67, `upcomingMonth`/`upcomingCredits`)
+- **Platforms:** shared
+
+### HOME-19 — Pull-to-refresh re-fetches without flashing the shimmer
+- **Steps:** On Home in the Success state, pull down from the top of the list to trigger the refresh gesture; release.
+- **Expected:** A refresh spinner shows via `PullToRefreshBox` while `isRefreshing` is true; the currently-displayed content (greeting, cards, rows) stays visible throughout — no shimmer flash — and updates in place once the re-fetch completes.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 100-104), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`refresh()`, lines 48-57)
+- **Platforms:** shared
+
+### HOME-20 — A failed pull-to-refresh keeps existing content instead of showing an error
+- **Steps:** On Home in the Success state with content already loaded, pull to refresh while the server is unreachable or returns an error.
+- **Expected:** The refresh spinner stops; the screen keeps showing the previously-loaded greeting/cards/rows unchanged (no error caption, no state wipe) because `fetch()` only writes `HomeUiState.Error` when the current state is not already `Success`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (lines 71-77)
+- **Platforms:** shared
+
+## SCHED
+
+### SCHED-01 — Cold-start schedule load (favorites-default scope)
+- **Steps:** Sign in and land on the Schedule tab for the first time in the session.
+- **Expected:** `ScheduleViewModel.init` fetches favorites first; if the member has any, scope defaults to `ScopeMode.Favorites`, otherwise `AllStudios`. In parallel it fetches the overview (day chips, studio catalog, categories) and page 1 of today's sessions. A centered `DotMatrixLoader` shows under the "Month." header while `ScheduleUiState.Loading`; on success the day rail, filter bar, and today's class list render.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt
+- **Platforms:** shared
+
+### SCHED-02 — Schedule load failure → full-screen error with retry
+- **Steps:** Force the initial overview/page-1 fetch to fail (e.g. server unreachable) on cold start.
+- **Expected:** `ScheduleUiState.Error(message)` renders "Couldn't load schedule" + the error message + a black "RETRY" pill (Ink background, Stone text); tapping RETRY calls `viewModel.reload()`, which resets to Loading and refetches.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`, `reload`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ErrorBlock`)
+- **Platforms:** shared
+
+### SCHED-03 — Day picker: tap a day chip
+- **Steps:** On Schedule, tap a day chip in the horizontal day rail (not the currently selected day).
+- **Expected:** The selected date updates immediately (Display header month can change), a `scheduleDayChanged` telemetry event fires with direction forward/backward and day offset from today, and if that day's page 1 isn't cached under the current filter set, a scoped loader shows only in the list area (rail/chips stay interactive) while it fetches.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`DayChip`, day-loading item)
+- **Platforms:** shared
+
+### SCHED-04 — Day picker: horizontal swipe over the class list
+- **Steps:** On the class list body (not the day rail or filter chips), swipe left or right past the 56dp threshold.
+- **Expected:** A left swipe (forward) advances to the next day; a right swipe (backward) goes to the previous day, matching `dayAfterSwipe`. A swipe below threshold or at the window edge (no day in that direction) does nothing. The list fades from 0.4 alpha to full over 200ms on any day change.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`daySwipe`, `SuccessContent`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`dayAfterSwipe`)
+- **Platforms:** shared
+
+### SCHED-05 — Infinite scroll pagination (load more)
+- **Steps:** Scroll down through a day with more than one page of sessions until within 10 items of the bottom.
+- **Expected:** `ScheduleViewModel.loadMore()` fires automatically, guarded so it only runs when page 1 is loaded, a `nextCursor` exists, and no page is already in flight. New sessions append (deduped by session id), a compact loader shows at the list footer while fetching, and once `nextCursor` is null the list shows the `EndOfDayMarker` ("That's everything for <Weekday>") instead.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`loadMore`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`LOAD_MORE_LOOKAHEAD` LaunchedEffect, `EndOfDayMarker`)
+- **Platforms:** shared
+
+### SCHED-06 — Empty state: no classes match filters for the day
+- **Steps:** Select a day/filter combination that returns zero sessions (e.g. narrow to a studio with no classes that day).
+- **Expected:** Once the day's page 1 has loaded, the list shows "No classes match your filters for this day." in place of any band headers or rows.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "empty" item)
+- **Platforms:** shared
+
+### SCHED-07 — Manual refresh: pull-to-refresh
+- **Steps:** On the Schedule tab, pull down from the top of the list to trigger the platform pull-to-refresh gesture.
+- **Expected:** `isRefreshing` drives the `PullToRefreshBox` spinner; `ScheduleViewModel.refresh()` re-fetches booked-session pills plus the overview + selected day's page 1 without flashing the full-screen loader, keeping current content visible. Other cached days are dropped and the fetch generation bumps so any stale in-flight page load is discarded.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`refresh`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`PullToRefreshBox`)
+- **Platforms:** shared
+
+### SCHED-08 — Resume refresh: booked pills refresh on tab return
+- **Steps:** Book or cancel a class from Class Detail, then navigate back to the Schedule tab (or background/foreground the app while on Schedule).
+- **Expected:** `LifecycleResumeEffect` calls `viewModel.refreshBookings()` on every resume, best-effort re-fetching `/bookings/me/` and republishing over the existing Success state so a just-booked/-cancelled status pill appears/clears without a manual pull-to-refresh; a failed fetch leaves the prior pill map untouched.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`refreshBookings`, `refreshBookedSessions`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`LifecycleResumeEffect`)
+- **Platforms:** shared
+
+### SCHED-09 — Curated category (modality) filter: apply and remove
+- **Steps:** Open the "MODALITIES" filter pill, tap one or more curated categories in the flat list, tap DONE (or tap the ✕ on a resulting chip).
+- **Expected:** Each toggle updates `selectedModalitySlugs` immediately and marks `refreshingFilters = true` (dims the list, shows a compact loader between chips and list); after a 250ms debounce the server-side refetch settles with sessions narrowed to the selected categories. Picks render as removable chips below the filter pills; the pill itself only appears when `availableModalities` is non-empty for the current window.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`toggleModality`, `removeModality`, `onFiltersChanged`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ScheduleFilterSection`, modality panel + `FilterChip`)
+- **Platforms:** shared
+
+### SCHED-10 — Time-of-day filter: preset and custom range
+- **Steps:** Open the "TIME" filter pill; tap a Morning/Afternoon/Evening preset, or drag the dual-handle range slider to a custom span then tap DONE.
+- **Expected:** A preset applies immediately (`onApply`); a custom range only commits a `TimeFilter` if it's narrower than the full span (a full-span selection clears the filter instead). The active filter renders as a removable chip and narrows sessions server-side via `startTimeGte`/`startTimeLte` on the next debounced refetch.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`TimeFilterPanel`, `TimeRangeSlider`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`setTimeFilter`, `clearTimeFilter`)
+- **Platforms:** shared
+
+### SCHED-11 — Scope toggle: Favorites ⟷ All Studios
+- **Steps:** With the member having at least one favorite, tap the "ALL STUDIOS" side of the scope toggle (or drag the thumb across), then tap "FAVORITES" to switch back.
+- **Expected:** Exactly one side is active at a time; switching resets the studio/location subset (`ScheduleFilters()`) while preserving the Time + Modality overlays, and triggers a debounced refetch scoped to the member's expanded favorite locations (Favorites) or the manual studio/location selection (All Studios). When the member has no favorites, only an "ALL STUDIOS" bar renders (no toggle).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`useMyFavorites`, `showAllStudios`, `effectiveLocationIds`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ScopeToggle`)
+- **Platforms:** shared
+
+### SCHED-12 — Favorites nudge banner (no favorites yet)
+- **Steps:** As a member with zero favorites, land on Schedule.
+- **Expected:** A dismissable Paper-card banner reads "Make it yours. Save your favorite Studios." with a "CHOOSE FAVORITES" link that calls `onManageFavorites`; the ✕ dismisses it for the session only (`nudgeDismissed`, resets on process restart). The banner never shows if the favorites fetch failed (`favoritesKnown == false`), to avoid nudging a member who may already have favorites.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "favorites-nudge" item), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`hasFavorites`, `favoritesKnown`)
+- **Platforms:** shared
+
+### SCHED-13 — Studio/location accordion filter (All Studios subset)
+- **Steps:** With scope on "ALL STUDIOS", tap the bar to expand the accordion; tap a studio row to select/deselect the whole studio, or expand a studio's chevron and toggle individual locations.
+- **Expected:** Selecting a whole studio clears any of its individually-picked locations (redundant); selecting every location under a studio individually promotes the pick to a whole-studio selection. Tapping DONE collapses the panel. Every change narrows the schedule server-side via the debounced pipeline.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`toggleStudioWhole`, `toggleLocation`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (studio accordion panel)
+- **Platforms:** shared
+
+### SCHED-14 — CLASS FULL rendering on the schedule row
+- **Steps:** Use the session id from the manifest's `classes.full` (Regression Test Studio, +2 days at 12:00 ET, seeded 20/20 booked). Select that day on the Schedule day rail and find its row in the list.
+- **Expected:** The row's title dims to Ash, the studio color bar fades to 35% alpha, the CTA well shows a muted "+" circle instead of the arrow, and the capacity overline reads "FULL" in Ash2 (from `computeCapacityTier`). The row remains tappable into Class Detail.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`, `CapacityTier.Full`)
+- **Platforms:** shared
+
+### SCHED-15 — Booking-window-gated ("NOT OPEN") rendering on the schedule row
+- **Steps:** Use the session id from the manifest's `classes.window_gated` — seeded with `bookable_at` = now + 2 days, on Regression Test Studio at +6 days 07:00 ET. Select that day on the Schedule day rail and find its row. **Do not go looking for a real Mariana Tek class**: `bookable_at` is populated by several platforms, the fixture is a synthetic `platform='fake'` regression studio, and the seeded member opens Schedule scoped to Favorites (the two regression studios), so real Mariana Tek rows are filtered out of view anyway.
+- **Expected:** `isNotOpenYet` takes precedence over Full — the row shows the "NOT OPEN" overline (Ash2), suppresses the fill progress bar and scarce shading, and keeps the arrow CTA (still viewable/tappable) rather than the muted "+".
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`, `notOpen` derivation), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`, `CapacityTier.NotOpen`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/data/ScheduleDto.kt (`isNotOpenYet`)
+- **Platforms:** shared
+
+### SCHED-16 — Already-booked status pill on schedule rows
+- **Steps:** No booking needed to start — `accounts.<device>.member` from the manifest is seeded with one **confirmed** upcoming reservation (a session dedicated to this device, +3 days). Find it via My Bookings, note its day, and view that day on Schedule. Then also book a class from Class Detail and return to Schedule to see the `REQUESTED` variant appear.
+- **Expected:** The row shows a `StatusPillFitted` (e.g. REQUESTED/CONFIRMED) above the time column, sourced from `bookedSessions[session.id]`. It clears automatically after a resume-triggered `refreshBookings()` if the booking is later cancelled.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow` `bookedStatus`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`bookedSessions`, `refreshBookedSessions`)
+- **Platforms:** shared
+
+### SCHED-17 — Hidden-capacity studio rendering (no fill bar / no scarce shading)
+- **Steps:** View a session whose studio has `publishesCapacity == false` (e.g. a Mindbody studio with hidden capacity).
+- **Expected:** No fill progress bar renders; the overline reads binary "AVAILABLE" or "FULL" only (never "FILLING UP"/"ALMOST FULL"), per `computeCapacityTier`'s `!publishesCapacity` branch.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`, `showsCapacityVisuals`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`)
+- **Platforms:** shared
+
+### SCHED-18 — Day list groups sessions into Morning/Afternoon/Evening time bands
+- **Steps:** View a day with sessions spanning morning, afternoon, and evening start times.
+- **Expected:** Sessions bucket into `TimeBand.MORNING` (hour < 12), `AFTERNOON` (hour < 17), or `EVENING` (else); each non-empty band renders a `SectionRule(band.label)` header ("MORNING"/"AFTERNOON"/"EVENING"), with 24dp of extra spacing separating one band's header from the previous band's last row. A day with sessions in only one or two bands shows only those bands' headers — empty bands render nothing.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (lines 184-191, `TimeBand`/`timeBand()`; lines 518-531, band-header + 24dp spacer)
+- **Platforms:** shared
+
+### SCHED-19 — Blocked/hidden session never surfaces and is not drillable
+- **Steps:** Read the `classes.blocked` session id from the manifest (seeded `availability='blocked'` on Regression Test Studio / Regression Flatiron, **+2 days at 13:00 ET** — the same day as the `classes.full` fixture, which sits at 12:00 ET on the same studio). Select that day on the Schedule day rail with the seeded member's default Favorites scope, let page 1 settle, then scroll the whole day to the `EndOfDayMarker` so pagination cannot be hiding it. Compare what rendered against the day's fixtures.
+- **Expected:** The blocked session **never appears anywhere in the schedule list** — no row, no band entry, on any day, under any scope/filter combination — and there is therefore nothing to tap that reaches its Class Detail. The 12:00 `classes.full` row on the same day and studio **does** render (that is the control proving the day, studio and Favorites scope are all working, so an absent blocked row is the invariant holding rather than an empty day). Blocked visibility is enforced server-side at the single queryset chokepoint behind list **and** detail, so the id is unreachable by drill-down too: if the driver forces a detail fetch for it, `ClassDetailViewModel` gets a 404 and renders `ClassDetailUiState.Error` ("server error 404") rather than a class. Recording FAIL here means a hidden class became bookable, which is the whole reason the invariant exists.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`fetchSessionsPage`/`loadMore` render exactly what the server returns; there is no client-side availability filter), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ScheduleApi.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow` — only ever built from a returned session), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch` `ResponseException` branch — the 404 path if the id is forced) (the exclusion itself is enforced server-side and has no mobile counterpart: `base_class_session_queryset` in arcana-server's `classes/views.py` excludes `availability='blocked'` from list AND detail)
+- **Platforms:** shared
+
+## CLASS
+
+### CLASS-01 — Class detail loads from a schedule row tap
+- **Steps:** Tap any class row on Schedule.
+- **Expected:** Navigates to Class Detail; `ClassDetailViewModel.reload()` fetches `GET /api/v1/classes/<id>/` and fires the `classViewed` telemetry event once loaded (studio/location/modality/spots/full/load-ms). While loading, a centered `DotMatrixLoader` shows under the close button.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`LoadingBlock`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`reload`, `fetch`)
+- **Platforms:** shared
+
+### CLASS-02 — Class detail load failure → error block with retry
+- **Steps:** Force the class-detail fetch to fail on first load.
+- **Expected:** "Couldn't load class" + the error message + a black "RETRY" pill (Ink background, Stone text) render below the close button; `classViewFailed` telemetry fires with `server_<code>` or `network`. A refresh (pull-to-refresh) failure instead keeps the prior content on screen rather than showing this error block.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch` catch blocks), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ErrorBlock`)
+- **Platforms:** shared
+
+### CLASS-03 — Class detail pull-to-refresh
+- **Steps:** On Class Detail, pull down to refresh.
+- **Expected:** `onRefresh` re-fetches the session (`isView = false`, no duplicate `classViewed` event) and also calls `bookingVm.load()` to re-resolve booking eligibility; capacity numbers update since the server refreshes upstream data if its cached row is >30s old.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`SuccessBlock`, `PullToRefreshBox`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`refresh`)
+- **Platforms:** shared
+
+### CLASS-04 — Cancelled-by-studio class detail
+- **Steps:** Open the detail of a session whose `status == "cancelled_by_studio"`.
+- **Expected:** In place of the Availability block, a "Cancelled" section rule + "This class has been cancelled by the studio." (Warning color) renders; the sticky reserve CTA is hidden entirely.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`SuccessBlock` `isCancelled` branch)
+- **Platforms:** shared
+
+### CLASS-05 — Booking-window-gated ("NOT OPEN") class detail
+- **Steps:** Drill into the `classes.window_gated` session from the manifest (same fixture SCHED-15 uses: `bookable_at` = now + 2 days, +6 days 07:00 ET) by tapping its schedule row; the seeded member holds no booking on it. **Not a Mariana Tek class** — the fixture is a synthetic `platform='fake'` regression studio, so navigate by the manifest id rather than hunting a real Mariana Tek row (which the Favorites-scoped Schedule hides anyway).
+- **Expected:** The Availability block replaces the spot-count headline/pips with "NOT OPEN" + "Booking opens <Day>, <Mon> <D> · <time> ET" (always Eastern Time regardless of device zone). The sticky CTA shows "OPENS <DAY> <TIME> ET" and is disabled (not tappable) until the window opens.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`opensAtAvailabilityLine`, `opensAtCtaLabel`, `AvailabilityBlock`, `StickyReserveCta`)
+- **Platforms:** shared
+
+### CLASS-06 — CLASS FULL rendering in the availability block
+- **Steps:** Drill into the `classes.full` session from the manifest (the same fixture SCHED-14 uses; its studio is seeded `publishes_capacity=True`) by tapping its schedule row.
+- **Expected:** Headline reads "FULLY BOOKED"; the segmented pip strip shows all pips as taken (Mist@70%); the sticky CTA reads "CLASS FULL" in a Graphite pill with a clock icon instead of an arrow, and is disabled.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`AvailabilityBlock`, `CapacityPips`, `StickyReserveCta`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailLogic.kt (`computeDetailCapacity`)
+- **Platforms:** shared
+
+### CLASS-07 — Past class rendering ("CLASS ENDED")
+- **Steps:** Open detail for a session whose `endAt` is in the past.
+- **Expected:** The Availability block is hidden entirely (isPast); the sticky CTA reads "CLASS ENDED" and is disabled/no-op regardless of any other state.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`SuccessBlock` `isPast`, `StickyReserveCta` label precedence)
+- **Platforms:** shared
+
+### CLASS-08 — Booking flow: open confirmation sheet and book with credits
+- **Steps:** Open detail for a bookable class (has credits, spots available, window open, no existing booking) and tap the sticky "RESERVE THIS SPOT" CTA.
+- **Expected:** `BookingSheet` opens as a `ModalBottomSheet` showing class name/studio, a credit-usage line ("This uses 1 of N credits"), and the late-cancel cutoff copy (bold-highlighted window from `bookingCancelCopy`). Tapping CONFIRM calls `createBooking`; on success the CTA updates to "REQUESTED ✓", the sheet closes, and `bookingSucceeded` telemetry fires.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`openSheet`, `confirmBooking`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`bookCtaState`)
+- **Platforms:** shared
+
+### CLASS-09 — Booking flow: spot selection required
+- **Steps:** Open the booking sheet for a class whose `template.spotSelectionMode != "none"`, tap CONFIRM without picking a spot.
+- **Expected:** CONFIRM stays disabled (`canConfirm` requires `_selectedSpot.value != null` when `requiresSpot`). Picking a spot from `SpotSelector` (or the expanded full-screen `SpotMapFullScreen` for grid studios with coordinates) enables CONFIRM; `spotSelected` telemetry fires on pick.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (`requiresSpot` branch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotSelector.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMap.kt (map-vs-chips chooser), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotPicker.kt (chip-row fallback when spots lack coordinates), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMapFullScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`canConfirm`, `selectSpot`)
+- **Platforms:** shared
+
+### CLASS-10 — Booking flow: "have you been here before?" one-time prompt
+- **Steps:** Open the booking sheet for a class where `session.shouldAskStudioVisit == true`.
+- **Expected:** A YES/NO prompt renders ("Have you been to <Studio> before?"); CONFIRM stays disabled until answered (`canConfirm` requires `_visitedBefore.value != null` when the prompt is shown). `studioVisitPromptShown` fires when the sheet opens with the prompt, `studioVisitAnswered` fires on tap.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (`StudioVisitPrompt`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`setShouldAskStudioVisit`, `answerStudioVisit`, `canConfirm`)
+- **Platforms:** shared
+
+### CLASS-11 — Booking flow: spot-preference dropdown (non-spot classes)
+- **Steps:** Open the booking sheet for a class with `spotPreferenceOptions` set and `requiresSpot == false`.
+- **Expected:** An `ArcanaDropdownField` renders with the template's options; the picked value rides along as free text on the booking but never gates CONFIRM (always optional). Suppressed entirely when `requiresSpot == true` (real spot selection wins).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (spot-preference dropdown), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`spotPreferenceActive`, `setSpotPreferenceOptions`)
+- **Platforms:** shared
+
+### CLASS-12 — Booking failure renders inside the sheet
+- **Steps:** Trigger a booking submit that the server rejects (e.g. class just filled, out of credits, time conflict, already booked).
+- **Expected:** The sheet replaces the confirm UI with "Can't book this class" + the class name/studio + a code-specific message from `bookingErrorCopy` (e.g. "This class just filled up." for `session_full`, "You're out of credits for this period." for `credits_exhausted`, "You already have a class booked at this time." for `time_conflict`) + a single "GOT IT" dismiss button. `bookingFailed` telemetry fires with the code.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt (`bookingErrorCopy`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`bookingError` computation), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (`errorMessage` branch), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`confirmBooking` catch)
+- **Platforms:** shared
+
+### CLASS-13 — Out-of-credits CTA state
+- **Steps:** Open detail for a bookable, open class with a covering membership wallet whose `creditsRemaining <= 0`.
+- **Expected:** `bookCtaState` resolves `BookCta.OutOfCredits` ("OUT OF CREDITS", disabled); the sticky CTA shows that label and is not tappable.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`bookCtaState`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`load`)
+- **Platforms:** shared
+
+### CLASS-14 — No active membership CTA state
+- **Steps:** Open detail as a member with no current/usable membership period.
+- **Expected:** `bookCtaState` resolves `BookCta.NotBookable` ("NO ACTIVE MEMBERSHIP"); the sticky CTA renders as a single centered line with no time/day sub-stamp (`showCtaSubStamp = false`) and is disabled.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`BookCta.NotBookable`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`showCtaSubStamp`)
+- **Platforms:** shared
+
+### CLASS-15 — Outside-membership-window CTA state
+- **Steps:** Open detail as a member whose wallet(s) don't cover this class's month (e.g. a July-only member viewing an August class).
+- **Expected:** The CTA overrides to "OUTSIDE YOUR MEMBERSHIP" with a sub-line naming the gap, e.g. "July credits don't cover August."; this outranks the booking-window-not-open state. Attempting to book anyway (stale UI/race) surfaces `outsideWindowCopy(coveredMonths)` in the sheet, naming no price and pointing to concierge.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`_outsideWindow`, `OutsideWindowInfo`, `load`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt (`outsideWindowCopy`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ctaSubOverride`)
+- **Platforms:** shared
+
+### CLASS-16 — Already-booked CTA reflects live status on return
+- **Steps:** For the `CONFIRMED ✓` half, open `accounts.<device>.member`'s seeded reservation from the manifest (already `confirmed`, so no ops action is needed) via My Bookings → the row, leave, and return. For the `REQUESTED` half, book any ordinary regression-studio class (CLASS-08), leave Class Detail, and return to it.
+- **Expected:** The CTA reads "CONFIRMED ✓" if ops confirmed the booking, or "REQUESTED" (no checkmark) if still pending — sourced from the live `existingBooking.status`, not just "already booked". Tapping the CTA (still enabled) opens the cancel sheet instead of the booking sheet.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ctaLabel` when-block, `onClick`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`load`, `_existingBooking`)
+- **Platforms:** shared
+
+### CLASS-17 — Booking-info callout for an existing booking
+- **Steps:** Open detail for a class the member already has a live booking on, where the booking carries a spot/status-specific note.
+- **Expected:** A "Booking info" Paper card renders between the summary strip and the instructor row, sourced from `bookingInfoOrNull(existing)`; absent when there's no note.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingNotes.kt (`bookingInfoOrNull`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingInfo.kt (`BookingInfoCallout`)
+- **Platforms:** shared
+
+### CLASS-18 — Cancellation flow: cancel sheet and confirm
+- **Steps:** Use the `classes.late_cancel_active` session from the manifest (the same fixture CLASS-20 uses), booked and then fulfilled per the runbook's Phase 3 fulfilment step so the member holds a live `confirmed` booking on it. Tap the sticky CTA to open the cancel sheet, then tap "CANCEL BOOKING". (The seeded per-device reserved booking is the fallback fixture if that session is unavailable, but it is outside its cutoff and so exercises only the refund branch.)
+- **Expected:** `CancelBookingSheet` shows the class name, spot label (if any), and a forfeit/refund line driven by `cancelPolicy.willForfeitCredit`. Confirming calls `cancelBooking`; on success the sheet closes, `existingBooking` clears, the CTA reverts to bookable/full/etc, and `bookingCancelled` telemetry fires with `creditRefunded`/`lateCancel`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelBookingSheet`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`openCancelSheet`, `confirmCancel`)
+- **Platforms:** shared
+
+### CLASS-19 — Late-cancel bolded pre-booking copy
+- **Steps:** Use the `classes.late_cancel` session id from the manifest — Regression Late Cancel Studio, seeded with `late_cancel_cutoff_minutes = 1440`, at +3 days 18:00 ET (far enough out to still be freely cancellable). Drill in from its schedule row and open the booking confirmation sheet.
+- **Expected:** The cancel-cutoff line reads "Free to cancel up to **24 hours** before class. After that, cancelling still costs the credit." with the window duration rendered bold + Wood-colored (`bookingCancelCopy`/`lateCancelWindowLabel`). When the server sends no window (older studios), it falls back to the generic "Free to cancel until the studio cutoff..." line.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/LateCancelWindow.kt (`bookingCancelCopy`, `lateCancelWindowLabel`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (cancel-copy line)
+- **Platforms:** shared
+
+### CLASS-20 — Late-cancel forfeit warning on the cancel sheet
+- **Steps:** Use the `classes.late_cancel_active` session id from the manifest — the **only** fixture from which `cancelPolicy.willForfeitCredit == true` is reachable (same 24h studio, seeded ~12h out, i.e. inside the cutoff). Book it in-app, then apply the runbook's Phase 3 fulfilment step (a member-initiated booking on a `manual` studio lands `requested` with no `external_booking_id`, and all three of confirmed + external id + past-cutoff must hold), re-open the booking, and open the cancel sheet.
+- **Expected:** The sheet shows "Cancelling now forfeits this class's credit — you're past the studio cutoff." in Warning color, instead of the refund-affirming "You'll get your credit back." (Moss) shown when the credit will be refunded.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelBookingSheet`, `willForfeitCredit` branch)
+- **Platforms:** shared
+
+### CLASS-21 — Cancellation failure keeps the sheet open with a retry message
+- **Steps:** Trigger a cancel-booking request that fails on the server.
+- **Expected:** `CancelState.Failed` renders "Couldn't cancel — please try again." in Burnt Nectar inside the sheet; the booking remains live and `bookingCancelFailed` telemetry fires.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`confirmCancel` catch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelBookingSheet`, `CancelState.Failed`)
+- **Platforms:** shared
+
+### CLASS-22 — My Bookings: list, cancel confirmation dialog, and forfeit copy
+- **Steps:** From Home, open "My Bookings" (My Bookings non-tab destination). The list should already hold the seeded confirmed reservation from `accounts.<device>.member`. Tap "Cancel" on an upcoming booking — to see the forfeit copy, cancel the `classes.late_cancel_active` booking prepared for CLASS-20 (fulfilment step applied); to see the refund copy, cancel any other upcoming row.
+- **Expected:** Upcoming and Past sections render separately (Past has no Cancel link); the cancel confirmation `AlertDialog` shows "It's inside the cancellation window, so your credit won't come back." when `cancelPolicy.willForfeitCredit`, else "Your credit will be refunded."; confirming calls `vm.cancel(b.id)`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsViewModel.kt
+- **Platforms:** shared
+
+### CLASS-23 — My Bookings: loading caption, empty state, and no pull-to-refresh
+- **Steps:** Open My Bookings (a) the instant it loads, before the fetch resolves, and (b) as a member with zero upcoming and zero past bookings. Separately, attempt a pull-down gesture on the list.
+- **Expected:** (a) `MyBookingsUiState.Loading` renders a bare "Loading…" `Caption` — no shimmer skeleton. (b) Both the Upcoming and Past sections are gated on `s.upcoming.isNotEmpty()`/`s.past.isNotEmpty()`, so a member with no bookings at all sees a header with a completely empty `LazyColumn` below it — no "Nothing booked yet." or similar empty-state copy renders. There is no `PullToRefreshBox` on this screen (unlike Home/Schedule/ClassDetail/Profile) — a pull gesture does nothing.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsScreen.kt (lines 59, 61-87), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsViewModel.kt
+- **Platforms:** shared
+
+### CLASS-24 — Booking sheet dismissed via swipe-down/scrim-tap fires abandonment telemetry
+- **Steps:** Open the booking confirmation sheet (CLASS-08) and dismiss it by swiping down or tapping the scrim, without tapping CONFIRM or GOT IT.
+- **Expected:** `ModalBottomSheet`'s `onDismissRequest` fires `onDismiss`, which calls `telemetry.bookingSheetAbandoned(sessionId, reachedSpotSelection, hadSelectedSpot)` — distinct from a successful booking or an in-sheet error dismissal.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (line 76, `onDismissRequest`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (line 213, `bookingSheetAbandoned`)
+- **Platforms:** shared
+
+### CLASS-25 — Credit count decrements on booking and restores on a refunded cancel
+- **Steps:** Note the credits-remaining count on Home/Profile/the booking sheet, book a class (CLASS-08), then re-check the count; separately, cancel that booking where `cancelPolicy.willForfeitCredit == false` and re-check again.
+- **Expected:** The booking sheet shows "This uses 1 of N credits" before confirming; after a successful booking, `BookingViewModel.load()` re-reads `/me` and the credits-remaining count visible on Home's manifesto card ("{N} classes remaining.") and Profile's stats cell both drop by 1. After a non-forfeiting cancel, the same re-fetch shows the credit restored to its prior count.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (line 129, credit-usage line), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (line 308, `load()` re-read after booking/cancel), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`ManifestoCard`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt (stats row)
+- **Platforms:** shared
+
+### CLASS-26 — Full-screen spot map: pinch-zoom, pan, and close
+- **Steps:** Open the booking sheet for a grid studio with spot coordinates (CLASS-09) and expand to the full-screen room map. Pinch to zoom in/out past the clamped range, drag to pan near an edge, and tap "Close room map".
+- **Expected:** `SpotMapFullScreen` opens as a `Dialog` with pinch-zoom (`detectTransformGestures`) clamped to `minScale..maxScale`, drag-to-pan clamped at the content edges (`clampAxis`), and a `SpotMapLegend`. On first open the map performs a deferred one-frame initial fit-zoom (guarded by a `scale.isNaN()` check) rather than snapping instantly. The "Close room map" `IconCircle` returns to the booking sheet's inline `SpotSelector`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMapFullScreen.kt (295 lines; `detectTransformGestures`, `clampAxis`, line 144 `scale.isNaN()` guard, `SpotMapLegend`)
+- **Platforms:** shared
+
+## FAV
+
+### FAV-01 — Favorites-scoped schedule defaults on cold start when favorites exist
+- **Steps:** Sign in as a member with saved favorites and land on Schedule.
+- **Expected:** `ScheduleViewModel.init` fetches favorites before the first schedule fetch; `scope` defaults to `ScopeMode.Favorites`, and the schedule is narrowed to `favoritesRepository.favorites.value.expandedLocationIds()`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`init`, `effectiveLocationIds`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt
+- **Platforms:** shared
+
+### FAV-02 — Favorites panel: read-only list + manage link
+- **Steps:** With Favorites scope active and favorites present, tap the active FAVORITES segment again to expand its panel.
+- **Expected:** Each favorited studio/location renders as a read-only row (a Moss dot + name + "All locations" or the specific location detail — never a tappable checkbox); a "MANAGE IN PROFILE" link calls `onManageFavoritesTapped()` telemetry then `onManageFavorites` navigation callback. `favoritesDropdownOpened` telemetry fires once when the panel is revealed.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ScheduleFilterSection` fav panel, `FavoriteEntryRow`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`onFavoritesDropdownShown`, `onManageFavoritesTapped`, `favoriteEntries`)
+- **Platforms:** shared
+
+### FAV-03 — Favorites add/remove reflected live on Schedule
+- **Steps:** While the Schedule tab is on the back stack, add or remove a favorite in the Profile favorites manager, then return to Schedule.
+- **Expected:** `favoritesRepository.favorites` collector in `ScheduleViewModel.init` picks up the change; if the member wasn't actively narrowing a manual studio subset, scope re-evaluates to `Favorites` (if favorites now non-empty) or `AllStudios` (if cleared to empty), filters reset, and a refetch runs — all without disrupting an active Custom (All Studios subset) filter session.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`init`, `favoritesRepository.favorites.collect`)
+- **Platforms:** shared
+
+### FAV-04 — Favorites toggle unavailable with zero favorites
+- **Steps:** As a member with no saved favorites, open Schedule.
+- **Expected:** No Favorites/All-Studios toggle renders — only a single "ALL STUDIOS" Ink bar that opens/closes the studio accordion on tap; the `hasFavorites` flag gates the toggle's existence.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ScopeToggle`, `!hasFavorites` branch)
+- **Platforms:** shared
+
+### FAV-05 — Favorites fetch failure keeps prior cache, never empties silently
+- **Steps:** Force `FavoritesApi.fetchFavorites()` to fail during `FavoritesRepository.refresh()`.
+- **Expected:** The repository logs a warning and returns/keeps its previously cached `FavoritesDto` (or null if never loaded) rather than clearing it; `favoritesKnown` stays false only when truly never loaded, which suppresses the "choose favorites" nudge so a member who may already have favorites isn't wrongly nudged.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`favoritesKnown`)
+- **Platforms:** shared
+
+### FAV-06 — Favorites cleared on logout
+- **Steps:** Log out of the app while favorites are cached from the prior session, then log in as a different member.
+- **Expected:** `FavoritesRepository.clear()` is wired as an `onSessionCleared` hook (via `AppSessionController`), setting `favorites.value = null` so the next member never briefly sees the prior member's favorites.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`clear`)
+- **Platforms:** shared
+
+### FAV-07 — Studio Selection screen: hero copy and accordion expand
+- **Steps:** Open Studio Selection (Profile → Manage, or Schedule's "Manage Favorites"). Tap a studio row's chevron to expand it.
+- **Expected:** A hero renders "Make it\nyours." (Display), "Save the places you keep coming back to." (body), and "Change anytime." (Moss accent). Tapping a chevron expands/collapses that studio's location list via `toggleExpanded`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt (lines 163-170, hero; `toggleExpanded` panel), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt (`toggleExpanded`)
+- **Platforms:** shared
+
+### FAV-08 — Studio Selection: toggling a whole studio vs. an individual location
+- **Steps:** With a studio's individual locations partially selected, tap the studio row itself (not the chevron) to select the whole studio. Separately, expand a studio and tap every one of its individual locations one by one.
+- **Expected:** Selecting the whole studio (`toggleStudio`) clears that studio's individually-picked locations (redundant once the whole studio is picked). Toggling on every individual location under a studio (`toggleLocation`) promotes the pick to a whole-studio selection — the mirror of SCHED-13's All-Studios accordion behavior, but on this screen.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt (`toggleStudio`, `toggleLocation`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt
+- **Platforms:** shared
+
+### FAV-09 — Studio Selection: Save favorites CTA and delta telemetry
+- **Steps:** Change favorite selections (add and remove a mix of whole-studio and location-grain picks), tap the sticky "Save favorites" CTA.
+- **Expected:** The CTA label switches to "Saving…" while the save is in flight, then the screen closes on success. `emitFavoriteDeltas` fires `favorite_added`/`favorite_removed` per changed studio/location versus the previously-saved set, plus a summary `favorites_saved`, and `setFavoriteProfile` updates the telemetry profile. (See ERR-15 for the save-failure path.)
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt (line 139, CTA label), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt (`emitFavoriteDeltas`, `setFavoriteProfile`)
+- **Platforms:** shared
+
+## PROFILE
+
+### PROFILE-01 — Hero loads member info (name, initials, member number)
+- **Steps:** Sign in and land on the Profile/You tab (or switch to it). Observe the Ink hero while `ProfileViewModel.load()` is in flight, then after it resolves.
+- **Expected:** Hero shimmers (avatar circle, name block, member-number line) while `ProfileUiState` is `Loading`. Once `Success`, it shows the member's full display name (or email if no display name), a Lime-on-Moss avatar circle with `initials`, and `"Member · No. <memberNumber>"` (or plain `"Member"` when `memberNumber` is null).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-02 — Stats row: sessions, week streak, credits
+- **Steps:** On Profile, view the three-cell stats row below the avatar/name once loaded.
+- **Expected:** Each cell shimmers individually while loading, then shows `lifetimeSessions`, `weekStreak`, and `creditsRemaining` (blank/shimmer-shaped if `creditsRemaining` is null, e.g. no active period) as large Lime numeral text with an Overline label underneath. Divider hairlines separate the three cells.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-03 — Next-period ("upcoming") wallet caption
+- **Steps:** As a beta member who holds next month's wallet while still inside the current month, view Profile.
+- **Expected:** Below the stats row, a caption reads `"Next: <upcomingMonth or 'upcoming'> · <upcomingCredits> credits"`. Absent entirely for members without an upcoming period (`upcomingCredits == null`).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-04 — Membership row shows tier name or "Inactive"
+- **Steps:** View the Account section's "Membership" row for a member with an active current-period wallet, then for one with none.
+- **Expected:** Active member: row's right-hand text shows the membership tier name (e.g. "Alpha Tester"). Lapsed/no current period (`creditsRemaining == null`): shows "Inactive". The row itself has no `onClick` (not tappable — no chevron rendered).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-05 — Profile load error keeps chrome, shows inline caption
+- **Steps:** Force `/memberships/me` to fail (e.g. via Developer Settings pointing at an unreachable base URL) and load Profile fresh (not a refresh — first load).
+- **Expected:** `ProfileUiState.Error` renders "Could not load profile." in small Stone-alpha text below the stats block; the hero's static chrome (dot layout, settings gear) renders normally and no full-screen error blocks it.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-06 — Refresh failure preserves prior content
+- **Steps:** Load Profile successfully, then pull-to-refresh (or background the app and resume) while the network is down.
+- **Expected:** The existing `Success` state remains on screen unchanged (no flash to error or shimmer) — `fetch()` only downgrades to `Error` when the current state is not already `Success`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-07 — Pull-to-refresh spinner
+- **Steps:** On Profile, pull down from the top of the list.
+- **Expected:** `PullToRefreshBox`'s spinner shows while `vm.isRefreshing` is true; releases once the membership + favorites fetch completes; content does not shimmer during a refresh (only on first load).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-08 — "Your favorites" section: loading, empty, and populated states
+- **Steps:** View the favorites section (a) immediately on load (favorites not yet fetched), (b) for a member with zero favorites, (c) for a member with whole-studio and location-grain favorites.
+- **Expected:** (a) a single shimmer row placeholder. (b) "No favorites yet" body text. (c) a numbered list (01, 02, …) of rows — whole-studio favorites first by name, then location-grain favorites formatted "STUDIO — LOCATION" with the brand prefix stripped from the location name; rows are flat (no chevron/tap affordance).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-09 — "Manage" link opens Studio Selection
+- **Steps:** Tap "Manage" next to the "Your favorites" header.
+- **Expected:** Navigates to the Studio Selection screen (`onManageStudios` callback) for editing favorites; Profile tab bar disappears (non-tab destination).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-10 — Concierge row navigates to concierge request
+- **Steps:** Tap the "Concierge" row in the Account section.
+- **Expected:** Opens the Concierge Request screen (`onOpenConcierge` callback); chevron is shown since the row has an `onClick`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-11 — Settings gear opens Edit Profile
+- **Steps:** Tap the gear icon (`IconCircle`, content description "Settings") in the top-right of the Profile hero.
+- **Expected:** Navigates to Edit Profile (`onOpenSettings`); the icon is accessibly labeled "Settings" (confirmed via the Android CLI accessibility pass — was previously the one unlabeled control on this screen).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-12 — Sign out logs out immediately (no confirmation) (duplicate — see AUTH-11)
+- **Steps:** See AUTH-11 — same row, same file. Do not run this entry separately.
+- **Expected:** See AUTH-11.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-13 — Delete account confirmation dialog
+- **Steps:** Tap "Delete account" at the bottom of Profile.
+- **Expected:** An `AlertDialog` appears: "Delete account?" with body copy warning of permanent removal, a Danger-colored "Delete" confirm button and a "Cancel" dismiss button. Cancel or scrim-dismiss closes it with no request sent.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-14 — Delete account request success dialog
+- **Steps:** Confirm "Delete" in the delete-account dialog with a reachable server.
+- **Expected:** `DeleteAccountViewModel.submit()` posts a concierge request (`ACCOUNT DELETION REQUEST…`); on success a second `AlertDialog` "Request received" appears stating the account will be permanently deleted within 30 days; "OK" dismisses and resets state to `Idle`. Account is NOT deleted immediately (async/manual founder completion).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/DeleteAccountViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-15 — Delete account request failure dialog
+- **Steps:** Confirm "Delete" while the concierge endpoint fails (network error or `ConciergeError`).
+- **Expected:** `DeleteAccountState.Failed` renders an AlertDialog "Couldn't submit" / "Something went wrong submitting your request. Please try again."; "OK" resets to `Idle` so the member can retry from "Delete account" again.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/DeleteAccountViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-16 — Account footer version string
+- **Steps:** Scroll to the bottom of Profile past "Delete account".
+- **Expected:** Manifesto footer shows the fixed line "Earned, never given." followed by an Overline reading `"Arcana · v<appVersionName()>"` where the version is the real platform app version (Android `versionName` / iOS bundle short version), not a hardcoded string.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/Platform.kt
+- **Platforms:** shared
+
+### PROFILE-17 — Edit Profile pre-fills current values
+- **Steps:** From Profile, tap the settings gear to open Edit Profile.
+- **Expected:** Screen shows a centered loader while `EditProfileViewModel.load()` runs `GET` profile, then the form renders with first/last name, phone number, gender, birthday (masked MM/DD/YYYY), street address, apt/unit, city, state, and ZIP all pre-filled from the server response; Save is disabled (muted Mist/Ash pill) since nothing has changed yet.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-18 — Edit Profile load error with retry
+- **Steps:** Open Edit Profile while the profile-fetch endpoint fails.
+- **Expected:** Renders `LoadErrorState`: "Couldn't load." headline, an error message body, and a "Retry" primary CTA that re-invokes `viewModel::load`; a Close (X) is still available to bail out without saving.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-19 — Save button gates on dirty AND valid
+- **Steps:** Open Edit Profile; (a) change nothing, (b) change a field then revert it to the original value, (c) change a field to a new valid value, (d) blank out a required field (e.g. clear First name).
+- **Expected:** Save stays disabled/muted for (a) and (b) (`isDirty` false). Save becomes enabled (Moss pill, tappable) for (c). For (d), Save is disabled again even though the field is dirty, because `isValid` fails on a blank required field.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-20 — Birthday field auto-mask and inline validation error
+- **Steps:** Focus the Birthday field and type digits `04121995` continuously (no slashes).
+- **Expected:** Field visually renders `04/12/1995` as you type (slashes auto-inserted after positions 2 and 4 via `DateMaskVisualTransformation`); underlying stored value stays digit-only (`04121995`, capped at 8 digits). Typing a date that is malformed or under the minimum age shows an inline `birthdayError` beneath the field and blocks Save; the error clears the moment a valid 18+ date is entered, and no error shows while the date is still partially typed.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-21 — Gender dropdown selection
+- **Steps:** Tap the Gender field and pick "Male" / "Female" / "Other".
+- **Expected:** `ArcanaDropdownField` shows the three `GENDER_OPTIONS` (value codes `male`/`female`/`other`, Title-Case labels); selecting one updates the field and marks the form dirty; leaving Gender blank fails `isValid` and blocks Save.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-22 — Required address fields block Save when blank
+- **Steps:** Clear "Street address", or "City", or "State", or "ZIP code" (each independently) while other fields are valid and dirty, and attempt Save.
+- **Expected:** Save stays disabled for each — `isValid` requires all four non-blank ("Apt / unit" is the one optional address field and does NOT block Save when blank).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+- **Platforms:** shared
+
+### PROFILE-23 — Save persists and closes back to Profile
+- **Steps:** Make a valid edit (e.g. change last name), tap "Save" with a reachable server.
+- **Expected:** Save button shows a spinner (`isSaving`) while the PATCH is in flight; on success `State.Saved` triggers `onClose()` automatically (a brief centered loader shows during the pop) and the screen returns to Profile with a "Manage" affordance disabled. Re-opening Edit Profile afterward re-fetches and shows the newly persisted values (persistence confirmed via a fresh load, not just local state).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-24 — Save failure shows inline form error, stays editable
+- **Steps:** Make a valid edit, tap "Save" while the PATCH endpoint fails (network/server error).
+- **Expected:** A `FormErrorBanner` ("Couldn't save your changes. Check your connection and try again.") appears above the fields; `isSaving` resets to false so Save is tappable again; entered field values are preserved (not reset to original).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-25 — Close (X) discards unsaved changes
+- **Steps:** Make edits to one or more fields without saving, tap the Close (X) icon in the top-left header.
+- **Expected:** Screen pops immediately back to Profile with no PATCH sent and no confirmation prompt; re-opening Edit Profile shows the original (unmodified) server values.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt
+- **Platforms:** shared
+
+### PROFILE-26 — Tab-key field traversal in Edit Profile
+- **Steps:** With a hardware keyboard (or Tab key via simulator), focus "First name" and press Tab repeatedly, including Shift+Tab.
+- **Expected:** Focus advances exactly one field per Tab (`onPreviewKeyEvent` intercepts hardware Tab to call `focusManager.moveFocus` once), and Shift+Tab moves focus backward one field — no double-traversal.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt
+- **Platforms:** shared
+
+## CONCIERGE
+
+### CONCIERGE-01 — Concierge Request screen renders and gates Send on a non-blank message
+- **Steps:** From Profile, tap the "Concierge" row to open the Concierge Request screen (reached via PROFILE-10 / TEL-06's `$screen`).
+- **Expected:** Header reads "Reach the founders" with intro body copy, followed by a "Your message" `ArcanaTextField`. The Send CTA (`canSubmit`) is disabled while the message is blank and enables once any non-blank text is entered.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt (`canSubmit`)
+- **Platforms:** shared
+
+### CONCIERGE-02 — Message field truncates at 1000 characters instead of rejecting the paste
+- **Steps:** Paste or type a message longer than 1000 characters into "Your message".
+- **Expected:** The stored value is truncated to `MESSAGE_MAX_LENGTH` (1000) characters (`value.take(MESSAGE_MAX_LENGTH)`) rather than rejecting the input or showing a validation error — the field silently caps at 1000 chars.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt (`MESSAGE_MAX_LENGTH`, `updateMessage`)
+- **Platforms:** shared
+
+### CONCIERGE-03 — Submit failure re-enables the CTA with an inline error, clears on edit
+- **Steps:** Enter a message and tap Send while the submit call fails.
+- **Expected:** `ConciergeSubmit.Failed` renders "Something went wrong sending your message. Please try again." and the Send CTA is re-enabled for another attempt; editing the message afterward clears the error back to `Idle`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestScreen.kt (line 112, failure banner), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt
+- **Platforms:** shared
+
+### CONCIERGE-04 — Successful submit shows a terminal "Sent" screen and fires telemetry
+- **Steps:** Enter a message and tap Send with a reachable server.
+- **Expected:** On success the screen replaces the form with a terminal state: "Message sent." followed by "We've got it. The founders will reach out to you directly." and a "Done" `PrimaryCta` that closes the screen; `concierge_request_submitted` telemetry fires on success (`concierge_request_failed` on the CONCIERGE-03 failure path).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestScreen.kt (lines 163-182), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Events.CONCIERGE_SUBMITTED`, `Events.CONCIERGE_FAILED`)
+- **Platforms:** shared
+
+## DEVSET
+
+### DEVSET-01 — Hidden entry: 10 taps on the auth-screen wordmark (duplicate — see AUTH-13)
+- **Steps:** See AUTH-13 — same gesture, same file. Do not run this entry separately.
+- **Expected:** See AUTH-13.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt
+- **Platforms:** shared
+
+### DEVSET-02 — Developer Settings shows the currently-active base URL
+- **Steps:** Open Developer Settings (via DEVSET-01) on a fresh install with no override set.
+- **Expected:** "Currently in use" shows the resolved value from `BaseUrlProvider.current` — `https://api.arcana.fit` on a fresh install — with an "USING DEFAULT" overline (Ash color). The "Base URL" input field is pre-filled with the same current value (`draft` initializes from `baseUrlProvider.get()`).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+### DEVSET-03 — Save button enabled only on a non-blank, changed draft
+- **Steps:** Open Developer Settings; observe Save with the field untouched, then type a value identical to the current URL, then type a different valid URL, then clear the field entirely.
+- **Expected:** Save (`PrimaryCta`) is disabled when `draft` is blank or equal to `current`; becomes enabled only once the draft is both non-blank and different from the current value.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
+- **Platforms:** shared
+
+### DEVSET-04 — Save with a valid URL applies the override and closes
+- **Steps:** Type a valid URL (e.g. `https://foo.trycloudflare.com` or `http://localhost:8000`) into "Base URL" and tap Save (or press Done on the keyboard).
+- **Expected:** `BaseUrlProvider.set()` normalizes trailing slashes off, persists it to `SecureStorage` under key `base_url`, and updates `current`; `DeveloperSettingsViewModel.status` becomes `Saved`, which immediately closes the screen (`onClose()`) back to Auth. The override takes effect on the very next outbound API call with no app restart.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+### DEVSET-05 — Save with an invalid URL shows inline error, stays open
+- **Steps:** Type a value that doesn't start with `http://` or `https://` (e.g. `foo.example.com`) and tap Save.
+- **Expected:** `BaseUrlProvider.set()` throws `IllegalArgumentException` ("Base URL must start with http:// or https://"); `DeveloperSettingsViewModel.save()` catches it and sets `Status.Error(message)`; the screen does NOT close (the `onClose()` call is conditional on `Status.Saved`), and an uppercased Danger-colored error line renders below the Reset/Save controls with the exception message.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+### DEVSET-06 — Editing the draft after a Save error clears the error
+- **Steps:** Trigger DEVSET-05's error state, then type any additional character into "Base URL".
+- **Expected:** `onDraftChange` resets `status` back to `Idle` on the very next keystroke, so the error line disappears immediately (not only on a subsequent Save attempt).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsViewModel.kt
+- **Platforms:** shared
+
+### DEVSET-07 — "Reset to default" only appears when overridden
+- **Steps:** Open Developer Settings with no override set; then set an override (DEVSET-04) and reopen Developer Settings.
+- **Expected:** With no override (`isOverridden == false`, i.e. `current == defaultUrl`), no "Reset to default" row is rendered at all. Once an override is active, a Danger-colored "Reset to default" row appears below Save, and the "Currently in use" block additionally shows `"OVERRIDE · default is <defaultUrl>"` in Moss.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+### DEVSET-08 — Reset to default clears the override and closes
+- **Steps:** With an override active, tap "Reset to default".
+- **Expected:** `BaseUrlProvider.reset()` deletes the `base_url` key from `SecureStorage` and reverts `current` to `defaultUrl` (`https://api.arcana.fit`); the draft field updates to match; `DeveloperSettingsViewModel.reset()` sets status to `Saved` and the screen closes back to Auth (`onClose()` fires unconditionally in the row's click handler).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+### DEVSET-09 — Base URL override persists across app restarts
+- **Steps:** Set an override (DEVSET-04), fully kill and relaunch the app, then reopen Developer Settings via the 10-tap gesture.
+- **Expected:** The override survives the restart — `BaseUrlProvider.load()` reads the persisted `SecureStorage` value on construction, so "Currently in use" and the pre-filled draft both show the previously-saved override, not the default, and API calls continue targeting it.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+### DEVSET-10 — Close (X) discards an unsaved draft edit
+- **Steps:** Open Developer Settings, type a new URL into the field without tapping Save, then tap the Close (X) icon in the header.
+- **Expected:** Screen closes back to Auth with no change persisted; `BaseUrlProvider.current`/the underlying stored override are untouched by the unsaved draft.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
+- **Platforms:** shared
+
+### DEVSET-11 — Environment super-property re-tags on override change
+- **Steps:** Set a `localhost`/`10.0.2.2` override, then a `*.trycloudflare.com` override, then Reset to default, observing PostHog's `environment` super-property in a Debug-build telemetry echo (`▶ Telemetry` log tag) after each change.
+- **Expected:** Each `set()`/`reset()` call re-derives and registers `environment` via `classifyEnvironment` on the new URL — `local` for localhost/10.0.2.2, `tunnel` for `*.trycloudflare.com`, `prod` for `api.arcana.fit` — so subsequent telemetry events are attributed correctly rather than polluting prod metrics.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
+- **Platforms:** shared
+
+## NAV
+
+### NAV-01 — Tab bar switches between Home / Schedule / You
+- **Steps:** From any tab root, tap each of the other two tab bar items in turn.
+- **Expected:** The displayed screen changes to match the tapped tab; the tapped item's icon/label highlights (Moss + Lime indicator dot on Android; system selection styling on iOS), and each tab's own scroll position/back stack is preserved when returning to it later in the session.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/TabBar.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`navigateToTab`, `popUpTo(...){saveState=true}`/`restoreState`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (per-tab `ComposeUIViewController`s), iosApp/iosApp/ArcanaShell.swift (`TabView`)
+- **Platforms:** shared
+
+### NAV-02 — Per-tab state preservation across tab switches (Android)
+- **Steps:** On Android, scroll down the Schedule tab, switch to Home, then switch back to Schedule.
+- **Expected:** Schedule's scroll position and navigation back stack are restored exactly as left (via `saveState`/`restoreState` on the shared `NavHost`), not reset to the top.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`navigateToTab`)
+- **Platforms:** Android-only
+
+### NAV-03 — Per-tab state preservation across tab switches (iOS shell)
+- **Steps:** On iOS, push a class detail from Schedule, switch to Home, then switch back to Schedule.
+- **Expected:** The pushed ClassDetail screen is still on top of the Schedule tab's stack when you return (each tab hosts its own `ComposeUIViewController` + `NavHost`, and empirically the Compose composition persists across `TabView` switches rather than being torn down).
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt
+- **Platforms:** iOS-only
+
+### NAV-04 — Tab bar hides on pushed (non-tab) destinations
+- **Steps:** From any tab root, navigate into a non-tab screen (ClassDetail, StudioSelection, MyBookings, EditProfile, ConciergeRequest).
+- **Expected:** The bottom tab bar disappears while the pushed screen is on top, so a stray tab tap can't silently pop the in-progress flow off the stack. Returning to the tab root (back/close) brings the tab bar back.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`selectedTab` derived from `currentDestination?.hasRoute<...>()`, `bottomBar = { if (selectedTab != null) ... }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`atRoot`, `onRootChanged`), iosApp/iosApp/ArcanaShell.swift (`.toolbar(shell.tabBarHidden ? .hidden : .visible, for: .tabBar)`)
+- **Platforms:** shared
+
+### NAV-05 — Android system back pops the current tab's stack, not the app
+- **Steps:** On Android, push ClassDetail from Home, then press the system back button/gesture.
+- **Expected:** Back pops ClassDetail and returns to the Home tab root (standard `NavHost` back-stack behavior via `popBackStack()`/system back), rather than exiting the app. Pressing back again from a tab root exits/backgrounds the app as normal (no custom `BackHandler` intercepts it).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (NavHost `composable<...>` `onClose = { navController.popBackStack() }` wiring), sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt
+- **Platforms:** Android-only
+
+### NAV-06 — Deep link, cold start (welcome token)
+- **Steps:** With the app not running and signed out, open a welcome link (`https://arcana.fit/welcome?token=XXX` or `arcana://welcome?token=XXX`).
+- **Expected:** The app launches straight into the onboarding survey (13-question) for a new token, seeded synchronously on the very first composed frame — no flash of the Auth screen and no spurious `Auth` `$screen` event. On Android this is read from the launch `Intent`; on iOS from `onOpenURL`/`onContinueUserActivity` feeding `IosDeepLinkBridge.pendingDeepLink`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/navigation/DeepLinkHandler.kt, sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt (`extractToken`, `pendingDeepLinkToken`), sharedLogic/src/iosMain/kotlin/org/arcana/mobile/navigation/IosDeepLinkBridge.kt, iosApp/iosApp/iOSApp.swift (`onOpenURL`, `onContinueUserActivity`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`remember(initialWelcomeToken) { session.onDeepLinkToken(...) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
+- **Platforms:** shared
+
+### NAV-07 — Deep link, warm start (app already open)
+- **Steps:** With the app open and signed out (or mid-Auth), background it and open a welcome link a second time (different or same token).
+- **Expected:** The app is brought to foreground and re-routes into the survey/claim flow with the newly-delivered token, without needing a relaunch. Android: `onNewIntent` re-sets `pendingDeepLinkToken` (resetting `deepLinkConsumed`). iOS: `onIosDeepLink` pushes a new value into the shared `pendingDeepLink` StateFlow, observed by the running `AuthFlowRoot` composition.
+- **Source:** sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt (`onNewIntent`), sharedLogic/src/iosMain/kotlin/org/arcana/mobile/navigation/IosDeepLinkBridge.kt (`onIosDeepLink`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (`pending by IosDeepLinkBridge.pendingDeepLink.collectAsState()`)
+- **Platforms:** shared
+
+### NAV-08 — Deep link token consumed does not re-surface after logout
+- **Steps:** Open a welcome link, complete signup (auth flips on), then later log out.
+- **Expected:** Logging out returns to the Auth screen, not back into the signup/survey flow — the consumed token is cleared on the auth flip and Android additionally persists `deepLinkConsumed` across process recreation (`onSaveInstanceState`) so a config change doesn't resurrect the original launch intent's token.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/session/AppSessionController.kt (`onAuthenticated`, `consumeWelcomeToken`), sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt (`STATE_DEEP_LINK_CONSUMED`, `onSaveInstanceState`)
+- **Platforms:** shared
+
+### NAV-09 — "Log in instead" escape hatch from the signup flow
+- **Steps:** Open a welcome link into the onboarding survey (not the claim-your-name screen — its `Editing` state has no such affordance; only its terminal token-expired/account-exists error states do, see SIGNUP-19/20), then tap the "Already a member? Log in" footer link.
+- **Expected:** The pending welcome token is cleared and the app falls back to the standard Auth (login) screen; the platform's pending-link reference is dropped so backgrounding/reopening doesn't re-route into signup.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`onNavigateToLogin = { session.consumeWelcomeToken(); onWelcomeTokenConsumed() }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
+- **Platforms:** shared
+
+### NAV-10 — Auth flip triggers session teardown / fresh ViewModelStore
+- **Steps:** Log in, use the app (populating ViewModels/state), then log out. Log back in as a different (or the same) member.
+- **Expected:** All session-scoped ViewModels are destroyed on logout (their `viewModelScope`s cancelled) and freshly recreated on the next login — no stale data (e.g. previous member's favorites/bookings) bleeds into the new session. Android clears a shared `ViewModelStore` in a `LaunchedEffect(isAuthenticated)`; iOS explicitly clears every shell controller's store via `clearSessionViewModelStores()` before Swift rebuilds fresh controllers.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`sessionStore.clear()`, `session.onSessionEnded()`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (watcher: `session.onSessionEnded()`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`ShellSessionStores.clearAll()`), iosApp/iosApp/ArcanaShell.swift (`authChanged`, `clearSessionViewModelStores()`)
+- **Platforms:** shared
+
+### NAV-11 — $screen fires once per destination/tab change, no doubles
+- **Steps:** Navigate: cold start to Home, tap into ClassDetail, back to Home, switch to Schedule tab, switch back to Home tab. Watch the debug telemetry echo for `$screen` events.
+- **Expected:** Exactly one `$screen` event per real destination change (Home → ClassDetail → Home → Schedule → Home), with no duplicate emission on the very first composition of a tab (iOS specifically guards against double-firing the initial root screen since tab compositions persist across `TabView` switches rather than re-running `LaunchedEffect`s).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`MainScaffold`'s `LaunchedEffect(screenName)`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`initialRootConsumed`, `emitInitialRootScreen`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabRootShown`)
+- **Platforms:** shared
+
+### NAV-12 — Android system back backgrounds the app on four screens that aren't NavHost destinations
+- **Steps:** On Android, reach each of the following via its normal entry point, then press system back: (a) Password Reset Request (AUTH-06), (b) Developer Settings (DEVSET-01/AUTH-13), (c) the onboarding survey or claim-your-name screen reached via a welcome deep link (SIGNUP-01), (d) Developer Settings again as a non-nav-destination overlay.
+- **Expected:** `grep -rn "BackHandler" --include='*.kt' sharedUI/src sharedLogic/src` returns zero hits anywhere in the app — no screen intercepts system back. On these four screens specifically, back does NOT return to the previous in-flow screen the way NAV-05 does for the NavHost: `showPasswordReset` (App.kt lines 197-206) and `showDeveloperSettings` (AuthScreen.kt lines 73-76) are plain `var`s, not NavHost destinations, so back backgrounds/exits the app instead of returning to Auth; the survey/claim screens (App.kt lines 152-195) are likewise driven by state, not a back-stack entry, so back backgrounds the app instead of returning to the prior step of the welcome-link flow.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (lines 152-206), sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt (lines 73-76), sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
+- **Platforms:** Android-only
+
+## ERR
+
+Note on scope: main has NO shared `ErrorState`/`ConnectionError` component (that
+unification lives on the uncommitted `feature/error-states-overhaul` branch per
+project memory). Every screen below rolls its own `Error` variant of a
+`sealed interface UiState` and its own retry/no-retry treatment; several
+independently distinguish a connection failure from a 5xx server failure via
+generic-`Exception` vs `ResponseException`/status-code branches — this section
+documents each surface as it actually behaves on main today.
+
+### ERR-01 — Schedule cold-start load failure shows full-screen error with RETRY
+- **Steps:** With no cached schedule data (fresh app/session), make `ScheduleViewModel`'s initial overview+page-1 fetch fail (e.g. server unreachable or 5xx) and land on the Schedule tab.
+- **Expected:** The tab renders `ErrorBlock`: "Couldn't load schedule" heading, a body message ("server error" or "server error <code>"), and a black RETRY pill. Tapping RETRY calls `viewModel.reload()` and re-attempts the fetch.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt
+- **Platforms:** shared
+
+### ERR-02 — Schedule refetch failure with content already on screen keeps content, no error takeover
+- **Steps:** From a loaded Schedule (Success state with visible classes), trigger a filter/day refetch (change filter, tap a day chip) and have that request fail.
+- **Expected:** `applyRefetchFailure` does NOT replace the screen with an Error block when `_uiState` is already `Success` — it just clears the `refreshingFilters` dim and re-publishes the existing list; the member keeps seeing their last-good schedule with no error banner or toast. Only a cold-start/error-retry failure (no content yet) produces the full-screen `Error` state.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`)
+- **Platforms:** shared
+
+### ERR-03 — Schedule single-day page fetch failure fails silently, day stays in its loading placeholder
+- **Steps:** Tap a day chip whose page-1 fetch is not yet cached, and have that specific day's `fetchSessionsPage` call fail while other days/filters are unaffected.
+- **Expected:** No error UI is shown at all for this path — `ensureSelectedDayLoaded`'s catch block only `logWarning`s; the tapped day's list area remains stuck on the `DotMatrixLoader` "day-loading" placeholder (`dayLoaded == false`) until the member retries via pull-to-refresh, a filter change, or re-tapping the day.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`ensureSelectedDayLoaded`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`!dayLoaded` branch)
+- **Platforms:** shared
+
+### ERR-04 — Class detail load failure shows full-screen error with RETRY, close still works
+- **Steps:** Open Class Detail for a session whose `GET /api/v1/classes/<id>/` fetch fails (network unreachable, or a non-2xx `ResponseException`).
+- **Expected:** `ClassDetailUiState.Error` renders the top bar (close button still functional, does not require the fetch to have succeeded) plus "Couldn't load class", the error message ("server error" or "server error <code>"), and a RETRY pill wired to `viewModel::reload`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ErrorBlock`)
+- **Platforms:** shared
+
+### ERR-05 — Home tab load failure shows an inline caption with no retry affordance
+- **Steps:** Land on the Home tab when `HomeViewModel`'s `/memberships/me` + `/bookings/me/` load throws.
+- **Expected:** `HomeUiState.Error("server error")` renders as a single `Caption` line in the scroll content — no heading, no RETRY button, no pull-to-refresh wiring visible for this state. The member's only recovery is leaving and re-entering the tab (which re-triggers the VM's load) since there is no explicit retry control here.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt
+- **Platforms:** shared
+
+### ERR-06 — My Bookings load failure shows an inline caption with no retry affordance
+- **Steps:** Open My Bookings (from Home's "See all") when `MyBookingsViewModel`'s fetch fails, either with an HTTP error (`ResponseException`, message includes the status code) or a generic exception.
+- **Expected:** `MyBookingsUiState.Error` renders as a single burnt-nectar-colored `Caption` with the message ("server error" or "server error <code>") — no RETRY button and no empty-state illustration.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsScreen.kt
+- **Platforms:** shared
+
+### ERR-07 — Login CONNECTION failure shows a general (non-field) message, form stays editable
+- **Steps:** On the Auth screen, submit valid-looking credentials while the login request throws a generic (non-`LoginError`) exception — e.g. the device is offline or the request times out before a response arrives.
+- **Expected:** `AuthViewModel` catches the generic `Exception` branch (distinct from the `LoginError` branch below) and sets `AuthUiState.Error("Couldn't reach the server. Check your connection and try again.", isCredentialError = false)`. Because `isCredentialError` is false, `FormBlock` renders the message as a general `BodyText` line below the password field (not attached to any input), and both fields remain editable for a retry via the existing SIGN IN button.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt
+- **Platforms:** shared
+
+### ERR-08 — Login SERVER (5xx) failure is distinguished from a connection failure and from bad credentials
+- **Steps:** Submit login credentials against a backend returning a 5xx `LoginError`.
+- **Expected:** The `e.statusCode in 500..599` branch fires distinctly from both the 401 branch and the generic-exception (network) branch, setting `AuthUiState.Error("Something went wrong on our end. Please try again in a moment.", isCredentialError = false)` — copy explicitly different from both the credential-mismatch and the connection-failure strings, still rendered as the general (non-field) message.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
+- **Platforms:** shared
+
+### ERR-09 — Login credential error (401) renders inline under the password field, not as a general banner
+- **Steps:** Submit a wrong email/password pair against a reachable server (401 response).
+- **Expected:** `AuthUiState.Error(isCredentialError = true)` with copy "That email and password don't match. Double-check and try again." `FormBlock` routes this message to `ArcanaTextField`'s own `error` slot on the password field (not the general `BodyText` line used by ERR-07/ERR-08) — the same `AuthUiState.Error` shape renders in a visually distinct place depending on `isCredentialError`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt (`FormBlock`, `error = if (isCredentialError) errorMessage else null`)
+- **Platforms:** shared
+
+### ERR-10 — Login failure on an unrecognized non-5xx status code shows the raw status in the general message
+- **Steps:** Submit login credentials against a backend returning a `LoginError` with a status code that is neither 401 nor in the 500-599 range (e.g. 403).
+- **Expected:** The `else` branch sets `AuthUiState.Error("Couldn't sign you in (error <code>).")`, rendered as the general (non-field) message per ERR-07.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
+- **Platforms:** shared
+
+### ERR-11 — Booking submission failure replaces the confirmation sheet with a dead-end error, no retry button
+- **Steps:** From Class Detail, open the booking sheet and confirm a booking that fails — either a typed `BookingError(code)` (e.g. `session_full`, `credits_exhausted`) or a generic exception (network/timeout, which is mapped to the `"booking_failed"` code).
+- **Expected:** `BookingSubmit.Failed(code)` swaps the sheet's content: heading "Can't book this class", the class name/studio, and `bookingErrorCopy(code)` (a code-specific line, or the generic "We couldn't book that. Try again in a moment." fallback for unknown/network codes). The confirm control is replaced entirely by a single "GOT IT" button that just dismisses the sheet — there is no in-place retry; the member must re-open the sheet from Class Detail to try again.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt
+- **Platforms:** shared
+
+### ERR-12 — Booking cancellation failure shows an inline caption below the button; the button itself is the retry
+- **Steps:** From an existing booking's Class Detail (or My Bookings), open the cancel sheet and confirm a cancel that fails (`BookingViewModel.confirmCancel`'s catch-all).
+- **Expected:** `CancelState.Failed("cancel_failed")` keeps the cancel sheet open with the CANCEL BOOKING button re-enabled (no longer showing the "CANCELLING…" spinner state) and adds a burnt-nectar `Caption`: "Couldn't cancel — please try again." below it. There is no distinct RETRY control — tapping CANCEL BOOKING again is the retry path.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelState.Failed` caption)
+- **Platforms:** shared
+
+### ERR-13 — Password reset request failure shows a generic connection message, resubmit via the same form
+- **Steps:** On the "Forgot password" screen, enter a valid-looking email and submit while the reset-request call throws any exception.
+- **Expected:** `PasswordResetSubmit.Failed` renders "Couldn't reach the server. Check your connection and try again." below the email field in `Danger` color; the field and SEND button stay live for another attempt, and editing the email clears the Failed state back to Idle (`updateEmail`'s explicit reset).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/PasswordResetRequestScreen.kt
+- **Platforms:** shared
+
+### ERR-14 — Studio Selection (favorites manager) load failure shows full-screen error with RETRY
+- **Steps:** Open the studio/location favorites manager (Profile → Manage, or Schedule's "Manage Favorites") when the initial studios-list fetch fails.
+- **Expected:** `StudioSelectionUiState.Error` renders an `ErrorBlock` with a fixed `Heading2` reading "Couldn't load Studios" (no trailing period) followed by the VM's error message rendered separately as `BodyText`, and a RETRY control wired to the VM's explicit `retry()` function (re-runs the same load).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt
+- **Platforms:** shared
+
+### ERR-15 — Studio Selection save failure shows an inline caption above the sticky CTA, no dedicated retry
+- **Steps:** In the Studio Selection screen (loaded successfully), change favorite selections and tap "Save favorites" while the save call fails.
+- **Expected:** The `Ready` state's `error` field renders as a `Warning`-colored `Caption` directly above the sticky "Save favorites" `PrimaryCta`; the CTA itself stays enabled so re-tapping Save is the retry path (no separate RETRY affordance).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt
+- **Platforms:** shared
+
+### ERR-16 — Edit Profile load failure shows a dedicated error state with RETRY and a close affordance
+- **Steps:** Open Edit Profile from the Profile tab when the initial member-data load throws.
+- **Expected:** `EditProfileViewModel.State.LoadError` renders `LoadErrorState`: a Close (X) `IconCircle` in the header (not a decorative icon-circle ornament), a `Display` headline reading "Couldn't\nload.", the message "Couldn't load your profile. Pull to retry." as body text, and a "Retry" `PrimaryCta` wired to `viewModel::load`. The copy names a pull gesture but this screen has no `PullToRefreshBox` — the only working recovery affordance is the Retry CTA, so a driver should not fail the entry over the absent pull-to-retry.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`LoadErrorState`)
+- **Platforms:** shared
+
+### ERR-17 — Edit Profile save failure shows a form-level banner naming a connection problem, resubmit via SAVE
+- **Steps:** In Edit Profile with the form loaded, change a field and tap Save while the save call throws.
+- **Expected:** `EditProfileViewModel`'s catch-all sets `formError = "Couldn't save your changes. Check your connection and try again."`; the screen renders a `FormErrorBanner` above the fields, `isSaving` resets to false so the Save CTA is tappable again, and any field edit clears `formError` (per `setEditing(...formError = null)` in the field-mutation helpers).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`FormErrorBanner`)
+- **Platforms:** shared
+
+### ERR-18 — Claim-your-name (signup completion) form distinguishes CONNECTION vs SERVER vs generic submit failure
+- **Steps:** On the claim-your-name form (reached via the welcome deep link → survey flow), submit a complete/valid form three separate times, forcing: (a) a network-level failure (`CompleteSignupResult.NetworkError`), (b) a 5xx response, (c) a non-5xx, non-field-specific error response.
+- **Expected:** Each maps to a distinct `formError` string rendered via `FormErrorBanner`: (a) `NETWORK_MESSAGE` = "Couldn't reach the server. Check your connection and try again.", (b) `SERVER_MESSAGE` = "Something went wrong on our end. Please try again in a moment.", (c) `GENERIC_MESSAGE` = "We couldn't complete your signup. Please review your details and try again." In all three the form stays populated (`Editing` state, not a terminal `Error` state) and the SUBMIT control is re-enabled for another attempt — this is separate from field-level `passwordError`/`phoneError`, and separate from the terminal `SignupCompletionState.Error` used only for token-expired/already-has-account (see SIGNUP area for those).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt (`FormErrorBanner`)
+- **Platforms:** shared
+
+### ERR-19 — Onboarding survey submit failure distinguishes CONNECTION vs SERVER and reveals a "Continue anyway" escape after the first failure
+- **Steps:** On the 13-question onboarding survey, answer all required questions and submit while the submit call fails: first force a network error, then (on a second attempt) force a 5xx.
+- **Expected:** Each failure sets a distinct `submitError` (`NETWORK_MESSAGE` vs `SERVER_MESSAGE`, same strings as ERR-18) rendered via `SubmitErrorBanner`, and increments `failedAttempts`; all previously-entered answers are preserved (no data loss on failure). Once `failedAttempts >= 1` and not currently submitting, a "Continue anyway" `TextLink` appears that calls `continueAnyway()` — completing the signup flow without a successful survey submit, honoring the "survey must never block a paid member's signup" rule.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
+- **Platforms:** shared
+
+### ERR-20 — No unified CONNECTION/SERVER classifier exists on main; each surface hand-rolls its own catch blocks
+- **Steps:** Search the codebase for a shared error-classification type (e.g. `ErrorState`, `ConnectionError`, a common `sealed class NetworkFailure`) referenced by more than one ViewModel.
+- **Expected:** None exists. Every `*ViewModel.kt` above independently catches `ResponseException`/generic `Exception` and independently decides its own message and copy (some distinguish network vs 5xx vs other status explicitly — AuthViewModel, SignupCompletionViewModel, SignupSurveyViewModel; others collapse everything to a single "server error" string — ScheduleViewModel, ClassDetailViewModel, HomeViewModel, ProfileViewModel, MyBookingsViewModel). `ArcanaApiClient.kt` defines only the narrow `LoginError`/`BookingError` exception types, not a general connection/server distinction. This confirms the CONNECTION/SERVER unification work is not yet on main (tracked separately, banked on `feature/error-states-overhaul`).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+- **Platforms:** shared
+
+## TEL
+
+### TEL-01 — $screen Home (tab root)
+- **Steps:** Log in (or resume an authenticated session) and land on the Home tab.
+- **Expected:** A `$screen` event with name `Home` fires exactly once for this composition of the destination (debug console shows `▶ $screen Home`); it does not re-fire on unrelated recompositions of the same destination.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, `MainScaffold`'s `LaunchedEffect(screenName)`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens.HOME`, `screen()`)
+- **Platforms:** Android-only (Android's single NavHost path; see TEL-11/TEL-12 for the iOS bridge-driven equivalent)
+
+### TEL-02 — $screen Schedule (tab root)
+- **Steps:** From Home, tap the Schedule tab.
+- **Expected:** A `$screen` event with name `Schedule` fires on arrival at the Schedule destination.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, `MainScaffold`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens.SCHEDULE`)
+- **Platforms:** Android-only
+
+### TEL-03 — $screen Profile (tab root)
+- **Steps:** From Home, tap the Profile tab.
+- **Expected:** A `$screen` event with name `Profile` fires on arrival at the Profile destination.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, `MainScaffold`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens.PROFILE`)
+- **Platforms:** Android-only
+
+### TEL-04 — $screen StudioSelection
+- **Steps:** From Profile, tap "Manage" on Your Favorites (or from Schedule's favorites dropdown) to open Studio Selection.
+- **Expected:** A `$screen` event with name `StudioSelection` fires once on navigating to that non-tab destination.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName` → `Screens.STUDIO_SELECTION`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** Android-only (iOS reaches the same destination via `ProfileTabViewController` in TabRoots.kt, whose shared `TabRoot` composable emits `$screen` the same way — see TEL-11)
+
+### TEL-05 — $screen MyBookings
+- **Steps:** From Home, tap "See all" on upcoming reservations to open My Bookings.
+- **Expected:** A `$screen` event with name `MyBookings` fires once on navigating to that destination.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName` → `Screens.MY_BOOKINGS`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** Android-only
+
+### TEL-06 — $screen ConciergeRequest
+- **Steps:** From Profile, open the concierge/support request screen.
+- **Expected:** A `$screen` event with name `ConciergeRequest` fires once on navigating to that destination.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName` → `Screens.CONCIERGE_REQUEST`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** Android-only
+
+### TEL-07 — $screen ClassDetail
+- **Steps:** From Schedule (or Home's upcoming list), tap a class row to open Class Detail.
+- **Expected:** A `$screen` event with name `ClassDetail` fires once per distinct class-detail visit; the event carries a stable screen name even though the destination itself carries a session id argument (name resolution ignores the id).
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName` → `Screens.CLASS_DETAIL`, comment on `screenName` keying), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** Android-only
+
+### TEL-08 — $screen Auth (login screen)
+- **Steps:** Cold start signed out (or log out), landing on the login screen.
+- **Expected:** A `$screen` event with name `Auth` fires when the login screen composes.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.AUTH) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** shared
+
+### TEL-09 — $screen PasswordResetRequest
+- **Steps:** From the login screen, tap "Forgot password" to open the reset-request screen.
+- **Expected:** A `$screen` event with name `PasswordResetRequest` fires once on entering that screen.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.PASSWORD_RESET_REQUEST) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** shared
+
+### TEL-10 — $screen SignupCompletion (claim-your-name)
+- **Steps:** Open a welcome deep link whose onboarding survey is already marked done (or complete the survey), reaching the claim-your-name screen.
+- **Expected:** A `$screen` event with name `SignupCompletion` fires once on entering the claim screen.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** shared
+
+### TEL-11 — $screen SignupSurvey
+- **Steps:** Open a fresh welcome deep link (survey not yet completed for that token), reaching the 13-question onboarding survey.
+- **Expected:** A `$screen` event with name `SignupSurvey` fires once on entering the survey.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP_SURVEY) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** shared
+
+### TEL-12 — $screen on iOS tab-root switch (bridge-driven)
+- **Steps:** On iOS, from the Home tab, tap the Schedule tab in the native SwiftUI tab bar, then tap Profile, then tap back to Schedule (a re-visit of an already-composed tab).
+- **Expected:** Each real tab switch (including the re-visit) fires exactly one `$screen` event named for the destination tab (`Schedule`, `Profile`, `Schedule` again) via `IosShellBridge.tabRootShown`, even though the tab's Compose content persists across switches and its own `LaunchedEffect` does not re-run. Same-tab re-taps (tapping the currently active tab) fire no `$screen`, only `tab_tapped` (see TEL-14).
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabRootShown`, `tabScreenName`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`emitInitialRootScreen` skip logic in `TabRoot`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** iOS-only
+
+### TEL-13 — $screen Home on iOS cold start (composition-driven root)
+- **Steps:** On iOS, cold-start authenticated so the Home tab composes for the first time.
+- **Expected:** Home emits its own initial-root `$screen` (`Home`) from composition (unlike Schedule/Profile, which rely on the bridge switch event for their first visit) so cold start still reports exactly one `Home` $screen with no double.
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`TabRoot`'s `emitInitialRootScreen` parameter and Home's call site), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
+- **Platforms:** iOS-only
+
+### TEL-14 — tab_tapped event (Android bottom bar)
+- **Steps:** On Android, from any tab root, tap a different tab in `ArcanaTabBar`.
+- **Expected:** A `tab_tapped` event fires with `tab` = the destination tab name (lowercased: `home`/`schedule`/`profile`) and `from_screen` = the canonical screen name of the tab being left.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`ArcanaTabBar(onSelect = { telemetry.tabTapped(...) })`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`tabTapped`, `Events.TAB_TAPPED`)
+- **Platforms:** Android-only
+
+### TEL-15 — tab_tapped event (iOS native tab bar)
+- **Steps:** On iOS, tap any tab in the native SwiftUI `TabView` (including a same-tab re-tap on the already-active tab).
+- **Expected:** A `tab_tapped` event fires with `tab` = the destination tab and `from_screen` = the canonical screen name of the previously active tab, mirroring the Android bar's semantics even though the bar itself is Swift, not Compose.
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabSelected`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`tabTapped`)
+- **Platforms:** iOS-only
+
+### TEL-16 — identify on first successful /me
+- **Steps:** Log in (or complete signup) as a member who has not yet been identified this session, reaching a screen that loads `ProfileViewModel` (Home's avatar-initials load, or the Profile tab itself).
+- **Expected:** PostHog `identify` fires exactly once per session with the member's id, email, and display name; the debug console echoes `▶ identify <memberId>` with no PII in the log line. A second `ProfileViewModel` instance (e.g. the nav-bar avatar VM vs the Profile screen's own VM) loading `/me` again does NOT re-fire identify for the same member id.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt (`telemetry.identify(...)` call site), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`identify`, `lastIdentifiedId` dedup)
+- **Platforms:** shared
+
+### TEL-17 — telemetry reset on logout/forced logout
+- **Steps:** From Profile, tap Log Out; separately, trigger a forced logout (e.g. an unrecoverable refresh failure).
+- **Expected:** `Telemetry.reset()` runs on both the manual and forced logout paths, clearing the `lastIdentifiedId` dedup guard (so a subsequent login by a different or the same member re-fires `identify`) and clearing PostHog/Sentry user context; debug console echoes `▶ reset`.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (two `telemetry.reset()` call sites — `logout()` and `forceLogout(cause)`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`reset`)
+- **Platforms:** shared
+
+### TEL-18 — app_start_completed, authenticated cold start
+- **Steps:** Cold-start the app while already logged in (session token present), letting it land on Home.
+- **Expected:** `app_start_completed` fires exactly once per process with `start_type=cold`, `authenticated=true`, and a `duration_ms` measured from the platform entry point (`markStart()`) to Home's first composed content (`onFirstContent`).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/AppStartTracker.kt (`markStart`, `onFirstContent`, `fired` guard), sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { AppStartTracker.onFirstContent(telemetry, authenticated = true) }` under `if (isAuthenticated)`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`firstContent` branch calling `AppStartTracker.onFirstContent(telemetry, authenticated = true)`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`appStartCompleted`)
+- **Platforms:** shared
+
+### TEL-19 — app_start_completed, unauthenticated cold start
+- **Steps:** Cold-start the app signed out, landing on the login screen.
+- **Expected:** `app_start_completed` fires exactly once per process with `start_type=cold` and `authenticated=false` when the Auth screen renders its first content.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { AppStartTracker.onFirstContent(telemetry, authenticated = false) }` in the unauthenticated/AuthScreen branch), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (line 143, same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/AppStartTracker.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`appStartCompleted`)
+- **Platforms:** shared
+
+### TEL-20 — Debug-build console echo of every telemetry call
+- **Steps:** Run a Debug build on either platform and drive any telemetry-firing surface (e.g. tap through Home → Schedule → a class → back).
+- **Expected:** Every `Telemetry` call (screen, event, identify, reset, error) is echoed to the platform console under a `▶ Telemetry` / `D/Telemetry` tag before or alongside being sent to PostHog/Sentry, letting an agent verify events by reading console output rather than the PostHog dashboard; release builds emit no such echo.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`debugLog`, `isDebugBuild` gate, `LOG_TAG`), sharedUI/src/androidMain/kotlin/org/arcana/mobile/analytics/AndroidTelemetry.kt
+- **Platforms:** shared
+
+### TEL-21 — Edit Profile (and Developer Settings) fire no $screen event
+- **Steps:** From Profile, open Edit Profile (PROFILE-11); watch the debug telemetry echo for a `$screen` event. Separately, open Developer Settings (DEVSET-01/AUTH-13).
+- **Expected:** No `$screen` event fires for either screen. `currentScreenName` (App.kt lines 342-351) enumerates Home, Schedule, Profile, StudioSelection, MyBookings, ConciergeRequest, and ClassDetail, but has no `ArcanaDestination.EditProfile` branch, and `Telemetry.Screens` has no `EDIT_PROFILE` constant — `MainScaffold`'s `if (screenName != null) telemetry.screen(...)` effect simply skips firing, silently leaving whatever screen name was last recorded in place. Developer Settings is not a NavHost destination at all (a plain `var`, see NAV-12) and was never in scope for this mechanism to begin with.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, lines 342-351), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens`, line 573), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
+- **Platforms:** shared
+
+## PLAT
+
+### PLAT-01 — iOS 26 Liquid Glass tab bar
+- **Steps:** On the iOS 26 simulator (this suite is simulator/emulator only — never a physical device), sign in and observe the bottom tab bar over scrolling content.
+- **Expected:** The tab bar renders the system Liquid Glass material (translucent, blurred, drawing its own backdrop) — the app does not override `standardAppearance`/`scrollEdgeAppearance` on iOS 26, leaving system defaults untouched.
+- **Source:** iosApp/iosApp/ArcanaShell.swift (`if #unavailable(iOS 26.0) { ... }` guard — code inside only runs on iOS 18.x, so 26 gets the untouched system appearance)
+- **Platforms:** iOS26-only
+
+### PLAT-02 — iOS 18 pinned opaque tab bar
+- **Steps:** On the iOS 18.5 simulator (no Liquid Glass; simulator only, never a physical device), sign in and observe the bottom tab bar over scrolling content.
+- **Expected:** The tab bar shows a solid/blurred default background behind the items — not a transparent bar with items floating directly over content. This is because `ShellModel.init` explicitly pins both `standardAppearance` and `scrollEdgeAppearance` to `configureWithDefaultBackground()` on iOS 18.x, working around UIKit's inability to detect Compose content as a scrolling `UIScrollView`.
+- **Source:** iosApp/iosApp/ArcanaShell.swift (`ShellModel.init`, `#unavailable(iOS 26.0)`)
+- **Platforms:** iOS18-only
+
+### PLAT-03 — You-tab avatar-initials chip (iOS)
+- **Steps:** Sign in on iOS and look at the third tab bar item ("You").
+- **Expected:** Once the member's `/me` fetch resolves, the tab icon shows a Moss-filled circle with the member's initials in Stone (not a generic person silhouette), rendered with `.alwaysOriginal` so the system doesn't template-tint it into a monochrome silhouette. Before the fetch resolves or on fetch failure, it falls back to the generic `person.crop.circle` SF Symbol.
+- **Source:** iosApp/iosApp/ArcanaShell.swift (`AvatarChip`, `shell.memberInitials`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`observeMemberInitials`)
+- **Platforms:** iOS-only
+
+### PLAT-04 — Profile-tab avatar-initials chip (Android)
+- **Steps:** Sign in on Android and look at the third tab bar item ("You").
+- **Expected:** The tab shows a circular avatar with the member's initials (Moss/Lime-bordered when active, Mist2 when inactive) sourced from the same `ProfileViewModel` load that backs the Profile screen — not a static placeholder.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/TabBar.kt (`TabItem`, `isAvatar` branch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`avatarInitials`, `profileVm.load()`)
+- **Platforms:** Android-only
+
+### PLAT-05 — iOS locked to light appearance
+- **Steps:** On iOS, set the system to Dark Mode, then open the app.
+- **Expected:** The app renders in its Stone-light design regardless of system appearance — it does not switch to a dark theme (no dark theme exists; Moss-on-dark-glass would fail contrast).
+- **Source:** iosApp/iosApp/ArcanaShell.swift (`moss` tint comment re: light-only design), iosApp/iosApp/Info.plist (`UIUserInterfaceStyle` per CLAUDE.md)
+- **Platforms:** iOS-only
+
+### PLAT-06 — iOS Home tab warm-loads Profile for early PostHog identify
+- **Steps:** Cold-launch the app authenticated, land on Home, without ever visiting the Profile tab, and watch the debug telemetry echo.
+- **Expected:** A PostHog `identify` call fires at session start (from the first `/me` load), not deferred until the member actually opens the Profile tab — the Home tab root eagerly resolves `ProfileViewModel` and calls `load()`.
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`TabRoot`'s `firstContent` branch: `koinViewModel<ProfileViewModel>()`, `profileVm.load()`)
+- **Platforms:** iOS-only
+
+### PLAT-07 — Splash rendered as its own Compose controller, overlaying both auth and shell (iOS)
+- **Steps:** Cold-launch iOS while authenticated and while unauthenticated; watch what the splash sits on top of during its display window.
+- **Expected:** The splash overlays whichever content is underneath (TabView or the Auth flow) as a z-stacked `ComposeUIViewController`, matching Android's z-stacked `AnimatedVisibility` overlay in App.kt, and releases (`splashVC = nil`) only after its fade completes so it is never shown twice.
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/SplashHost.kt, iosApp/iosApp/ArcanaShell.swift (`ArcanaShellView`, `ZStack`, `splashDidAppear`)
+- **Platforms:** iOS-only
+
+### PLAT-08 — Content flows edge-to-edge under the floating iOS glass bar
+- **Steps:** On iOS, scroll each tab root (Home, Schedule, You) to its last item.
+- **Expected:** The last row/card scrolls fully clear of the floating tab bar rather than being obscured by it — each tab-root scrollable adds `LocalFloatingBarInset` as bottom content padding (0 on Android, where the tab bar is a docked Scaffold `bottomBar` and content is padded via `innerPadding` instead).
+- **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`barInset`, `LocalFloatingBarInset`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/FloatingBarInset.kt
+- **Platforms:** iOS-only
+
+### PLAT-09 — Android edge-to-edge with docked tab bar
+- **Steps:** On Android, scroll each tab root to its last item, and check the tab bar's bottom edge against the gesture-nav inset.
+- **Expected:** The tab bar's Stone background fills its entire slot including the gesture-navigation safe-area inset (no transparent gap showing content behind it), and screen content is padded by the Scaffold's `innerPadding` so nothing sits under the docked bar.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`Scaffold(bottomBar = ...)`, `innerPadding`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/TabBar.kt (`safeBottomBarPadding()`)
+- **Platforms:** Android-only

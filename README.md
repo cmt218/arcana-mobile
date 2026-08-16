@@ -29,3 +29,7 @@ Open `/iosApp` in Xcode and run from there.
 Google's `android` CLI (`~/.local/bin/android`) is installed for on-device inspection of the Android build: `android layout` dumps the UI semantics as JSON and `android screen capture -a` produces an annotated screenshot whose regions can be tapped via `adb shell input`. Four Android skills live in `.claude/skills/`.
 
 It is Android-only, and several catalogue skills give advice that is wrong for a Compose Multiplatform project. **Read the "Android CLI — agent tooling" section of [CLAUDE.md](CLAUDE.md) before using any of it** — particularly the "Skills that must NOT be used" list.
+
+## Regression testing
+
+`docs/regression/` holds the full regression inventory (`inventory.md`), the execution runbook (`runbook.md`), and the device-driving techniques (`driver-playbook.md`) for exercising the app end to end on iOS and Android. Run it via the `/full-regression` skill (`.claude/skills/full-regression/`) rather than driving it manually.
