@@ -165,6 +165,41 @@ New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 
 **Planned upgrade — CMP 1.12.0 when stable (~Sept–Oct 2026):** it ships the iOS lazy-list prefetch scheduler (compose-multiplatform-core PR #3149), the expected fix for remaining schedule scroll hitches. Before/after measurement is repeatable via the runbook in `docs/perf/README.md` (scripted simulator scroll A/B; 1.10.0→1.11.1 already measured −40% dropped frames there).
 
+## Regression inventory — keep it current
+
+`docs/regression/inventory.md` is the checklist consumed by the agent-run full
+regression suite (`.claude/skills/full-regression/`, execution runbook at
+`docs/regression/runbook.md`). It is only useful if it tracks the app as it
+actually is, so this is a hard rule, not a suggestion:
+
+**Any PR that adds, changes, or removes user-facing functionality MUST update
+`docs/regression/inventory.md` in the same PR.**
+- New surface (screen, ViewModel-backed flow, nav destination) → a new entry.
+- Changed behavior on an existing surface → an updated **Expected** on the
+  entry that covers it.
+- Removed surface → tombstone the entry (`### <ID> — RETIRED (<date>):
+  <reason>`), do not delete the line. Entry IDs are stable and are never
+  reused.
+
+This isn't just a paperwork requirement: the full regression suite's Phase 1
+self-audit diffs the inventory against the current source tree on every run
+(every `*Screen.kt`, every ViewModel, every nav destination should trace back
+to an inventory entry's **Source:** line, and every entry's **Source:** line
+should resolve to a real file) and reports drift as findings. Skipping this
+update doesn't skip the check — it just means the next regression run surfaces
+your PR as a "stale entry" or "uncovered surface" finding instead of the
+inventory being right the first time.
+
+**If you're implementing a change that adds, changes, or removes user-facing
+functionality, use the `regression-inventory` skill**
+(`.claude/skills/regression-inventory/SKILL.md`) — it teaches the entry
+format, ID scheme, area-vs-new-area call, Source-citation rules, the
+tombstone rule for removals, and the iOS/Android KEEP-IN-SYNC trap, with a
+worked "adding a new tab" example. Before finishing, verify your edit with
+`tools/regression/self_audit.sh` (a mechanical, always-exits-0 implementation
+of the runbook's Phase 1 checks — it prints `FINDINGS: N`) and require `N=0`
+before handing the work back.
+
 ## iOS Liquid Glass shell (2026-08-10)
 
 On iOS the top-level chrome is **native SwiftUI**; Compose renders screen content. This is JetBrains' recommended architecture for system Liquid Glass (their Liquid Glass tutorial / the KotlinConf app). **Android is untouched** — App.kt's MainScaffold remains the Android composition.
