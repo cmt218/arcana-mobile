@@ -305,7 +305,7 @@ class SignupCompletionViewModelTest {
         assertTrue(vm.state.value is SignupCompletionState.Editing)
     }
 
-    @Test fun `in-flight submit sets isSubmitting and blocks re-entry, then resolves`() = runTest {
+    @Test fun `in-flight submit sets isSubmitting and blocks re-entry then resolves`() = runTest {
         val gate = CompletableDeferred<CompleteSignupResult>()
         val vm = SignupCompletionViewModel("tok", GatedApi(gate))
         vm.fillValid()

@@ -1,5 +1,9 @@
 package org.arcana.mobile.schedule
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -53,8 +58,10 @@ import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.bookingInfoOrNull
 import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
+import org.arcana.mobile.booking.cancelErrorCopy
 import org.arcana.mobile.booking.outsideWindowCopy
 import org.arcana.mobile.data.ScheduleSessionDto
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ash
@@ -72,6 +79,7 @@ import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.ArcanaPullToRefreshBox
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.CircleMonogram
@@ -79,7 +87,9 @@ import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
-import org.arcana.mobile.ui.Heading2
+import org.arcana.mobile.ui.ErrorCopy
+import org.arcana.mobile.ui.ErrorSnackbar
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
@@ -87,6 +97,7 @@ import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.safeBottomBarPadding
 import org.arcana.mobile.ui.safeContentPadding
+import org.arcana.mobile.ui.safeHorizontalPadding
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -172,6 +183,7 @@ fun ClassDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val refreshing by viewModel.isRefreshing.collectAsState()
+    val retrying by viewModel.retrying.collectAsState()
 
     // Outer Box on Stone — children handle their own safe-area padding so the
     // sticky CTA can sit flush with the bottom safe inset while the list scrolls
@@ -179,7 +191,12 @@ fun ClassDetailScreen(
     Box(modifier = modifier.fillMaxSize().background(Stone)) {
         when (val s = state) {
             ClassDetailUiState.Loading -> LoadingBlock(onClose)
-            is ClassDetailUiState.Error -> ErrorBlock(message = s.message, onClose = onClose, onRetry = viewModel::reload)
+            is ClassDetailUiState.Error -> ErrorBlock(
+                type = s.type,
+                onClose = onClose,
+                onRetry = viewModel::retry,
+                retrying = retrying,
+            )
             is ClassDetailUiState.Success -> SuccessBlock(
                 session = s.session,
                 onClose = onClose,
@@ -194,37 +211,42 @@ fun ClassDetailScreen(
 
 @Composable
 private fun LoadingBlock(onClose: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
-        TopBar(onClose = onClose)
-        // Centered dot loader — mirrors Schedule's LoadingPlaceholder so the
-        // brand's pulsing-dot gesture reads as the focal point while we fetch.
+    // TopBar overlays rather than stacks: stacking leaves only the space below
+    // the bar, so the loader centres below the true middle.
+    Box(modifier = Modifier.fillMaxSize()) {
         Box(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             DotMatrixLoader()
         }
+        Box(modifier = Modifier.safeContentPadding()) {
+            TopBar(onClose = onClose)
+        }
     }
 }
 
+/** TopBar OVERLAYS [FullScreenError] rather than stacking above it: the close
+ *  button stays usable either way, but stacking gave the error only the space
+ *  below the bar, so the block centred lower than the identical error on Home
+ *  and Schedule. Nothing here may consume the top inset before FullScreenError
+ *  measures, or the centre shifts down by half the status bar. */
 @Composable
-private fun ErrorBlock(message: String, onClose: () -> Unit, onRetry: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
-        TopBar(onClose = onClose)
-        Column(modifier = Modifier.padding(24.dp)) {
-            Heading2(text = "Couldn't load class", size = 22, color = Ink)
-            Spacer(Modifier.height(8.dp))
-            BodyText(text = message, size = 14, color = Ash)
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Ink)
-                    .clickable(onClick = onRetry)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Overline(text = "RETRY", size = 12, color = Stone)
-            }
+private fun ErrorBlock(
+    type: ErrorType,
+    onClose: () -> Unit,
+    onRetry: () -> Unit,
+    retrying: Boolean,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        FullScreenError(
+            type = type,
+            onRetry = onRetry,
+            retrying = retrying,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(modifier = Modifier.safeContentPadding()) {
+            TopBar(onClose = onClose)
         }
     }
 }
@@ -294,6 +316,7 @@ private fun SuccessBlock(
     val loaded by bookingVm.loaded.collectAsState()
     val cancelSheetOpen by bookingVm.cancelSheetOpen.collectAsState()
     val cancelState by bookingVm.cancelState.collectAsState()
+    val membershipLoadFailed by bookingVm.membershipLoadFailed.collectAsState()
 
     // While the VM is still fetching /me + /bookings, show a neutral spinner on
     // the CTA instead of the default "NOT AVAILABLE" flash. Past classes resolve
@@ -305,7 +328,7 @@ private fun SuccessBlock(
     // ~140dp so the last content can scroll out from behind the CTA without
     // ever being permanently obscured.
     Box(modifier = Modifier.fillMaxSize()) {
-        PullToRefreshBox(
+        ArcanaPullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = {
                 onRefresh()
@@ -441,6 +464,34 @@ private fun SuccessBlock(
             // time/day sub-stamp. It's the only state that renders NotBookable's
             // label (past/booked/out-of-window/not-open all take precedence above).
             val showCtaSubStamp = ctaLabel != BookCta.NotBookable.label
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(2f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+            if (membershipLoadFailed) {
+                ErrorSnackbar(
+                    text = ErrorCopy.REFRESH_FAILED,
+                    // Same refresh the pull gesture drives, or the top indicator
+                    // never appears and the retry looks inert.
+                    onRetry = {
+                        bookingVm.dismissMembershipLoadFailed()
+                        onRefresh()
+                        bookingVm.load()
+                    },
+                    onDismiss = bookingVm::dismissMembershipLoadFailed,
+                    modifier = Modifier
+                        .safeHorizontalPadding()
+                        // The CTA opens with a 40dp fade before its pill, so
+                        // sitting flush above it leaves 48dp to the PILL. Drop
+                        // into the fade to match the pill's own bottom gap.
+                        .offset(y = CTA_FADE_HEIGHT + CTA_EDGE_GAP - CTA_PILL_GAP)
+                        // Above the fade: the CTA is a later sibling, so its
+                        // gradient would paint across the bar as a glow.
+                        .zIndex(1f),
+                )
+            }
             StickyReserveCta(
                 capacity = capacity,
                 available = session.arcanaSpotsAvailable,
@@ -463,8 +514,8 @@ private fun SuccessBlock(
                         else -> {}
                     }
                 },
-                modifier = Modifier.align(Alignment.BottomCenter),
             )
+            }
         }
     }
 
@@ -539,7 +590,7 @@ private fun CancelBookingSheet(
             Spacer(Modifier.height(16.dp))
             if (willForfeitCredit) {
                 BodyText(
-                    "Cancelling now forfeits this class's credit — you're past the studio cutoff.",
+                    "Cancelling now forfeits this class's credit. You're past the studio cutoff.",
                     size = 13, color = Warning,
                 )
             } else {
@@ -558,7 +609,9 @@ private fun CancelBookingSheet(
             )
             if (cancelState is CancelState.Failed) {
                 Spacer(Modifier.height(12.dp))
-                Caption("Couldn't cancel — please try again.", size = 13, color = BurntNectar, maxLines = 3)
+                // cancelErrorCopy (not bookingErrorCopy) so an unmapped code
+                // still falls back to cancel-appropriate copy.
+                Caption(cancelErrorCopy(cancelState.code), size = 13, color = BurntNectar, maxLines = 3)
             }
         }
     }
@@ -1005,7 +1058,7 @@ private fun StickyReserveCta(
     // so this `when` is just an exhaustive fallback.
     val primaryLabel = label ?: when (capacity) {
         DetailCapacity.Open -> "RESERVE THIS SPOT"
-        DetailCapacity.Scarce -> "RESERVE — ONLY $available LEFT"
+        DetailCapacity.Scarce -> "RESERVE: ONLY $available LEFT"
         DetailCapacity.Full -> "CLASS FULL"
         DetailCapacity.NotOpen -> "NOT OPEN"
     }
@@ -1104,6 +1157,18 @@ private fun StickyReserveCta(
         Box(Modifier.fillMaxWidth().background(Stone).safeBottomBarPadding())
     }
 }
+
+/** The CTA's own vertical inset. The refresh snackbar reuses it so the gap
+ *  above the CTA matches the gap below it. */
+private val CTA_EDGE_GAP = 8.dp
+
+/** The CTA's leading transparent→Stone fade — invisible, but it occupies real
+ *  space above the pill, so anything stacked above the CTA must account for it. */
+private val CTA_FADE_HEIGHT = 40.dp
+
+/** Target gap between the refresh snackbar and the visible CTA pill. Matches the
+ *  gap the pill leaves against the bottom of the screen. */
+private val CTA_PILL_GAP = 32.dp
 
 // ── Booking error banner -------------------------------------------------------
 

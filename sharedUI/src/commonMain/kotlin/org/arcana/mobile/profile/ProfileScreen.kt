@@ -26,7 +26,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +65,9 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.StoneAlpha18
 import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.ui.AccentText
+import org.arcana.mobile.ui.ArcanaPullToRefreshBox
+import org.arcana.mobile.ui.ErrorCopy
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.IconCircle
@@ -74,6 +76,7 @@ import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
@@ -85,7 +88,7 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * Row labels for the "Your favorites" section: whole-Studio favorites first
- * (by name), then location-grain favorites as "STUDIO — LOCATION" with the
+ * (by name), then location-grain favorites as "STUDIO · LOCATION" with the
  * brand prefix stripped from the location name (mirrors `shortLabel()` in
  * ScheduleViewModel).
  */
@@ -97,7 +100,7 @@ private fun FavoriteLocationDto.rowLabel(): String {
     val raw = name.removePrefix(studioName).trim()
         .removePrefix("·").trim()
         .removePrefix("-").trim()
-    return "$studioName — ${raw.ifEmpty { name }}"
+    return "$studioName · ${raw.ifEmpty { name }}"
 }
 
 private data class AccountItem(
@@ -120,12 +123,46 @@ fun ProfileScreen(
     val vm = koinViewModel<ProfileViewModel>()
     val state by vm.uiState.collectAsState()
     val refreshing by vm.isRefreshing.collectAsState()
+    val refreshFailed by vm.refreshFailed.collectAsState()
+    val retrying by vm.retrying.collectAsState()
     val favorites by vm.favorites.collectAsState()
     val deleteVm = koinViewModel<DeleteAccountViewModel>()
     val deleteState by deleteVm.state.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.load() }
+
+    // A cold load with nothing to show is a full-screen takeover, matching Home
+    // and Schedule. The snackbar below is reserved for a failed REFRESH, where
+    // the member's content is still on screen and worth keeping.
+    (state as? ProfileUiState.Error)?.let { err ->
+        // Sign out must stay reachable over the takeover: Profile's list is the
+        // only place it lives, so a full replacement strands a member whose
+        // server is unreachable.
+        Box(modifier = modifier.fillMaxSize()) {
+            FullScreenError(
+                type = err.type,
+                onRetry = vm::retry,
+                retrying = retrying,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .safeHorizontalPadding()
+                    .padding(bottom = 24.dp + LocalFloatingBarInset.current)
+                    .clickable { apiClient.logout() }
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // decorative — the row is the tap target and "Sign out" names it.
+                StrokeIcon(ArcanaIcons.Logout, size = 16.dp, tint = Danger)
+                Overline(text = "Sign out", size = 12, color = Danger)
+            }
+        }
+        return
+    }
 
     // Membership row shows the member's tier name (e.g. "Alpha Tester") while
     // active, or "Inactive" once the membership has lapsed — keyed off the same
@@ -154,7 +191,7 @@ fun ProfileScreen(
                 .fillMaxHeight(0.55f)
                 .background(Ink),
         )
-        PullToRefreshBox(
+        ArcanaPullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = vm::refresh,
             modifier = Modifier.fillMaxSize(),
@@ -328,6 +365,21 @@ fun ProfileScreen(
                 },
             )
             else -> {}
+        }
+
+        if (refreshFailed) {
+            ErrorSnackbar(
+                text = ErrorCopy.REFRESH_FAILED,
+                onRetry = {
+                    vm.dismissRefreshFailed()
+                    vm.refresh()
+                },
+                onDismiss = vm::dismissRefreshFailed,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .safeHorizontalPadding()
+                    .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+            )
         }
     }
 }
@@ -519,16 +571,6 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                 )
             }
 
-            // Error caption — unobtrusive, below stats
-            if (state is ProfileUiState.Error) {
-                Spacer(Modifier.height(8.dp))
-                BodyText(
-                    text = "Could not load profile.",
-                    size = 12,
-                    color = StoneAlpha55,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-            }
         }
     }
 }
@@ -570,7 +612,7 @@ private fun StatCell(value: String?, label: String, modifier: Modifier = Modifie
 /**
  * A single favorite in the "Your favorites" section. [label] is the
  * pre-formatted row text from [favoriteRowLabels] (Studio name, or
- * "STUDIO — LOCATION" for location-grain favorites); [idx] is the 1-based
+ * "STUDIO · LOCATION" for location-grain favorites); [idx] is the 1-based
  * position rendered in the Moss number badge.
  */
 @Composable

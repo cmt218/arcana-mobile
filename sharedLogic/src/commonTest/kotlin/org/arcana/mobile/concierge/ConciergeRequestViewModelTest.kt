@@ -7,13 +7,19 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.arcana.mobile.networking.ApiHttpError
+import org.arcana.mobile.networking.CONNECTION_FAILED
 import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.ConciergeError
+import org.arcana.mobile.networking.SERVER_FAILED
+import org.arcana.mobile.networking.transportErrorCopy
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ConciergeRequestViewModelTest {
@@ -71,6 +77,37 @@ class ConciergeRequestViewModelTest {
         vm.submit()
         assertTrue(vm.submitState.value is ConciergeSubmit.Idle)
         assertEquals(0, api.callCount)
+    }
+
+    // ── CONNECTION/SERVER transport classification ---------------------------
+
+    @Test fun `a network failure is not reported as a generic concierge failure`() = runTest {
+        val vm = ConciergeRequestViewModel(FakeApi(error = Exception("network failure")))
+        vm.updateMessage("Reach me")
+        vm.submit()
+        assertEquals(ConciergeSubmit.Failed(CONNECTION_FAILED), vm.submitState.value)
+    }
+
+    @Test fun `a concierge 5xx is reported as a server failure`() = runTest {
+        val vm = ConciergeRequestViewModel(FakeApi(error = ApiHttpError(500)))
+        vm.updateMessage("Reach me")
+        vm.submit()
+        assertEquals(ConciergeSubmit.Failed(SERVER_FAILED), vm.submitState.value)
+    }
+
+    @Test fun `a typed concierge reason code still wins over the transport category`() = runTest {
+        val vm = ConciergeRequestViewModel(FakeApi(error = ConciergeError("some_code")))
+        vm.updateMessage("Reach me")
+        vm.submit()
+        assertEquals(ConciergeSubmit.Failed("some_code"), vm.submitState.value)
+    }
+
+    @Test fun `transportErrorCopy gives different copy for connection and server failures`() {
+        assertNotEquals(transportErrorCopy(CONNECTION_FAILED), transportErrorCopy(SERVER_FAILED))
+    }
+
+    @Test fun `transportErrorCopy returns null for a code it does not recognize`() {
+        assertNull(transportErrorCopy("some_code"))
     }
 
     private class FakeApi(private val error: Throwable? = null) : ConciergeApi {

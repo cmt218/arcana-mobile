@@ -412,8 +412,8 @@ class Telemetry(
         ),
     )
 
-    fun bookingCancelFailed(bookingId: Int) =
-        track(Events.BOOKING_CANCEL_FAILED, mapOf("booking_id" to bookingId))
+    fun bookingCancelFailed(bookingId: Int, reasonCode: String) =
+        track(Events.BOOKING_CANCEL_FAILED, mapOf("booking_id" to bookingId, "reason_code" to reasonCode))
 
     // ---- Favorites (broken down by studio & location) --------------------
 

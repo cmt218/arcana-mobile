@@ -9,7 +9,9 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.favorites.FavoritesRepository
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.MembershipApi
+import org.arcana.mobile.networking.toErrorType
 
 sealed interface ProfileUiState {
     data object Loading : ProfileUiState
@@ -29,7 +31,7 @@ sealed interface ProfileUiState {
         val lifetimeSessions: Int,
         val weekStreak: Int,
     ) : ProfileUiState
-    data class Error(val message: String) : ProfileUiState
+    data class Error(val type: ErrorType) : ProfileUiState
 }
 
 class ProfileViewModel(
@@ -48,8 +50,38 @@ class ProfileViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
+    /** True when a background refresh failed while [ProfileUiState.Success] was
+     *  already on screen — mirrors HomeViewModel. A cold-load failure is the
+     *  Error state and a full-screen takeover instead; the snackbar is only for
+     *  "your content is still good, the refresh wasn't". */
+    private val _refreshFailed = MutableStateFlow(false)
+    val refreshFailed: StateFlow<Boolean> = _refreshFailed
+
+    /** True while [retry] is in flight; the error stays on screen and the retry
+     *  button carries the progress. */
+    private val _retrying = MutableStateFlow(false)
+    val retrying: StateFlow<Boolean> = _retrying
+
     fun load() {
         viewModelScope.launch { fetch() }
+    }
+
+    /** Retry from the full-screen error. Never resets to Loading: the error
+     *  stays put and the button shows the dot-matrix loader. */
+    fun retry() {
+        if (_retrying.value) return
+        _retrying.value = true
+        viewModelScope.launch {
+            try {
+                fetch()
+            } finally {
+                _retrying.value = false
+            }
+        }
+    }
+
+    fun dismissRefreshFailed() {
+        _refreshFailed.value = false
     }
 
     /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
@@ -77,6 +109,7 @@ class ProfileViewModel(
             // already-logged-in users and account switches — not just post-login.
             // Telemetry dedupes per session, so calling it on each refresh is safe.
             telemetry.identify(me.member.id.toString(), me.member.email, me.member.displayName)
+            _refreshFailed.value = false
             _uiState.value = ProfileUiState.Success(
                 fullName = me.member.displayName ?: me.member.email,
                 initials = me.member.avatarInitials,
@@ -94,10 +127,12 @@ class ProfileViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // On a refresh failure keep whatever's already on screen rather than
-            // replacing good content with a full-screen error.
-            if (_uiState.value !is ProfileUiState.Success) {
-                _uiState.value = ProfileUiState.Error("server error")
+            // Keep good content on a refresh failure and flag it for the
+            // snackbar; only a cold load with nothing on screen takes over.
+            if (_uiState.value is ProfileUiState.Success) {
+                _refreshFailed.value = true
+            } else {
+                _uiState.value = ProfileUiState.Error(e.toErrorType())
             }
         }
     }

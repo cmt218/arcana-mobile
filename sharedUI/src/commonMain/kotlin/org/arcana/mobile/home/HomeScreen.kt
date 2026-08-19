@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,14 +53,18 @@ import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.theme.StoneAlpha65
 import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.AccentText
+import org.arcana.mobile.ui.ArcanaPullToRefreshBox
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
+import org.arcana.mobile.ui.ErrorCopy
+import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StatusPill
@@ -69,6 +72,7 @@ import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
+import org.arcana.mobile.ui.safeHorizontalPadding
 import org.koin.compose.viewmodel.koinViewModel
 
 // ── Max upcoming rows shown below the hero card ────────────────────────────────
@@ -90,6 +94,8 @@ fun HomeScreen(
     LaunchedEffect(Unit) { vm.load() }
     val state by vm.uiState.collectAsState()
     val refreshing by vm.isRefreshing.collectAsState()
+    val retrying by vm.retrying.collectAsState()
+    val refreshFailed by vm.refreshFailed.collectAsState()
 
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember(tz) { Clock.System.todayIn(tz) }
@@ -97,11 +103,22 @@ fun HomeScreen(
     val dateLabel = "${today.dayOfWeek.name.take(3)} · ${today.month.name.take(3)} ${today.day}"
     val greeting = timeOfDay(hour)
 
-    PullToRefreshBox(
+    ArcanaPullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = vm::refresh,
         modifier = Modifier.fillMaxSize(),
     ) {
+    val s = state
+    if (s is HomeUiState.Error) {
+        // Replaces the list entirely rather than living inside it; still
+        // wrapped by the PullToRefreshBox above.
+        FullScreenError(
+            type = s.type,
+            onRetry = vm::retry,
+            retrying = retrying,
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -117,7 +134,8 @@ fun HomeScreen(
         item {
             val displayName = when (val s = state) {
                 is HomeUiState.Success -> firstName(s.displayName)
-                else -> null // null = loading or error; HeroHeader renders a shimmer name slot
+                // Error can't reach here (handled above by FullScreenError).
+                else -> null // null = loading; HeroHeader renders a shimmer name slot
             }
             HeroHeader(
                 dateLabel = dateLabel,
@@ -183,16 +201,9 @@ fun HomeScreen(
             }
 
             is HomeUiState.Error -> {
-                item { Spacer(Modifier.height(4.dp)) }
-                item {
-                    Caption(
-                        text = s.message,
-                        size = 13,
-                        color = Ash,
-                        maxLines = 3,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
+                // Unreachable: the `if` above already handles Error via
+                // FullScreenError. Kept as an explicit branch (not `else ->`)
+                // so a new HomeUiState case still fails this `when` to compile.
             }
 
             is HomeUiState.Success -> {
@@ -298,6 +309,21 @@ fun HomeScreen(
                 }
             }
         }
+    }
+    }
+    if (refreshFailed) {
+        ErrorSnackbar(
+            text = ErrorCopy.REFRESH_FAILED,
+            onRetry = {
+                vm.dismissRefreshFailed()
+                vm.refresh()
+            },
+            onDismiss = vm::dismissRefreshFailed,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .safeHorizontalPadding()
+                .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+        )
     }
     }
 }

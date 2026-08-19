@@ -15,7 +15,10 @@ import org.arcana.mobile.data.coveringPeriodForClass
 import org.arcana.mobile.data.periodForClass
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.BookingError
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.MembershipApi
+import org.arcana.mobile.networking.toErrorType
+import org.arcana.mobile.networking.transportFailureCode
 
 sealed interface BookingSubmit {
     data object Idle : BookingSubmit
@@ -143,9 +146,31 @@ class BookingViewModel(
     private val _cancelSheetOpen = MutableStateFlow(false)
     val cancelSheetOpen: StateFlow<Boolean> = _cancelSheetOpen
 
+    /** True when the membership fetch failed, so the CTA is stale rather than
+     *  authoritative. The screen shows the refresh snackbar instead of letting
+     *  the button claim the member has no membership. */
+    private val _membershipLoadFailed = MutableStateFlow(false)
+    val membershipLoadFailed: StateFlow<Boolean> = _membershipLoadFailed
+
+    fun dismissMembershipLoadFailed() {
+        _membershipLoadFailed.value = false
+    }
+
     fun load() {
         viewModelScope.launch {
-            val me = runCatching { membershipApi.membershipMe() }.getOrNull()
+            val meResult = runCatching { membershipApi.membershipMe() }
+            // A failed fetch is not the same fact as "no membership", and
+            // `getOrNull()` collapses the two. Keep the last known CTA rather
+            // than asserting something false about the member's account.
+            if (meResult.isFailure) {
+                _membershipLoadFailed.value = true
+                // Still mark loaded: the CTA reads `!loaded` as "fetching" and
+                // would otherwise spin forever when the FIRST fetch fails.
+                _loaded.value = true
+                return@launch
+            }
+            _membershipLoadFailed.value = false
+            val me = meResult.getOrNull()
             val existing = runCatching { bookingApi.myBookings() }
                 .getOrNull()?.upcoming?.firstOrNull { it.session.id == sessionId }
             _existingBooking.value = existing
@@ -262,12 +287,16 @@ class BookingViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: BookingError) {
+                // The server named a reason. Always more useful than a category.
                 telemetry.bookingFailed(e.code, sessionId)
                 _submitState.value = BookingSubmit.Failed(e.code)
             } catch (e: Exception) {
-                telemetry.bookingFailed("booking_failed", sessionId)
+                // No typed reason from the server — classify by transport so a
+                // connection failure doesn't read as the same generic copy as a server failure.
+                val code = e.transportFailureCode()
+                telemetry.bookingFailed(code, sessionId)
                 telemetry.recordError(e, mapOf("op" to "createBooking", "session_id" to sessionId))
-                _submitState.value = BookingSubmit.Failed("booking_failed")
+                _submitState.value = BookingSubmit.Failed(code)
             }
         }
     }
@@ -309,9 +338,12 @@ class BookingViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                telemetry.bookingCancelFailed(booking.id)
+                // Computed once for both telemetry and UI state so they can't
+                // disagree — mirrors confirmBooking's catch block above.
+                val code = e.transportFailureCode()
+                telemetry.bookingCancelFailed(booking.id, code)
                 telemetry.recordError(e, mapOf("op" to "cancelBooking", "booking_id" to booking.id))
-                _cancelState.value = CancelState.Failed("cancel_failed")
+                _cancelState.value = CancelState.Failed(code)
             }
         }
     }

@@ -2,7 +2,7 @@ package org.arcana.mobile.schedule
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import io.ktor.client.plugins.ResponseException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -11,11 +11,14 @@ import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.ArcanaApiClient
+import org.arcana.mobile.networking.ErrorType
+import org.arcana.mobile.networking.telemetryReasonFor
+import org.arcana.mobile.networking.toErrorType
 
 sealed interface ClassDetailUiState {
     data object Loading : ClassDetailUiState
     data class Success(val session: ScheduleSessionDto) : ClassDetailUiState
-    data class Error(val message: String) : ClassDetailUiState
+    data class Error(val type: ErrorType) : ClassDetailUiState
 }
 
 class ClassDetailViewModel(
@@ -31,11 +34,34 @@ class ClassDetailViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
+    /** True while [retry] is in flight. The error stays on screen and the retry
+     *  button carries the progress. */
+    private val _retrying = MutableStateFlow(false)
+    val retrying: StateFlow<Boolean> = _retrying
+
     init {
         reload()
     }
 
-    /** Force a re-fetch, flashing the shimmer — for first load and error-retry. */
+    /** Retry from the error state. Unlike [reload] this does NOT drop to
+     *  Loading: the error stays put so a failed retry can't flash the shimmer
+     *  and land back on the same error. */
+    fun retry() {
+        // Claimed synchronously so taps arriving before the coroutine starts
+        // don't each queue their own fetch.
+        if (_retrying.value) return
+        _retrying.value = true
+        viewModelScope.launch {
+            try {
+                fetch(isView = true)
+            } finally {
+                _retrying.value = false
+            }
+        }
+    }
+
+    /** Force a re-fetch, flashing the shimmer. First load only — an error-retry
+     *  goes through [retry] so it doesn't wipe the error off screen. */
     fun reload() {
         viewModelScope.launch {
             _uiState.value = ClassDetailUiState.Loading
@@ -78,21 +104,19 @@ class ClassDetailViewModel(
                     loadMs = (Clock.System.now() - startedAt).inWholeMilliseconds,
                 )
             }
-        } catch (e: ResponseException) {
-            val code = e.response.status.value
-            logWarning("ClassDetailViewModel", e.message ?: "HTTP $code")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val type = e.toErrorType()
+            logWarning("ClassDetailViewModel", e.message ?: "class load failed")
             // On a refresh failure keep whatever's already on screen rather than
             // replacing good content with a full-screen error.
             if (_uiState.value !is ClassDetailUiState.Success) {
-                _uiState.value = ClassDetailUiState.Error("server error $code")
+                _uiState.value = ClassDetailUiState.Error(type)
             }
-            if (isView) telemetry.classViewFailed(sessionId, "server_$code")
-        } catch (e: Exception) {
-            logWarning("ClassDetailViewModel", e.message ?: "Unknown error")
-            if (_uiState.value !is ClassDetailUiState.Success) {
-                _uiState.value = ClassDetailUiState.Error("server error")
+            if (isView) {
+                telemetry.classViewFailed(sessionId, e.telemetryReasonFor())
             }
-            if (isView) telemetry.classViewFailed(sessionId, "network")
         }
     }
 }
