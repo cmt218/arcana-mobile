@@ -43,11 +43,16 @@ class BookingTelemetryTest {
         cancelPolicy = CancelPolicyDto(false, null),
     )
 
-    private class FakeApi(val meResult: MembershipMeDto, val createResult: () -> BookingDto) : BookingApi, MembershipApi {
+    private class FakeApi(
+        val meResult: MembershipMeDto,
+        val createResult: () -> BookingDto,
+        val upcoming: List<BookingDto> = emptyList(),
+        val cancelResult: () -> CancelBookingResponse = { CancelBookingResponse("cancelled", true, false) },
+    ) : BookingApi, MembershipApi {
         override suspend fun membershipMe() = meResult
-        override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun myBookings() = MyBookingsDto(upcoming, emptyList())
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = createResult()
-        override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+        override suspend fun cancelBooking(bookingId: Int) = cancelResult()
     }
 
     private fun vm(api: FakeApi, telemetry: Telemetry) = BookingViewModel(
@@ -118,5 +123,29 @@ class BookingTelemetryTest {
         assertTrue("booking_sheet_abandoned" in names)
         assertTrue("booking_succeeded" !in names)
         assertEquals(false, analytics.first("booking_sheet_abandoned")!!.properties["had_selected_spot"])
+    }
+
+    // ── cancel failure reason (Fix 5) ------------------------------------------
+
+    @Test fun `cancel failure emits booking_cancel_failed with the reason code`() = runTest {
+        val (telemetry, analytics, _) = fakeTelemetry()
+        val api = FakeApi(
+            me(),
+            createResult = { booking() },
+            upcoming = listOf(booking()),
+            cancelResult = { throw RuntimeException("boom") },
+        )
+        val v = vm(api, telemetry)
+        v.load()
+        v.openCancelSheet()
+        v.confirmCancel()
+
+        val failed = analytics.first("booking_cancel_failed")!!
+        assertEquals(17, failed.properties["booking_id"])
+        // RuntimeException carries no HTTP status, so per toErrorType() it
+        // classifies as CONNECTION. Matches CancelState.Failed's code exactly
+        // (see BookingViewModelTest's parallel assertion on the UI state) —
+        // that equality is the property this test exists to lock.
+        assertEquals("connection_failed", failed.properties["reason_code"])
     }
 }

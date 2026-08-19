@@ -24,7 +24,7 @@ class BookingInfoTest {
     }
 
     @Test
-    fun `null when null, blank, or whitespace`() {
+    fun `null when null blank or whitespace`() {
         assertNull(bookingInfoOrNull(booking(null)))
         assertNull(bookingInfoOrNull(booking("")))
         assertNull(bookingInfoOrNull(booking("   ")))

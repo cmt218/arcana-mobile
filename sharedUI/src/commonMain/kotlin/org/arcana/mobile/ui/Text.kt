@@ -16,6 +16,9 @@ import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ink
 
+/** [Display] and [Overline] uppercase their input. Centred inside a filled
+ *  control, pair them with `Modifier.opticallyCentredCaps`. */
+
 /**
  * Arcana text primitives — the type half of the mobile design system.
  * Every screen composes from these instead of hand-rolling TextStyles, so the

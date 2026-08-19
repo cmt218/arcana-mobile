@@ -32,7 +32,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -95,6 +94,9 @@ import org.arcana.mobile.theme.Warning
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.ArcanaPullToRefreshBox
+import org.arcana.mobile.ui.ErrorCopy
+import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
@@ -103,8 +105,9 @@ import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.FilterChip
 import org.arcana.mobile.ui.FlowChipRow
-import org.arcana.mobile.ui.Heading2
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.IconCircle
+import org.arcana.mobile.ui.InlineError
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StatusPillFitted
@@ -112,6 +115,7 @@ import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioAccordionCard
 import org.arcana.mobile.ui.StudioLocationRow
 import org.arcana.mobile.ui.safeContentPadding
+import org.arcana.mobile.ui.safeHorizontalPadding
 import org.koin.compose.viewmodel.koinViewModel
 
 // ── Constants -----------------------------------------------------------------
@@ -203,6 +207,8 @@ fun ScheduleScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val refreshing by viewModel.isRefreshing.collectAsState()
+    val retrying by viewModel.retrying.collectAsState()
+    val refreshFailed by viewModel.refreshFailed.collectAsState()
 
     // Re-fetch the "already booked" pills each time the Schedule returns to the
     // foreground — including popping back from ClassDetail after booking or
@@ -212,23 +218,50 @@ fun ScheduleScreen(
         onPauseOrDispose { }
     }
 
-    PullToRefreshBox(
+    // safeContentPadding sits on the CONTENT, not on this box — matching
+    // HomeScreen. windowInsetsPadding consumes, so padding the shared container
+    // would eat the status-bar inset before FullScreenError measured and centre
+    // the error statusBar/2 lower than the identical error on Home.
+    ArcanaPullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = viewModel::refresh,
         modifier = modifier
             .fillMaxSize()
-            .background(Stone)
-            .safeContentPadding(),
+            .background(Stone),
     ) {
         when (val s = state) {
-            is ScheduleUiState.Loading -> LoadingPlaceholder()
-            is ScheduleUiState.Error -> ErrorBlock(message = s.message, onRetry = viewModel::reload)
-            is ScheduleUiState.Success -> SuccessContent(
-                state = s,
-                viewModel = viewModel,
-                onOpenClassDetail = onOpenClassDetail,
-                onManageFavorites = onManageFavorites,
+            is ScheduleUiState.Loading -> Box(Modifier.fillMaxSize().safeContentPadding()) {
+                LoadingPlaceholder()
+            }
+            is ScheduleUiState.Error -> FullScreenError(
+                type = s.type,
+                onRetry = viewModel::reload,
+                retrying = retrying,
             )
+            is ScheduleUiState.Success -> Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().safeContentPadding()) {
+                    SuccessContent(
+                        state = s,
+                        viewModel = viewModel,
+                        onOpenClassDetail = onOpenClassDetail,
+                        onManageFavorites = onManageFavorites,
+                    )
+                }
+                if (refreshFailed) {
+                    ErrorSnackbar(
+                        text = ErrorCopy.REFRESH_FAILED,
+                        onRetry = {
+                            viewModel.dismissRefreshFailed()
+                            viewModel.refresh()
+                        },
+                        onDismiss = viewModel::dismissRefreshFailed,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .safeHorizontalPadding()
+                            .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+                    )
+                }
+            }
         }
     }
 }
@@ -251,25 +284,6 @@ private fun LoadingPlaceholder() {
             contentAlignment = Alignment.Center,
         ) {
             DotMatrixLoader()
-        }
-    }
-}
-
-@Composable
-private fun ErrorBlock(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.padding(24.dp)) {
-        Heading2(text = "Couldn't load schedule", size = 22, color = Ink)
-        Spacer(Modifier.height(8.dp))
-        BodyText(text = message, size = 14, color = Ash)
-        Spacer(Modifier.height(16.dp))
-        Row(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(Ink)
-                .clickable(onClick = onRetry)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Overline(text = "RETRY", size = 12, color = Stone)
         }
     }
 }
@@ -487,7 +501,22 @@ private fun SuccessContent(
 
         item("filter-trailing-space") { Spacer(Modifier.height(16.dp)) }
 
-        if (!dayLoaded) {
+        val dayError = state.dayError
+        if (dayError != null) {
+            // Its own list-area item, not a screen-level swap, so the
+            // header/rail/banner/chips above stay live and tappable.
+            item("day-error") {
+                InlineError(
+                    type = dayError,
+                    onRetry = viewModel::retryDay,
+                    retrying = state.dayRetrying,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        .alpha(listAlpha),
+                )
+            }
+        } else if (!dayLoaded) {
             // Page 1 of this day hasn't landed under the current filter set —
             // loader in the list area only (header/rail/banner/chips stay).
             item("day-loading") {

@@ -2,6 +2,7 @@ package org.arcana.mobile.networking
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.authProviders
 import io.ktor.client.plugins.auth.providers.BearerAuthProvider
@@ -124,6 +125,15 @@ class ArcanaApiClient(
     private fun v1(path: String) = "${baseUrlProvider.get()}/api/v1/$path"
 
     private val client = HttpClient {
+        // Without this a stalled connection hangs forever. ~9x headroom over the
+        // slowest real call (booking, ~6.5s server-side). iOS caveat: Darwin
+        // ignores socketTimeoutMillis, so it is bounded by requestTimeoutMillis
+        // instead. Trello vVs2x4jG.
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 30_000
+            requestTimeoutMillis = 60_000
+        }
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
@@ -358,7 +368,7 @@ class ArcanaApiClient(
                 ?.let { parameter("location_id", it.joinToString(",")) }
             categorySlugs?.forEach { parameter("category", it) }
             if (availableOnly) parameter("available_only", "true")
-        }.body()
+        }.bodyOrThrow()
     }
 
     /**
@@ -387,7 +397,7 @@ class ArcanaApiClient(
             startTimeGte?.let { parameter("start_time_gte", it) }
             startTimeLte?.let { parameter("start_time_lte", it) }
             if (availableOnly) parameter("available_only", "true")
-        }.body()
+        }.bodyOrThrow()
     }
 
     /**
@@ -418,14 +428,14 @@ class ArcanaApiClient(
             startTimeLte?.let { parameter("start_time_lte", it) }
             if (availableOnly) parameter("available_only", "true")
             cursor?.let { parameter("cursor", it) }
-        }.body()
+        }.bodyOrThrow()
     }
 
     override suspend fun fetchStudios(): List<StudioDto> =
-        client.get(v1("studios/")).body()
+        client.get(v1("studios/")).bodyOrThrow()
 
     override suspend fun fetchFavorites(): FavoritesDto =
-        client.get(v1("users/me/favorites/")).body()
+        client.get(v1("users/me/favorites/")).bodyOrThrow()
 
     override suspend fun updateFavorites(
         studioSlugs: List<String>,
@@ -433,7 +443,7 @@ class ArcanaApiClient(
     ): FavoritesDto = client.put(v1("users/me/favorites/")) {
         contentType(ContentType.Application.Json)
         setBody(UpdateFavoritesRequest(studioSlugs, locationIds))
-    }.body()
+    }.bodyOrThrow()
 
     /**
      * `GET /api/v1/classes/<id>/` — single-class drill-down with sync-on-read.
@@ -441,7 +451,7 @@ class ArcanaApiClient(
      * take 300-900ms on a stale read; the UI should show a loading state.
      */
     suspend fun fetchClassDetail(id: Int): ScheduleSessionDto {
-        return client.get(v1("classes/$id/")).body()
+        return client.get(v1("classes/$id/")).bodyOrThrow()
     }
 
     override suspend fun createBooking(
@@ -456,34 +466,32 @@ class ArcanaApiClient(
         }
         if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
             val created = response.body<CreateBookingResponse>()
-            return client.get(v1("bookings/${created.bookingId}/")).body()
+            // bodyOrThrow: a 5xx here is about a booking the server already
+            // created, so it must not read as a connection failure.
+            return client.get(v1("bookings/${created.bookingId}/")).bodyOrThrow()
         }
-        // Non-2xx: the server returns {"error": "<reason_code>"}. Surface the code.
-        val code = try {
-            response.body<Map<String, String>>()["error"]
-        } catch (_: Exception) {
-            null
-        } ?: "booking_failed"
-        throw BookingError(code)
+        throw bookingFailureFor(response.status.value, response.parsedErrorCode())
     }
 
     override suspend fun myBookings(): MyBookingsDto =
-        client.get(v1("bookings/me/")).body()
+        client.get(v1("bookings/me/")).bodyOrThrow()
 
     override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse =
-        client.delete(v1("bookings/$bookingId/")).body()
+        client.delete(v1("bookings/$bookingId/")).bodyOrThrow()
 
     override suspend fun membershipMe(): MembershipMeDto =
-        client.get(v1("memberships/me")).body()
+        client.get(v1("memberships/me")).bodyOrThrow()
 
     override suspend fun fetchProfile(): MeProfileDto =
-        client.get(v1("users/me/")).body()
+        client.get(v1("users/me/")).bodyOrThrow()
 
+    // bodyOrThrow, not body: MeProfileDto defaults every field, so a bare
+    // .body() on a 5xx used to silently return an empty-but-"successful" profile.
     override suspend fun updateProfile(body: UpdateProfileRequest): MeProfileDto =
         client.patch(v1("users/me/")) {
             contentType(ContentType.Application.Json)
             setBody(body)
-        }.body()
+        }.bodyOrThrow()
 
     override suspend fun createConciergeRequest(message: String): Int {
         val response = client.post(v1("concierge-requests/")) {
@@ -493,14 +501,12 @@ class ArcanaApiClient(
         if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
             return response.body<CreateConciergeResponse>().id
         }
-        // Non-2xx: the server returns {"error": "<reason_code>"} (or DRF field
-        // errors). Surface a code; the screen maps it to friendly copy.
-        val code = try {
-            response.body<Map<String, String>>()["error"]
-        } catch (_: Exception) {
-            null
-        } ?: "concierge_failed"
-        throw ConciergeError(code)
+        // A named reason wins; a 5xx has none to give, so route it through
+        // ApiHttpError and let toErrorType() classify it SERVER.
+        val code = response.parsedErrorCode()
+        if (code != null) throw ConciergeError(code)
+        if (response.status.value >= 500) throw ApiHttpError(response.status.value)
+        throw ConciergeError("concierge_failed")
     }
 
     fun logout() {

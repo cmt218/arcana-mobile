@@ -28,7 +28,9 @@ import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.BookingApi
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.ScheduleApi
+import org.arcana.mobile.networking.toErrorType
 import org.arcana.mobile.ui.studioLocationLabel
 
 /**
@@ -81,6 +83,13 @@ sealed interface ScheduleUiState {
         /** Per-day paged session caches. Only days the member has visited
          *  under the current filter set have an entry. */
         val dayStates: Map<LocalDate, DayState>,
+        /** Non-null when the SELECTED day has no content and its last fetch
+         *  failed. Must be checked BEFORE whether the day is loaded — see the
+         *  private `dayError` field on [ScheduleViewModel] for the full contract. */
+        val dayError: ErrorType? = null,
+        /** True while [ScheduleViewModel.retryDay] is in flight. The day error
+         *  stays put; the retry link carries the progress. */
+        val dayRetrying: Boolean = false,
         /** True from a filter mutation until its debounced refetch settles —
          *  the screen dims the stale list instead of flashing the loader. */
         val refreshingFilters: Boolean,
@@ -119,7 +128,7 @@ sealed interface ScheduleUiState {
          *  breaking the schedule itself. */
         val bookedSessions: Map<Int, String> = emptyMap(),
     ) : ScheduleUiState
-    data class Error(val message: String) : ScheduleUiState
+    data class Error(val type: ErrorType) : ScheduleUiState
 }
 
 /** A studio in the filter accordion: the studio plus its selectable locations. */
@@ -178,6 +187,11 @@ class ScheduleViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
+    /** True while [reload] is in flight. The error must stay on screen; dropping
+     *  to Loading flashes the placeholder on a failed retry. */
+    private val _retrying = MutableStateFlow(false)
+    val retrying: StateFlow<Boolean> = _retrying
+
     // ── Source-of-truth fields. publish() snapshots them into ONE Success
     //    assignment; refetchForFilters() only mutates them after both network
     //    results are in (atomic apply — a cancelled refetch leaves no
@@ -185,6 +199,37 @@ class ScheduleViewModel(
     private var days: List<LocalDate> = emptyList()
     private var selectedDate: LocalDate = Clock.System.todayIn(ScheduleTimeZone)
     private var dayStates: Map<LocalDate, DayState> = emptyMap()
+    /** ScheduleScreen checks this BEFORE `loaded`, so a stale value hides
+     *  good content. Mutate only via the helpers below. */
+    private var dayError: ErrorType? = null
+    private var dayRetrying: Boolean = false
+
+    /** True when a PULL-TO-REFRESH failed with Success content on screen. A
+     *  filter refetch is deliberately excluded: it already dims the list. */
+    private val _refreshFailed = MutableStateFlow(false)
+    val refreshFailed: StateFlow<Boolean> = _refreshFailed
+
+    fun dismissRefreshFailed() {
+        _refreshFailed.value = false
+    }
+
+    /** Content wins over an error: only flag a day that has nothing to show. */
+    private fun setDayErrorIfNoContent(type: ErrorType) {
+        if (dayStates[selectedDate]?.loaded != true) dayError = type
+    }
+
+    /** Guarded, not unconditional: a concurrent day switch may have set a fresh
+     *  error for a different day. */
+    private fun clearDayErrorIfContentArrived() {
+        if (dayStates[selectedDate]?.loaded == true) dayError = null
+    }
+
+    private fun clearDayErrorAndPublish() {
+        if (dayError != null) {
+            dayError = null
+            publish()
+        }
+    }
     private var overviewStudios: List<OverviewStudioDto> = emptyList()
     private var availableModalities: List<ModalityOption> = emptyList()
     private var filters: ScheduleFilters = ScheduleFilters()
@@ -245,9 +290,7 @@ class ScheduleViewModel(
         viewModelScope.launch {
             // Favorites first — they decide whether the first fetch is scoped
             // to the member's locations.
-            val favorites = favoritesRepository.refresh()
-            if (favorites != null && !favorites.isEmpty()) scope = ScopeMode.Favorites
-            lastAppliedFavorites = favorites
+            applyFavoritesScope(favoritesRepository.refresh())
             refetchForFilters("cold_start")
             // React to favorites saved/cleared in the manager while this VM is
             // on the back stack. Re-evaluate only when NOT in Custom mode —
@@ -270,12 +313,32 @@ class ScheduleViewModel(
         }
     }
 
-    /** Full re-fetch with the shimmer placeholder — error-retry path. */
+    /** Error-retry path. Re-resolves favorites when unknown: the outage that
+     *  failed the schedule usually failed favorites too, which would strand
+     *  `scope` at AllStudios. */
     fun reload() {
+        // Claimed synchronously — see HomeViewModel.retry for why.
+        if (_retrying.value) return
+        _retrying.value = true
         viewModelScope.launch {
-            _uiState.value = ScheduleUiState.Loading
-            refetchForFilters("cold_start")
+            try {
+                if (favoritesRepository.favorites.value == null) {
+                    applyFavoritesScope(favoritesRepository.refresh())
+                }
+                refetchForFilters("cold_start")
+            } finally {
+                _retrying.value = false
+            }
         }
+    }
+
+    /** Applies a favorites fetch to [scope] + [lastAppliedFavorites]; shared
+     *  by [init] and [reload] so both run identical logic. `internal`, not
+     *  `private`, so a test can call it directly rather than via the
+     *  favorites-repository collector. */
+    internal fun applyFavoritesScope(favorites: FavoritesDto?) {
+        if (favorites != null && !favorites.isEmpty()) scope = ScopeMode.Favorites
+        lastAppliedFavorites = favorites
     }
 
     /** Pull-to-refresh: re-fetch the overview + the selected day's first page
@@ -285,6 +348,7 @@ class ScheduleViewModel(
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
+            _refreshFailed.value = false
             try {
                 // Keep the "already booked" pills fresh: a booking made on the
                 // class-detail sheet (or cancelled elsewhere) shows after a
@@ -323,6 +387,9 @@ class ScheduleViewModel(
                 dayOffsetFromToday = (date.toEpochDays() - today.toEpochDays()).toInt(),
             )
             selectedDate = date
+            // Clear before publish() so this frame doesn't flash the OLD
+            // day's stale error against the newly selected date.
+            dayError = null
             publish()
             // Felt latency of the swipe. For a cached day this is a client-side
             // re-bucket (near-0, proving swipes are instant); an uncached day's
@@ -337,8 +404,19 @@ class ScheduleViewModel(
         }
         // Falls through on a same-day re-tap too: that's the natural retry
         // gesture after a failed page-1 fetch. ensureSelectedDayLoaded
-        // no-ops when the day is already cached or in flight.
+        // no-ops when cached or in flight, and clears dayError itself for
+        // this path.
         ensureSelectedDayLoaded()
+    }
+
+    /** InlineError's retry affordance. Clears + publishes immediately so the
+     *  error disappears the instant the member taps, ahead of the network. */
+    fun retryDay() {
+        if (dayRetrying) return
+        // The error stays on screen; the retry link carries the progress.
+        dayRetrying = true
+        publish()
+        ensureSelectedDayLoaded(keepDayError = true)
     }
 
     /** Fetch the next page of the selected day. Guarded: needs a loaded page 1,
@@ -506,6 +584,9 @@ class ScheduleViewModel(
      *  rapid toggling coalesces into one settled overview + page-1 pair. */
     private fun onFiltersChanged() {
         refreshingFilters = true
+        // The filter SET changed, so a dayError from the OLD filters no
+        // longer applies — without this it'd flash stale through the debounce.
+        dayError = null
         telemetry.scheduleFilterChanged(
             mode = when (scope) {
                 ScopeMode.Favorites -> "favorites"
@@ -532,6 +613,10 @@ class ScheduleViewModel(
      */
     private suspend fun refetchForFilters(source: String = "cold_start") {
         val generation = ++fetchGeneration
+        // Not cleared here: dayStates only rebuilds on success, so an
+        // unconditional clear strands a persisting failure with nothing
+        // behind it. Clearing is owned by onFiltersChanged,
+        // applyRefetchFailure and the success path.
         val loadMark = TimeSource.Monotonic.markNow()
         try {
             val today = Clock.System.todayIn(ScheduleTimeZone)
@@ -583,6 +668,7 @@ class ScheduleViewModel(
                     loaded = true,
                 ),
             )
+            clearDayErrorIfContentArrived()
             refreshingFilters = false
             publish()
             telemetry.screenLoadCompleted(
@@ -605,7 +691,7 @@ class ScheduleViewModel(
             // failure must not clear a newer mutation's dim or emit Error
             // over newer state.
             if (generation == fetchGeneration) {
-                applyRefetchFailure("server error $code")
+                applyRefetchFailure(e.toErrorType(), source)
                 telemetry.screenLoadCompleted(
                     screen = Telemetry.Screens.SCHEDULE, source = source,
                     durationMs = loadMark.elapsedNow().inWholeMilliseconds,
@@ -615,7 +701,7 @@ class ScheduleViewModel(
         } catch (e: Exception) {
             logWarning("ScheduleViewModel", e.message ?: "Unknown error")
             if (generation == fetchGeneration) {
-                applyRefetchFailure("server error")
+                applyRefetchFailure(e.toErrorType(), source)
                 telemetry.screenLoadCompleted(
                     screen = Telemetry.Screens.SCHEDULE, source = source,
                     durationMs = loadMark.elapsedNow().inWholeMilliseconds,
@@ -627,21 +713,26 @@ class ScheduleViewModel(
 
     /** Cold-start (or error-retry) failure → full-screen Error; failure with
      *  content already on screen → keep the content, just stop the dim. */
-    private fun applyRefetchFailure(message: String) {
+    private fun applyRefetchFailure(type: ErrorType, source: String) {
         if (_uiState.value is ScheduleUiState.Success) {
             refreshingFilters = false
+            if (source == "refresh") _refreshFailed.value = true
+            setDayErrorIfNoContent(type)
             publish()
         } else {
-            _uiState.value = ScheduleUiState.Error(message)
+            _uiState.value = ScheduleUiState.Error(type)
         }
     }
 
     /** Page-1 fetch for the selected day if it isn't cached (or already in
      *  flight) under the current filter set. */
-    private fun ensureSelectedDayLoaded() {
+    private fun ensureSelectedDayLoaded(keepDayError: Boolean = false) {
         val date = selectedDate
-        if (dayStates[date]?.loaded == true) return
-        if (!loadingDays.add(date)) return
+        // A day SWITCH must drop the previous day's error; a RETRY must not,
+        // or the card vanishes and the loader flashes before the error returns.
+        if (!keepDayError) clearDayErrorAndPublish()
+        if (dayStates[date]?.loaded == true) { endDayRetry(); return }
+        if (!loadingDays.add(date)) { endDayRetry(); return }
         val generation = fetchGeneration
         viewModelScope.launch {
             try {
@@ -661,17 +752,30 @@ class ScheduleViewModel(
                     nextCursor = page.nextCursor,
                     loaded = true,
                 ))
+                // retryDay keeps the error until content actually arrives.
+                dayError = null
                 publish()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Keep whatever's on screen; the tapped day simply stays in
-                // its loading placeholder until a retry path (refresh/filter).
                 logWarning("ScheduleViewModel", e.message ?: "day page fetch failed")
+                // Only if this fetch is still current AND still the selected day.
+                if (generation == fetchGeneration && date == selectedDate) {
+                    dayError = e.toErrorType()
+                    publish()
+                }
             } finally {
                 loadingDays.remove(date)
+                endDayRetry()
             }
         }
+    }
+
+    /** Clears the retry flag and republishes, if a retry was running. */
+    private fun endDayRetry() {
+        if (!dayRetrying) return
+        dayRetrying = false
+        publish()
     }
 
     /** The flat `location_id` list to send. In favorites scope this is the
@@ -750,6 +854,8 @@ class ScheduleViewModel(
             days = days,
             selectedDate = selectedDate,
             dayStates = dayStates,
+            dayError = dayError,
+            dayRetrying = dayRetrying,
             refreshingFilters = refreshingFilters,
             filterStudios = filterStudios,
             filters = filters,

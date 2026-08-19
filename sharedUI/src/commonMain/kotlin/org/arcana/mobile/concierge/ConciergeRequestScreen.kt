@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import org.arcana.mobile.networking.transportErrorCopy
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ink
@@ -106,10 +107,12 @@ fun ConciergeRequestScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (submit is ConciergeSubmit.Failed) {
+        val failed = submit as? ConciergeSubmit.Failed
+        if (failed != null) {
             Spacer(Modifier.height(12.dp))
             Caption(
-                text = "Something went wrong sending your message. Please try again.",
+                text = transportErrorCopy(failed.code)
+                    ?: "Couldn't send your message. Try again.",
                 size = 13,
                 color = BurntNectar,
                 maxLines = 3,

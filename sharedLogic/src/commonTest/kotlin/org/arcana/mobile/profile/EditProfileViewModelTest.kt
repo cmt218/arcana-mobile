@@ -147,7 +147,7 @@ class EditProfileViewModelTest {
         assertTrue(vm.state.value is EditProfileViewModel.State.LoadError)
     }
 
-    @Test fun `isoToDigits handles ISO dates, nulls, and junk`() {
+    @Test fun `isoToDigits handles ISO dates nulls and junk`() {
         assertEquals("05071990", EditProfileViewModel.isoToDigits("1990-05-07"))
         assertEquals("12251988", EditProfileViewModel.isoToDigits("1988-12-25"))
         assertEquals("", EditProfileViewModel.isoToDigits(null))

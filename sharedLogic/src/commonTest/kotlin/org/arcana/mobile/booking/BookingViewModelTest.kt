@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.arcana.mobile.data.*
+import org.arcana.mobile.networking.ApiHttpError
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.BookingError
 import org.arcana.mobile.networking.MembershipApi
@@ -30,6 +31,9 @@ class BookingViewModelTest {
         session = SessionBriefDto(sessionId, "2026-07-07T10:00:00Z", "2026-07-07T10:50:00Z", "RUN", "Barry's"),
         cancelPolicy = CancelPolicyDto(false, null),
     )
+    // Fakes an exception carrying a real HTTP status, the way ApiHttpError does
+    // for a genuine server answer (see ArcanaApiClient.bodyOrThrow).
+    private fun serverException(statusCode: Int): Throwable = ApiHttpError(statusCode)
 
     private class FakeApi(
         val meResult: MembershipMeDto,
@@ -54,6 +58,41 @@ class BookingViewModelTest {
         override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse {
             cancelledId = bookingId; cancelCalls++; return cancelResult()
         }
+    }
+
+    /** Fails membershipMe; everything else behaves. */
+    private class FailingMeApi(private val err: Throwable) : BookingApi, MembershipApi {
+        override suspend fun membershipMe(): MembershipMeDto = throw err
+        override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?): BookingDto =
+            throw IllegalStateException()
+        override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse =
+            throw IllegalStateException()
+    }
+
+    @Test fun `a failed membership fetch flags the failure and still marks loaded`() = runTest {
+        // `loaded` is what the CTA reads as "still fetching". Leaving it false on
+        // a failed FIRST fetch spins the primary CTA forever.
+        val api = FailingMeApi(serverException(500))
+        val vm = BookingViewModel(sessionId = 482, spotsAvailable = 5, requiresSpot = false, bookingApi = api, membershipApi = api)
+        vm.load()
+        assertEquals(true, vm.membershipLoadFailed.value)
+        assertEquals(true, vm.loaded.value, "a failed fetch must not leave the CTA spinning")
+    }
+
+    @Test fun `a failed refresh keeps the CTA it already resolved`() = runTest {
+        val ok = FakeApi(me(remaining = 10))
+        val vm = BookingViewModel(sessionId = 482, spotsAvailable = 5, requiresSpot = false, bookingApi = ok, membershipApi = ok)
+        vm.load()
+        assertEquals(BookCta.Bookable, vm.ctaState.value)
+
+        // Same VM, membership now failing: the CTA must not downgrade to a claim
+        // about the member's account that the failure doesn't support.
+        val failing = FailingMeApi(serverException(500))
+        val vm2 = BookingViewModel(sessionId = 482, spotsAvailable = 5, requiresSpot = false, bookingApi = failing, membershipApi = failing)
+        vm2.load()
+        assertEquals(BookCta.NotBookable, vm2.ctaState.value, "cold failure falls back to the default")
+        assertEquals(true, vm2.membershipLoadFailed.value)
     }
 
     @Test fun `loads eligibility - bookable`() = runTest {
@@ -167,7 +206,7 @@ class BookingViewModelTest {
 
     // ── cancel (Item 4) -------------------------------------------------------
 
-    @Test fun `openCancelSheet no-ops without an existing booking, opens with one`() = runTest {
+    @Test fun `openCancelSheet no-ops without an existing booking but opens with one`() = runTest {
         val api = FakeApi(me())
         val vm = BookingViewModel(482, 5, false, api, api)
         vm.load()
@@ -181,7 +220,7 @@ class BookingViewModelTest {
         assertTrue(vm2.cancelSheetOpen.value)
     }
 
-    @Test fun `confirmCancel cancels, clears booking, closes sheet, reloads`() = runTest {
+    @Test fun `confirmCancel cancels and clears booking then closes sheet and reloads`() = runTest {
         val api = FakeApi(me(), upcoming = listOf(booking(id = 17, sessionId = 482)))
         val vm = BookingViewModel(482, 5, false, api, api)
         vm.load()
@@ -199,7 +238,7 @@ class BookingViewModelTest {
         assertEquals(BookCta.Bookable, vm.ctaState.value)
     }
 
-    @Test fun `confirmCancel failure surfaces Failed, keeps sheet and booking`() = runTest {
+    @Test fun `confirmCancel failure surfaces Failed but keeps sheet and booking`() = runTest {
         val api = FakeApi(
             me(),
             upcoming = listOf(booking(id = 17, sessionId = 482)),
@@ -211,9 +250,37 @@ class BookingViewModelTest {
         vm.confirmCancel()
         val s = vm.cancelState.value
         assertTrue(s is CancelState.Failed)
-        assertEquals("cancel_failed", (s as CancelState.Failed).code)
+        // RuntimeException("boom") carries no HTTP status, so per toErrorType()
+        // it classifies as CONNECTION, not the old flat "cancel_failed".
+        assertEquals("connection_failed", (s as CancelState.Failed).code)
         assertTrue(vm.cancelSheetOpen.value)
         assertEquals(17, vm.existingBooking.value?.id)
+    }
+
+    @Test fun `a cancel network failure is not reported as a generic cancel failure`() = runTest {
+        val api = FakeApi(
+            me(),
+            upcoming = listOf(booking(id = 17, sessionId = 482)),
+            cancelResult = { throw Exception("network failure") },
+        )
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.openCancelSheet()
+        vm.confirmCancel()
+        assertEquals(CancelState.Failed("connection_failed"), vm.cancelState.value)
+    }
+
+    @Test fun `a cancel 5xx is reported as a server failure`() = runTest {
+        val api = FakeApi(
+            me(),
+            upcoming = listOf(booking(id = 17, sessionId = 482)),
+            cancelResult = { throw serverException(500) },
+        )
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.openCancelSheet()
+        vm.confirmCancel()
+        assertEquals(CancelState.Failed("server_failed"), vm.cancelState.value)
     }
 
     @Test fun `confirmBooking is guarded against double-submit`() = runTest {
@@ -258,6 +325,33 @@ class BookingViewModelTest {
         val s = vm.submitState.value
         assertTrue(s is BookingSubmit.Failed)
         assertEquals("session_full", (s as BookingSubmit.Failed).code)
+    }
+
+    // ── CONNECTION/SERVER conflation (ERR-11) ---------------------------------
+
+    @Test fun `a network failure is not reported as a generic booking failure`() = runTest {
+        val api = FakeApi(me(), createResult = { throw Exception("network failure") })
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.confirmBooking()
+        assertEquals(BookingSubmit.Failed("connection_failed"), vm.submitState.value)
+    }
+
+    @Test fun `a 5xx is reported as a server failure`() = runTest {
+        val api = FakeApi(me(), createResult = { throw serverException(500) })
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.confirmBooking()
+        assertEquals(BookingSubmit.Failed("server_failed"), vm.submitState.value)
+    }
+
+    @Test fun `a typed server reason code still wins over the transport category`() = runTest {
+        val api = FakeApi(me(), createResult = { throw BookingError("session_full") })
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.confirmBooking()
+        // The server told us WHY. That is strictly more useful than "server".
+        assertEquals(BookingSubmit.Failed("session_full"), vm.submitState.value)
     }
 
     // ── spot preference dropdown ---------------------------------------------

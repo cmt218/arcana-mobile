@@ -26,6 +26,7 @@ import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CancelPolicyDto
 import org.arcana.mobile.data.MyBookingsDto
 import org.arcana.mobile.data.SessionBriefDto
+import org.arcana.mobile.networking.ApiHttpError
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.ScheduleApi
@@ -110,12 +111,128 @@ internal class FakeScheduleApi : ScheduleApi {
     }
 }
 
+/** Always throws [error] from every ScheduleApi method — a total outage, for
+ *  cold-start ErrorType classification tests (5a). */
+internal class FailingScheduleApi(private val error: Throwable) : ScheduleApi {
+    override suspend fun fetchSchedule(
+        from: LocalDate,
+        to: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        categorySlugs: List<String>?,
+        availableOnly: Boolean,
+    ): List<ScheduleSessionDto> = throw error
+
+    override suspend fun fetchOverview(
+        from: LocalDate,
+        to: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
+        availableOnly: Boolean,
+    ): ScheduleOverviewDto = throw error
+
+    override suspend fun fetchSessionsPage(
+        date: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
+        availableOnly: Boolean,
+        cursor: String?,
+    ): SchedulePageDto = throw error
+}
+
+/** A real HTTP-failure exception, the same type `ArcanaApiClient`'s endpoints
+ *  actually throw for a non-2xx (via `bodyOrThrow`). */
+internal fun serverException(statusCode: Int): Throwable = ApiHttpError(statusCode)
+
+/**
+ * Recovers from an outage on retry. [failuresBeforeSuccess] fails that many
+ * `fetchOverview` calls (each decrements the counter) before returning
+ * [overview]. It models a whole refetchForFilters attempt failing (SCHED-02's
+ * cold-start-then-reload scenario) without needing to reason about which of
+ * the two parallel fetches (overview/page) a fake coroutine-cancellation race
+ * would actually run.
+ *
+ * [failNext] independently arms exactly one `fetchSessionsPage` failure, for
+ * an uncached day-chip tap (ERR-03) — a day switch never calls fetchOverview,
+ * so this is deliberately a separate knob from [failuresBeforeSuccess].
+ */
+internal class FlakyScheduleApi(
+    failuresBeforeSuccess: Int = 0,
+    private val overview: ScheduleOverviewDto = overviewOf(),
+    private val page: SchedulePageDto = pageOf(1, 2),
+) : ScheduleApi {
+    private var remainingOverviewFailures = failuresBeforeSuccess
+    var failNext = false
+
+    override suspend fun fetchSchedule(
+        from: LocalDate,
+        to: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        categorySlugs: List<String>?,
+        availableOnly: Boolean,
+    ): List<ScheduleSessionDto> =
+        throw AssertionError("legacy GET /classes/ endpoint must not be called by the paged ViewModel")
+
+    override suspend fun fetchOverview(
+        from: LocalDate,
+        to: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
+        availableOnly: Boolean,
+    ): ScheduleOverviewDto {
+        if (remainingOverviewFailures > 0) {
+            remainingOverviewFailures--
+            throw Exception("network failure")
+        }
+        return overview
+    }
+
+    override suspend fun fetchSessionsPage(
+        date: LocalDate,
+        studioSlugs: List<String>?,
+        locationIds: List<Int>?,
+        categorySlugs: List<String>?,
+        startTimeGte: String?,
+        startTimeLte: String?,
+        availableOnly: Boolean,
+        cursor: String?,
+    ): SchedulePageDto {
+        if (failNext) {
+            failNext = false
+            throw Exception("network failure")
+        }
+        return page
+    }
+}
+
 internal class FakeFavoritesApi(
     var favoritesResult: FavoritesDto = FavoritesDto(),
     var studiosResult: List<StudioDto> = emptyList(),
 ) : FavoritesApi {
+    /** When > 0, `fetchFavorites()` throws and decrements instead of
+     *  returning [favoritesResult] — models an outage that clears on a later
+     *  retry (SCHED-02). Defaults to 0 (never throws), so every existing call
+     *  site is unaffected. */
+    var failuresBeforeSuccess: Int = 0
+
     override suspend fun fetchStudios(): List<StudioDto> = studiosResult
-    override suspend fun fetchFavorites(): FavoritesDto = favoritesResult
+    override suspend fun fetchFavorites(): FavoritesDto {
+        if (failuresBeforeSuccess > 0) {
+            failuresBeforeSuccess--
+            throw Exception("network failure")
+        }
+        return favoritesResult
+    }
     override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
         favoritesResult
 }

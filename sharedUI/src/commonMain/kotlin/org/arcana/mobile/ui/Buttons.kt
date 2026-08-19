@@ -33,6 +33,9 @@ import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.jetbrains.compose.resources.DrawableResource
 
+/** Brings a bare trailing slot up to the label's 24dp inset (Row adds 8dp). */
+private val TRAILING_SLOT_END_INSET = 16.dp
+
 /**
  * Primary call-to-action — full-width Moss pill with a Lime arrow well.
  * Disabled state drops to a muted Ash fill (matches the studio-selection
@@ -60,6 +63,10 @@ fun PrimaryCta(
     ) {
         Text(
             text = label.uppercase(),
+            modifier = Modifier.opticallyCentredCaps(
+                fontSize = 14.sp,
+                letterSpacingEm = 0.14f,
+            ),
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.Bold,
@@ -69,7 +76,11 @@ fun PrimaryCta(
             ),
         )
         if (trailing != null) {
-            trailing()
+            // The default arrow well is a filled 40dp circle, so end = 8dp reads
+            // fine. A bare slot has no such mass and needs the extra inset.
+            Box(modifier = Modifier.padding(end = TRAILING_SLOT_END_INSET)) {
+                trailing()
+            }
         } else {
             Box(
                 modifier = Modifier

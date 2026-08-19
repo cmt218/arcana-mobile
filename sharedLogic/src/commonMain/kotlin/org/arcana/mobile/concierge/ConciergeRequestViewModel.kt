@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.ConciergeError
+import org.arcana.mobile.networking.transportFailureCode
 
 sealed interface ConciergeSubmit {
     data object Idle : ConciergeSubmit
@@ -52,8 +53,9 @@ class ConciergeRequestViewModel(
                 telemetry.conciergeFailed(e.code)
                 _submitState.value = ConciergeSubmit.Failed(e.code)
             } catch (e: Exception) {
-                telemetry.conciergeFailed("concierge_failed")
-                _submitState.value = ConciergeSubmit.Failed("concierge_failed")
+                val code = e.transportFailureCode()
+                telemetry.conciergeFailed(code)
+                _submitState.value = ConciergeSubmit.Failed(code)
             }
         }
     }

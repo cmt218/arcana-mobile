@@ -14,7 +14,7 @@ when adding a new annotation.
 
 **Consciously-accepted exclusions.** None. Every user-facing surface the Phase 1 forward pass enumerates (ViewModel declarations, `*Screen.kt`, nav destinations) currently traces to at least one entry — including the debug-only Developer Settings screen, which is covered by the DEVSET area rather than excluded, because a wrong base URL there silently sends a tester's whole session at the wrong server. If a future surface is deliberately left untested, list it here with a one-line reason instead of letting it surface as a recurring Phase 1 finding.
 
-**218 entries across 14 areas** (keep this line and the runbook's pinned count in sync when adding an entry): LAUNCH 5, AUTH 13, SIGNUP 23, HOME 20, SCHED 19, CLASS 26, FAV 9, PROFILE 26, CONCIERGE 4, DEVSET 11, NAV 12, ERR 20, TEL 21, PLAT 9. CONCIERGE was added during the 2026-08-11 completeness sweep (the Concierge Request screen, reached from Profile, had no coverage in the original 13-area plan); a new top-level surface warrants a new area section rather than squeezing into a neighbor.
+**220 entries across 14 areas** (keep this line and the runbook's pinned count in sync when adding an entry): LAUNCH 5, AUTH 13, SIGNUP 23, HOME 20, SCHED 19, CLASS 26, FAV 9, PROFILE 26, CONCIERGE 4, DEVSET 11, NAV 12, ERR 22, TEL 21, PLAT 9. CONCIERGE was added during the 2026-08-11 completeness sweep (the Concierge Request screen, reached from Profile, had no coverage in the original 13-area plan); a new top-level surface warrants a new area section rather than squeezing into a neighbor. ERR grew from 20 to 22 on 2026-08-16 (`feature/error-states-completion`): ERR-21 (Home refresh-failed toast) and ERR-22 (client request timeout) are new surfaces this branch created; every other area's count is unchanged — that work rewrote several existing entries' Expected text in place but added no new surfaces outside ERR.
 
 ## LAUNCH
 
@@ -300,10 +300,11 @@ when adding a new annotation.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 94-97, `TopBar`/`HeroHeader` usage)
 - **Platforms:** shared
 
-### HOME-06 — Error state shows a message instead of crashing or blanking
+### HOME-06 — Error state shows a full-screen error instead of crashing or blanking
 - **Steps:** Force `/memberships/me` to fail (e.g. server unreachable, non-2xx) with no prior successful load cached in this session.
-- **Expected:** `HomeUiState.Error("server error")` is set; the screen shows the static greeting chrome plus a small caption reading "server error" below it — no crash, no infinite shimmer.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (lines 71-77, `fetch()` catch block), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 185-196, `HomeUiState.Error` branch)
+- **Expected:** **Behavior changed.** `HomeUiState.Error(type: ErrorType)` is set; the shared `FullScreenError` replaces the whole tab content (not the static greeting chrome plus a caption) — see ERR-05 for the full CONNECTION/SERVER copy and the working "TRY AGAIN" retry. No crash, no infinite shimmer.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`fetch`, `retry`, `retrying`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`)
+- **Retry feedback (2026-08-18):** the retry control shows the dot-matrix loader in place of its label while the re-fetch is in flight, and the error stays on screen throughout. A retry must NOT drop to the loading state: doing so flashed the skeleton and snapped back to the same error. Repeat taps while one retry is in flight are ignored rather than queueing another fetch.
 - **Platforms:** shared
 
 ### HOME-07 — Next Up hero card renders the soonest upcoming booking
@@ -398,10 +399,10 @@ when adding a new annotation.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt
 - **Platforms:** shared
 
-### SCHED-02 — Schedule load failure → full-screen error with retry
-- **Steps:** Force the initial overview/page-1 fetch to fail (e.g. server unreachable) on cold start.
-- **Expected:** `ScheduleUiState.Error(message)` renders "Couldn't load schedule" + the error message + a black "RETRY" pill (Ink background, Stone text); tapping RETRY calls `viewModel.reload()`, which resets to Loading and refetches.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`, `reload`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ErrorBlock`)
+### SCHED-02 — Schedule load failure → full-screen error with retry; retry also restores Favorites scope
+- **Steps:** As a member with saved favorites (so Schedule cold-starts in Favorites scope), force BOTH the favorites fetch and the initial overview/page-1 fetch to fail together (e.g. server unreachable) on cold start, then tap "TRY AGAIN" once the server is reachable again.
+- **Expected:** Cold-start failure renders the shared `FullScreenError` (CONNECTION "CAN'T REACH ARCANA." / SERVER "SOMETHING'S OFF ON OUR END.", full copy/UI contract at ERR-01). Tapping "TRY AGAIN" calls `viewModel.reload()`, which refetches **without** resetting to `Loading` — the error stays on screen and the button shows the dot-matrix loader while the retry is in flight (a failed retry used to flash the month header and day rail before returning to the same error). **`reload()` now also re-derives Favorites scope when favorites are still unknown** (`favoritesRepository.favorites.value == null`, via the shared `applyFavoritesScope` helper): since the outage that failed the schedule fetch almost always failed the favorites fetch too, a naive retry would otherwise silently strand the member on `AllStudios` even though they have favorites. A member who deliberately switched to All Studios before the outage (favorites already known, non-null) is never overridden by this. The old local `ErrorBlock` composable is gone.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`, `reload`, `applyFavoritesScope`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`)
 - **Platforms:** shared
 
 ### SCHED-03 — Day picker: tap a day chip
@@ -424,8 +425,8 @@ when adding a new annotation.
 
 ### SCHED-06 — Empty state: no classes match filters for the day
 - **Steps:** Select a day/filter combination that returns zero sessions (e.g. narrow to a studio with no classes that day).
-- **Expected:** Once the day's page 1 has loaded, the list shows "No classes match your filters for this day." in place of any band headers or rows.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "empty" item)
+- **Expected:** Once the day's page 1 has loaded (`dayLoaded == true` and no `dayError`), the list shows "No classes match your filters for this day." in place of any band headers or rows. Reach this ONLY via a genuinely empty result — do not use a forced server failure to test it: since `bodyOrThrow`, a 5xx on the day fetch now correctly reaches ERR-03's `InlineError` card instead. (Before `bodyOrThrow`, a 5xx with a JSON error body silently deserialized into an empty page and landed here instead of an error state — a server outage looked identical to a genuinely empty day.)
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "empty" item), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`fetchSessionsPage`, `bodyOrThrow`)
 - **Platforms:** shared
 
 ### SCHED-07 — Manual refresh: pull-to-refresh
@@ -460,8 +461,8 @@ when adding a new annotation.
 
 ### SCHED-12 — Favorites nudge banner (no favorites yet)
 - **Steps:** As a member with zero favorites, land on Schedule.
-- **Expected:** A dismissable Paper-card banner reads "Make it yours. Save your favorite Studios." with a "CHOOSE FAVORITES" link that calls `onManageFavorites`; the ✕ dismisses it for the session only (`nudgeDismissed`, resets on process restart). The banner never shows if the favorites fetch failed (`favoritesKnown == false`), to avoid nudging a member who may already have favorites.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "favorites-nudge" item), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`hasFavorites`, `favoritesKnown`)
+- **Expected:** A dismissable Paper-card banner reads "Make it yours. Save your favorite Studios." with a "CHOOSE FAVORITES" link that calls `onManageFavorites`; the ✕ dismisses it for the session only (`nudgeDismissed`, resets on process restart). The banner never shows if the favorites fetch failed (`favoritesKnown == false`), to avoid nudging a member who may already have favorites. **Silent-success note:** this suppression depends on `bodyOrThrow` (see FAV-05) — before it, a 5xx with a JSON error body on the member's first-ever favorites fetch silently reported an empty `FavoritesDto` as success, making `favoritesKnown == true` with zero favorites, which would have WRONGLY shown this nudge to a member whose real favorites status the server never actually confirmed.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "favorites-nudge" item), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`hasFavorites`, `favoritesKnown`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`)
 - **Platforms:** shared
 
 ### SCHED-13 — Studio/location accordion filter (All Studios subset)
@@ -502,8 +503,8 @@ when adding a new annotation.
 
 ### SCHED-19 — Blocked/hidden session never surfaces and is not drillable
 - **Steps:** Read the `classes.blocked` session id from the manifest (seeded `availability='blocked'` on Regression Test Studio / Regression Flatiron, **+2 days at 13:00 ET** — the same day as the `classes.full` fixture, which sits at 12:00 ET on the same studio). Select that day on the Schedule day rail with the seeded member's default Favorites scope, let page 1 settle, then scroll the whole day to the `EndOfDayMarker` so pagination cannot be hiding it. Compare what rendered against the day's fixtures.
-- **Expected:** The blocked session **never appears anywhere in the schedule list** — no row, no band entry, on any day, under any scope/filter combination — and there is therefore nothing to tap that reaches its Class Detail. The 12:00 `classes.full` row on the same day and studio **does** render (that is the control proving the day, studio and Favorites scope are all working, so an absent blocked row is the invariant holding rather than an empty day). Blocked visibility is enforced server-side at the single queryset chokepoint behind list **and** detail, so the id is unreachable by drill-down too: if the driver forces a detail fetch for it, `ClassDetailViewModel` gets a 404 and renders `ClassDetailUiState.Error` ("server error 404") rather than a class. Recording FAIL here means a hidden class became bookable, which is the whole reason the invariant exists.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`fetchSessionsPage`/`loadMore` render exactly what the server returns; there is no client-side availability filter), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ScheduleApi.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow` — only ever built from a returned session), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch` `ResponseException` branch — the 404 path if the id is forced) (the exclusion itself is enforced server-side and has no mobile counterpart: `base_class_session_queryset` in arcana-server's `classes/views.py` excludes `availability='blocked'` from list AND detail)
+- **Expected:** The blocked session **never appears anywhere in the schedule list** — no row, no band entry, on any day, under any scope/filter combination — and there is therefore nothing to tap that reaches its Class Detail. The 12:00 `classes.full` row on the same day and studio **does** render (that is the control proving the day, studio and Favorites scope are all working, so an absent blocked row is the invariant holding rather than an empty day). Blocked visibility is enforced server-side at the single queryset chokepoint behind list **and** detail, so the id is unreachable by drill-down too: if the driver forces a detail fetch for it, `ClassDetailViewModel` gets a 404 (`ApiHttpError(404)`, which classifies `ErrorType.SERVER` — the server did answer) and renders the shared `FullScreenError` ("SOMETHING'S OFF ON OUR END.", see ERR-04) rather than a class — no `"server error"` string or status code appears in the copy. Recording FAIL here means a hidden class became bookable, which is the whole reason the invariant exists.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`fetchSessionsPage`/`loadMore` render exactly what the server returns; there is no client-side availability filter), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ScheduleApi.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow` — only ever built from a returned session), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch` — the 404 path if the id is forced) (the exclusion itself is enforced server-side and has no mobile counterpart: `base_class_session_queryset` in arcana-server's `classes/views.py` excludes `availability='blocked'` from list AND detail)
 - **Platforms:** shared
 
 ## CLASS
@@ -514,10 +515,10 @@ when adding a new annotation.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`LoadingBlock`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`reload`, `fetch`)
 - **Platforms:** shared
 
-### CLASS-02 — Class detail load failure → error block with retry
+### CLASS-02 — Class detail load failure → full-screen error with retry
 - **Steps:** Force the class-detail fetch to fail on first load.
-- **Expected:** "Couldn't load class" + the error message + a black "RETRY" pill (Ink background, Stone text) render below the close button; `classViewFailed` telemetry fires with `server_<code>` or `network`. A refresh (pull-to-refresh) failure instead keeps the prior content on screen rather than showing this error block.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch` catch blocks), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ErrorBlock`)
+- **Expected:** The shared `FullScreenError` fills the screen and is **vertically centred**, with the close button OVERLAID on top rather than stacked above it — stacking gave the error only the space below the bar, so it centred lower than the identical error on Home and Schedule. The X stays usable. "TRY AGAIN" calls `viewModel::retry` (NOT `reload`, which resets to `Loading` and is first-load only): the error stays on screen and the button shows the dot-matrix loader while the re-fetch is in flight, instead of flashing the shimmer and returning to the same error. Repeat taps mid-flight are ignored. `classViewFailed` telemetry fires with a reason from `Throwable.telemetryReasonFor()` — `server_<code>` when the throwable carried an HTTP status, else the same CONNECTION/SERVER split spelled `network`/`server`. A refresh (pull-to-refresh) failure instead keeps the prior content on screen rather than showing this error block.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch`, `retry`, `retrying`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ErrorBlock`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ErrorType.kt (`telemetryReasonFor`)
 - **Platforms:** shared
 
 ### CLASS-03 — Class detail pull-to-refresh
@@ -624,14 +625,14 @@ when adding a new annotation.
 
 ### CLASS-20 — Late-cancel forfeit warning on the cancel sheet
 - **Steps:** Use the `classes.late_cancel_active` session id from the manifest — the **only** fixture from which `cancelPolicy.willForfeitCredit == true` is reachable (same 24h studio, seeded ~12h out, i.e. inside the cutoff). Book it in-app, then apply the runbook's Phase 3 fulfilment step (a member-initiated booking on a `manual` studio lands `requested` with no `external_booking_id`, and all three of confirmed + external id + past-cutoff must hold), re-open the booking, and open the cancel sheet.
-- **Expected:** The sheet shows "Cancelling now forfeits this class's credit — you're past the studio cutoff." in Warning color, instead of the refund-affirming "You'll get your credit back." (Moss) shown when the credit will be refunded.
+- **Expected:** The sheet shows "Cancelling now forfeits this class's credit. You're past the studio cutoff." in Warning color, instead of the refund-affirming "You'll get your credit back." (Moss) shown when the credit will be refunded.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelBookingSheet`, `willForfeitCredit` branch)
 - **Platforms:** shared
 
 ### CLASS-21 — Cancellation failure keeps the sheet open with a retry message
 - **Steps:** Trigger a cancel-booking request that fails on the server.
-- **Expected:** `CancelState.Failed` renders "Couldn't cancel — please try again." in Burnt Nectar inside the sheet; the booking remains live and `bookingCancelFailed` telemetry fires.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`confirmCancel` catch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelBookingSheet`, `CancelState.Failed`)
+- **Expected:** `CancelState.Failed(code)` renders `cancelErrorCopy(code)` ("Couldn't cancel. Try again." for both codes today) in Burnt Nectar inside the sheet; the booking remains live and `bookingCancelFailed` telemetry fires with the same `connection_failed`/`server_failed` `reason_code` as the UI state.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`confirmCancel` catch), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt (`cancelErrorCopy`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelBookingSheet`, `CancelState.Failed`)
 - **Platforms:** shared
 
 ### CLASS-22 — My Bookings: list, cancel confirmation dialog, and forfeit copy
@@ -691,9 +692,9 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### FAV-05 — Favorites fetch failure keeps prior cache, never empties silently
-- **Steps:** Force `FavoritesApi.fetchFavorites()` to fail during `FavoritesRepository.refresh()`.
-- **Expected:** The repository logs a warning and returns/keeps its previously cached `FavoritesDto` (or null if never loaded) rather than clearing it; `favoritesKnown` stays false only when truly never loaded, which suppresses the "choose favorites" nudge so a member who may already have favorites isn't wrongly nudged.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`favoritesKnown`)
+- **Steps:** Force `FavoritesApi.fetchFavorites()` to fail during `FavoritesRepository.refresh()`, both on a member's very first favorites load and on a later refresh where a real favorites set is already cached.
+- **Expected:** The repository logs a warning and returns/keeps its previously cached `FavoritesDto` (or null if never loaded) rather than clearing it; `favoritesKnown` stays false only when truly never loaded, which suppresses the "choose favorites" nudge (SCHED-12) so a member who may already have favorites isn't wrongly nudged. **Silent-success note:** this guarantee depends on `bodyOrThrow`. `fetchFavorites()` returns `FavoritesDto`, whose fields all default to empty. Before `bodyOrThrow`, a 5xx with a JSON error body did not throw here at all — it silently deserialized into an empty `FavoritesDto`, and `refresh()` wrote it straight into `_favorites.value`, **overwriting a real cached favorites set with nothing** instead of ever reaching this entry's catch block. `bodyOrThrow` is what makes "keeps prior cache" true for every 5xx shape, not just network-level failures.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`fetchFavorites`, `bodyOrThrow`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`favoritesKnown`)
 - **Platforms:** shared
 
 ### FAV-06 — Favorites cleared on logout
@@ -746,10 +747,10 @@ when adding a new annotation.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
 - **Platforms:** shared
 
-### PROFILE-05 — Profile load error keeps chrome, shows inline caption
+### PROFILE-05 — Profile load error keeps chrome, shows a bottom snackbar
 - **Steps:** Force `/memberships/me` to fail (e.g. via Developer Settings pointing at an unreachable base URL) and load Profile fresh (not a refresh — first load).
-- **Expected:** `ProfileUiState.Error` renders "Could not load profile." in small Stone-alpha text below the stats block; the hero's static chrome (dot layout, settings gear) renders normally and no full-screen error blocks it.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Expected:** **Behavior changed 2026-08-18.** A COLD-LOAD failure (`ProfileUiState.Error`) now replaces the whole tab with the shared `FullScreenError`, matching Home and Schedule — same CONNECTION/SERVER copy, vertically centred, "TRY AGAIN" wired to `ProfileViewModel.retry()` with the dot-matrix loader in the button while in flight. It previously showed an `ErrorSnackbar` over a hero that shimmered indefinitely, which read as "still loading" while an error was on screen, and contradicted the component rule (takeover when there is nothing to show). The snackbar is now reserved for a failed REFRESH while `Success` content is on screen: `ErrorCopy.REFRESH_FAILED` with a Lime "Retry" and an `X`, driven by `refreshFailed` exactly as on Home. **A "Sign out" control stays overlaid on the takeover** (same principle as CLASS-02's close button): Profile's list is the only place sign-out lives, and Developer Settings is reachable only from the signed-out screen, so a full takeover would otherwise strand a member with an unreachable server — no sign out, no way to change the base URL, and on iOS a reinstall does not clear the Keychain.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt (`fetch`, `load`, `retry`, `refreshFailed`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`, `ErrorSnackbar`)
 - **Platforms:** shared
 
 ### PROFILE-06 — Refresh failure preserves prior content
@@ -766,8 +767,8 @@ when adding a new annotation.
 
 ### PROFILE-08 — "Your favorites" section: loading, empty, and populated states
 - **Steps:** View the favorites section (a) immediately on load (favorites not yet fetched), (b) for a member with zero favorites, (c) for a member with whole-studio and location-grain favorites.
-- **Expected:** (a) a single shimmer row placeholder. (b) "No favorites yet" body text. (c) a numbered list (01, 02, …) of rows — whole-studio favorites first by name, then location-grain favorites formatted "STUDIO — LOCATION" with the brand prefix stripped from the location name; rows are flat (no chevron/tap affordance).
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
+- **Expected:** (a) a single shimmer row placeholder. (b) "No favorites yet" body text. (c) a numbered list (01, 02, …) of rows — whole-studio favorites first by name, then location-grain favorites formatted "STUDIO · LOCATION" (middot, not a dash) with the brand prefix stripped from the location name; rows are flat (no chevron/tap affordance). Reach (b) ONLY via a member who genuinely has zero saved favorites — do not use a forced favorites-fetch failure to test it: `favorites` (the section's only state signal) is a nullable `FavoritesDto?` with no dedicated error state, so a failed FIRST-EVER favorites fetch (any cause) leaves it `null` and the section shows shimmer (a) indefinitely, not the "No favorites yet" text.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt (`rowLabel`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`)
 - **Platforms:** shared
 
 ### PROFILE-09 — "Manage" link opens Studio Selection
@@ -826,8 +827,8 @@ when adding a new annotation.
 
 ### PROFILE-18 — Edit Profile load error with retry
 - **Steps:** Open Edit Profile while the profile-fetch endpoint fails.
-- **Expected:** Renders `LoadErrorState`: "Couldn't load." headline, an error message body, and a "Retry" primary CTA that re-invokes `viewModel::load`; a Close (X) is still available to bail out without saving.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+- **Expected:** Renders `LoadErrorState`: "Couldn't load." headline, an error message body, and a "Retry" primary CTA that re-invokes `viewModel::load`; a Close (X) is still available to bail out without saving. See ERR-16 for the silent-success history: before `bodyOrThrow`, a 5xx with a JSON error body reached a blank editable form instead of this error state.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`LoadErrorState`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt (`load`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`fetchProfile`)
 - **Platforms:** shared
 
 ### PROFILE-19 — Save button gates on dirty AND valid
@@ -862,8 +863,8 @@ when adding a new annotation.
 
 ### PROFILE-24 — Save failure shows inline form error, stays editable
 - **Steps:** Make a valid edit, tap "Save" while the PATCH endpoint fails (network/server error).
-- **Expected:** A `FormErrorBanner` ("Couldn't save your changes. Check your connection and try again.") appears above the fields; `isSaving` resets to false so Save is tappable again; entered field values are preserved (not reset to original).
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt
+- **Expected:** A `FormErrorBanner` ("Couldn't save your changes. Check your connection and try again.") appears above the fields; `isSaving` resets to false so Save is tappable again; entered field values are preserved (not reset to original). See ERR-17 for the silent-success history: before `bodyOrThrow`, a 5xx with a JSON error body reported this save as successful (popped back to Profile) without persisting anything.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt (`save`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`FormErrorBanner`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`updateProfile`)
 - **Platforms:** shared
 
 ### PROFILE-25 — Close (X) discards unsaved changes
@@ -892,10 +893,10 @@ when adding a new annotation.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt (`MESSAGE_MAX_LENGTH`, `updateMessage`)
 - **Platforms:** shared
 
-### CONCIERGE-03 — Submit failure re-enables the CTA with an inline error, clears on edit
-- **Steps:** Enter a message and tap Send while the submit call fails.
-- **Expected:** `ConciergeSubmit.Failed` renders "Something went wrong sending your message. Please try again." and the Send CTA is re-enabled for another attempt; editing the message afterward clears the error back to `Idle`.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestScreen.kt (line 112, failure banner), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt
+### CONCIERGE-03 — Submit failure distinguishes connection vs. server vs. a typed server reason, CTA re-enables and clears on edit
+- **Steps:** Enter a message and tap Send while the submit call fails three ways: (a) a network/timeout exception with no HTTP response, (b) a 5xx response with no typed reason code, (c) a typed `ConciergeError(code)` from the server (e.g. `concierge_failed`).
+- **Expected:** In all three cases `ConciergeSubmit.Failed(code)` re-enables the Send CTA for another attempt, and editing the message afterward clears the error back to `Idle`. (a) The connection failure renders `code = "connection_failed"` → "Couldn't reach Arcana. Check your connection and try again." (b) The 5xx renders `code = "server_failed"` → "Something went wrong on our end. Try again in a moment." (c) The typed reason still wins over the transport classification: `ConciergeSubmit.Failed` carries the server's own code rather than collapsing it to connection/server. The screen has no per-code copy table (unlike Booking's `bookingErrorCopy`), so any code other than the two transport ones renders the same fallback line, "Couldn't send your message. Try again." (`transportErrorCopy(code) ?: "Couldn't send your message. Try again."`).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestViewModel.kt (`submit`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/TransportErrorCopy.kt (`transportErrorCopy`, `transportFailureCode`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/concierge/ConciergeRequestScreen.kt (failure `Caption`)
 - **Platforms:** shared
 
 ### CONCIERGE-04 — Successful submit shows a terminal "Sent" screen and fires telemetry
@@ -1048,48 +1049,51 @@ when adding a new annotation.
 
 ## ERR
 
-Note on scope: main has NO shared `ErrorState`/`ConnectionError` component (that
-unification lives on the uncommitted `feature/error-states-overhaul` branch per
-project memory). Every screen below rolls its own `Error` variant of a
-`sealed interface UiState` and its own retry/no-retry treatment; several
-independently distinguish a connection failure from a 5xx server failure via
-generic-`Exception` vs `ResponseException`/status-code branches — this section
-documents each surface as it actually behaves on main today.
+Note on scope: a shared `ErrorType` classifier (`sharedLogic/.../networking/ErrorType.kt`)
+and a shared `FullScreenError`/`InlineError`/`ErrorSnackbar` UI family
+(`sharedUI/.../ui/ErrorState.kt`) now exist and are consumed by Schedule, Class
+Detail, Home, My Bookings, Profile, and Booking — see ERR-20 for the full
+migration list. `AuthViewModel` and the Signup ViewModels
+(`SignupCompletionViewModel`, `SignupSurveyViewModel`) deliberately keep their
+own pre-existing CONNECTION/SERVER-equivalent copy (ERR-07 through ERR-10,
+ERR-18, ERR-19) — out of scope for this migration by design, not an
+inconsistency. This section documents each surface as it actually behaves
+today.
 
 ### ERR-01 — Schedule cold-start load failure shows full-screen error with RETRY
 - **Steps:** With no cached schedule data (fresh app/session), make `ScheduleViewModel`'s initial overview+page-1 fetch fail (e.g. server unreachable or 5xx) and land on the Schedule tab.
-- **Expected:** The tab renders `ErrorBlock`: "Couldn't load schedule" heading, a body message ("server error" or "server error <code>"), and a black RETRY pill. Tapping RETRY calls `viewModel.reload()` and re-attempts the fetch.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt
+- **Expected:** The tab renders the shared `FullScreenError`, keyed to `ErrorType`, with a small color dot beside the overline (Lime for CONNECTION, Burnt Nectar for SERVER). CONNECTION shows overline "Connection", headline "CAN'T REACH ARCANA.", body "Check your connection and try again."; SERVER shows overline "Server", headline "SOMETHING'S OFF ON OUR END.", body "Give it a moment and try again." A "TRY AGAIN" pill (Moss fill) calls `viewModel.reload()` and re-attempts the fetch. No `"server error"` string literal remains anywhere in the app.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`, `reload`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`, `ErrorCopy`)
 - **Platforms:** shared
 
 ### ERR-02 — Schedule refetch failure with content already on screen keeps content, no error takeover
 - **Steps:** From a loaded Schedule (Success state with visible classes), trigger a filter/day refetch (change filter, tap a day chip) and have that request fail.
-- **Expected:** `applyRefetchFailure` does NOT replace the screen with an Error block when `_uiState` is already `Success` — it just clears the `refreshingFilters` dim and re-publishes the existing list; the member keeps seeing their last-good schedule with no error banner or toast. Only a cold-start/error-retry failure (no content yet) produces the full-screen `Error` state.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`)
+- **Expected:** Unchanged member-visible behavior: `applyRefetchFailure(type: ErrorType)` (now `ErrorType`-typed, was a raw string) does NOT replace the screen with an Error block when `_uiState` is already `Success` — it just clears the `refreshingFilters` dim and re-publishes the existing list; the member keeps seeing their last-good schedule with no error banner or toast. Only a cold-start/error-retry failure (no content yet) produces the full-screen `Error` state. **Silent-success note:** this guarantee now depends on `bodyOrThrow`. Before it, a 5xx with a JSON error body did not throw at all here — `fetchOverview`/`fetchSessionsPage` silently returned an empty-but-valid DTO, and the atomic-apply step would have written that emptiness over the member's real schedule instead of preserving it. `bodyOrThrow` is what makes "keeps content" true for every 5xx shape, not just network-level failures.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`bodyOrThrow`)
 - **Platforms:** shared
 
-### ERR-03 — Schedule single-day page fetch failure fails silently, day stays in its loading placeholder
+### ERR-03 — Schedule single-day page fetch failure renders an inline error card with retry
 - **Steps:** Tap a day chip whose page-1 fetch is not yet cached, and have that specific day's `fetchSessionsPage` call fail while other days/filters are unaffected.
-- **Expected:** No error UI is shown at all for this path — `ensureSelectedDayLoaded`'s catch block only `logWarning`s; the tapped day's list area remains stuck on the `DotMatrixLoader` "day-loading" placeholder (`dayLoaded == false`) until the member retries via pull-to-refresh, a filter change, or re-tapping the day.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`ensureSelectedDayLoaded`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`!dayLoaded` branch)
+- **Expected:** **Behavior inverted from before this branch.** The day area no longer sits silently on `DotMatrixLoader` forever. `ensureSelectedDayLoaded`'s catch block sets `Success.dayError` to the failure's `ErrorType`, and the day's list area (header/rail/filter chips stay live above it) renders an `InlineError` card with an underlined "Retry" wired to `retryDay()`. `dayError` clears on a real day switch, a filter change, and any refetch that actually (re)loads the day, so it can never outlive the failure it describes. **Silent-success note:** before `bodyOrThrow`, a 5xx with a JSON error body did not even reach this catch block — `fetchSessionsPage` silently returned an empty-but-valid `SchedulePageDto`, so the day was marked loaded with zero sessions and the list showed the unrelated "No classes match your filters for this day." message (SCHED-06) instead of either the old stuck-loading placeholder or today's `InlineError` — a server outage looked identical to a genuinely empty day.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`ensureSelectedDayLoaded`, `retryDay`, `dayError`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`dayError` branch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`InlineError`)
 - **Platforms:** shared
 
 ### ERR-04 — Class detail load failure shows full-screen error with RETRY, close still works
-- **Steps:** Open Class Detail for a session whose `GET /api/v1/classes/<id>/` fetch fails (network unreachable, or a non-2xx `ResponseException`).
-- **Expected:** `ClassDetailUiState.Error` renders the top bar (close button still functional, does not require the fetch to have succeeded) plus "Couldn't load class", the error message ("server error" or "server error <code>"), and a RETRY pill wired to `viewModel::reload`.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ErrorBlock`)
+- **Steps:** Open Class Detail for a session whose `GET /api/v1/classes/<id>/` fetch fails (network unreachable, or a non-2xx status).
+- **Expected:** `ClassDetailUiState.Error` renders the top bar first (close `X` still functional, independent of whether the fetch succeeded), then the shared `FullScreenError` filling the rest of the screen, keyed to `ErrorType` exactly as ERR-01 (CONNECTION "CAN'T REACH ARCANA." / SERVER "SOMETHING'S OFF ON OUR END.", full copy at ERR-01). "TRY AGAIN" calls `viewModel::reload`. The old "Couldn't load class" copy and the literal `"server error"` string are gone.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt (`fetch`, `retry`, `retrying`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ErrorBlock`, `TopBar`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`)
 - **Platforms:** shared
 
-### ERR-05 — Home tab load failure shows an inline caption with no retry affordance
-- **Steps:** Land on the Home tab when `HomeViewModel`'s `/memberships/me` + `/bookings/me/` load throws.
-- **Expected:** `HomeUiState.Error("server error")` renders as a single `Caption` line in the scroll content — no heading, no RETRY button, no pull-to-refresh wiring visible for this state. The member's only recovery is leaving and re-entering the tab (which re-triggers the VM's load) since there is no explicit retry control here.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt
+### ERR-05 — Home tab load failure shows a full-screen error with retry; a background refresh failure keeps content and shows a dismissible toast
+- **Steps:** Land on the Home tab when `HomeViewModel`'s `/memberships/me` + `/bookings/me/` load throws, with no prior content on screen. Separately: from a loaded Home (Success content visible), pull to refresh (or let a resume-triggered refresh run) while the same load throws.
+- **Expected:** Cold-load failure (no prior content) renders the shared `FullScreenError` keyed to `ErrorType` (same CONNECTION/SERVER copy as ERR-01) with "TRY AGAIN" wired to `HomeViewModel.retry()`, replacing the whole list rather than appearing inside it. A refresh failure while Success content is already on screen leaves that content untouched and instead raises a dark-Ink `ErrorSnackbar` reading "Couldn't refresh. Showing your last update." with its own Lime "Retry" (dismisses it and re-runs `refresh()`) and a small `X` dismiss control (`HomeViewModel.dismissRefreshFailed()`, clears it without retrying). Per a code comment (not device-confirmed), tab re-entry is not a reliable recovery path on either platform — iOS: an in-tab push/pop re-fires the load, a bare tab switch does not; Android: a tab switch does, via `NavHost`'s `popUpTo`/`restoreState` — which is why `retry()` exists as an explicit, always-reliable control instead.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`fetch`, `retry`, `refreshFailed`, `dismissRefreshFailed`, `load`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`, `ErrorSnackbar`)
 - **Platforms:** shared
 
-### ERR-06 — My Bookings load failure shows an inline caption with no retry affordance
-- **Steps:** Open My Bookings (from Home's "See all") when `MyBookingsViewModel`'s fetch fails, either with an HTTP error (`ResponseException`, message includes the status code) or a generic exception.
-- **Expected:** `MyBookingsUiState.Error` renders as a single burnt-nectar-colored `Caption` with the message ("server error" or "server error <code>") — no RETRY button and no empty-state illustration.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsScreen.kt
+### ERR-06 — My Bookings load failure renders an inline error card with retry
+- **Steps:** Open My Bookings (from Home's "See all") when `MyBookingsViewModel`'s fetch fails.
+- **Expected:** **Behavior changed — no longer a bare caption.** `MyBookingsUiState.Error` renders the shared `InlineError` card (not full-screen) directly under the "YOUR BOOKINGS" header, keyed to `ErrorType` via the shared inline copy (`ErrorCopy.inline`: "Can't load this right now."/"Check your connection." for CONNECTION, "This didn't load."/"On our end. Try again." for SERVER), with an underlined "Retry" wired to `MyBookingsViewModel.reload()` — a new entry point that mirrors `HomeViewModel.retry()`, delegating to the existing `load()`. No empty-state illustration.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsViewModel.kt (`load`, `reload`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`InlineError`)
 - **Platforms:** shared
 
 ### ERR-07 — Login CONNECTION failure shows a general (non-field) message, form stays editable
@@ -1116,16 +1120,16 @@ documents each surface as it actually behaves on main today.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
 - **Platforms:** shared
 
-### ERR-11 — Booking submission failure replaces the confirmation sheet with a dead-end error, no retry button
-- **Steps:** From Class Detail, open the booking sheet and confirm a booking that fails — either a typed `BookingError(code)` (e.g. `session_full`, `credits_exhausted`) or a generic exception (network/timeout, which is mapped to the `"booking_failed"` code).
-- **Expected:** `BookingSubmit.Failed(code)` swaps the sheet's content: heading "Can't book this class", the class name/studio, and `bookingErrorCopy(code)` (a code-specific line, or the generic "We couldn't book that. Try again in a moment." fallback for unknown/network codes). The confirm control is replaced entirely by a single "GOT IT" button that just dismisses the sheet — there is no in-place retry; the member must re-open the sheet from Class Detail to try again.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt
+### ERR-11 — Booking submission failure distinguishes connection vs. server vs. a typed server reason, no retry button
+- **Steps:** From Class Detail, open the booking sheet and confirm a booking that fails three ways: (a) a typed `BookingError(code)` from the server (e.g. `session_full`, `credits_exhausted`), (b) a network/timeout exception with no HTTP status, (c) a 5xx response with no typed reason code (e.g. an upstream/Django error page, not the API's own JSON error shape).
+- **Expected:** **Behavior changed — a network exception no longer collapses into the flat `"booking_failed"` code.** `BookingSubmit.Failed(code)` swaps the sheet's content: heading "Can't book this class", the class name/studio, and `bookingErrorCopy(code)`. (a) A typed server reason code always wins, regardless of transport, and renders its own specific line (e.g. "This class just filled up." for `session_full`). (b) A connection failure (no HTTP response at all) renders `code = "connection_failed"` → "Couldn't reach Arcana. Check your connection and try again." (c) A 5xx response with no typed reason code renders `code = "server_failed"` → "Something went wrong on our end. Try again in a moment." The confirm control is still replaced entirely by a single "GOT IT" button that dismisses the sheet — **unchanged**, no in-place retry was added; the member must re-open the sheet from Class Detail to try again. **Regression note (device QA, fixed 2026-08-16):** case (c) was unreachable until this fix, even though `BookingViewModel`'s side of the mapping was already correct. The gap was one level lower: `ArcanaApiClient.createBooking`'s own non-2xx handling decides whether a response has a parseable reason code at all, and it used to fall back to `BookingError("booking_failed")` for EVERY non-2xx with no parseable code — a genuine 5xx included, since an HTML Django error page (or a bodyless proxy/infra error) isn't the API's `{"error": ...}` JSON shape and so parses to no code. That routed a real server outage through the exact same generic "We couldn't book that. Try again in a moment." fallback as an ordinary unrecognized 4xx — precisely the CONNECTION/SERVER conflation this entry exists to prevent, on the one branch no test had ever actually exercised with a real HTTP response. The decision now lives in `bookingFailureFor(status, parsedCode)` (`networking/BookingFailure.kt`): a parsed reason code still wins outright; otherwise `status >= 500` throws `ApiHttpError` (SERVER); otherwise the generic `booking_failed` code. It is unit-tested directly against real HTTP responses — an HTML error-page body, a valid JSON body missing the `error` key, a 409 carrying `{"error":"session_full"}`, and a bare 4xx — rather than only through a hand-thrown exception in a fake `BookingApi`, which is the gap that let the original defect ship with a green suite.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`confirmBooking`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt (`bookingErrorCopy`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`createBooking`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BookingFailure.kt (`bookingFailureFor`, `parsedBookingErrorCode`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt
 - **Platforms:** shared
 
 ### ERR-12 — Booking cancellation failure shows an inline caption below the button; the button itself is the retry
 - **Steps:** From an existing booking's Class Detail (or My Bookings), open the cancel sheet and confirm a cancel that fails (`BookingViewModel.confirmCancel`'s catch-all).
-- **Expected:** `CancelState.Failed("cancel_failed")` keeps the cancel sheet open with the CANCEL BOOKING button re-enabled (no longer showing the "CANCELLING…" spinner state) and adds a burnt-nectar `Caption`: "Couldn't cancel — please try again." below it. There is no distinct RETRY control — tapping CANCEL BOOKING again is the retry path.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelState.Failed` caption)
+- **Expected:** `CancelState.Failed(code)` — `code` is `"connection_failed"` or `"server_failed"` per `toErrorType()` (`"cancel_failed"` is a back-compat copy branch with no current producer) — keeps the cancel sheet open with the CANCEL BOOKING button re-enabled (no longer showing the "CANCELLING…" spinner state) and adds a burnt-nectar `Caption` via `cancelErrorCopy(code)`: "Couldn't cancel. Try again." for either code today. There is no distinct RETRY control — tapping CANCEL BOOKING again is the retry path.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt (`cancelErrorCopy`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`CancelState.Failed` caption)
 - **Platforms:** shared
 
 ### ERR-13 — Password reset request failure shows a generic connection message, resubmit via the same form
@@ -1142,20 +1146,20 @@ documents each surface as it actually behaves on main today.
 
 ### ERR-15 — Studio Selection save failure shows an inline caption above the sticky CTA, no dedicated retry
 - **Steps:** In the Studio Selection screen (loaded successfully), change favorite selections and tap "Save favorites" while the save call fails.
-- **Expected:** The `Ready` state's `error` field renders as a `Warning`-colored `Caption` directly above the sticky "Save favorites" `PrimaryCta`; the CTA itself stays enabled so re-tapping Save is the retry path (no separate RETRY affordance).
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt
+- **Expected:** The `Ready` state's `error` field ("Couldn't save. Try again.") renders as a `Warning`-colored `Caption` directly above the sticky "Save favorites" `PrimaryCta`; the CTA itself stays enabled so re-tapping Save is the retry path (no separate RETRY affordance). **Silent-success note:** `updateFavorites()` returns `FavoritesDto`, whose fields all default to empty. Before `bodyOrThrow`, a 5xx with a JSON error body did not throw here at all — it silently deserialized into an empty `FavoritesDto`, which `FavoritesRepository.save()` wrote straight through as the member's new favorites (wiping any real saved favorites to none) while the screen reported a **successful** save and fired `favorite_removed` telemetry for every favorite that "vanished." `bodyOrThrow` closes this: a 5xx now reaches this error path instead of silently wiping and reporting success.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionViewModel.kt (`save`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`save`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`updateFavorites`, `bodyOrThrow`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/studios/StudioSelectionScreen.kt
 - **Platforms:** shared
 
 ### ERR-16 — Edit Profile load failure shows a dedicated error state with RETRY and a close affordance
 - **Steps:** Open Edit Profile from the Profile tab when the initial member-data load throws.
-- **Expected:** `EditProfileViewModel.State.LoadError` renders `LoadErrorState`: a Close (X) `IconCircle` in the header (not a decorative icon-circle ornament), a `Display` headline reading "Couldn't\nload.", the message "Couldn't load your profile. Pull to retry." as body text, and a "Retry" `PrimaryCta` wired to `viewModel::load`. The copy names a pull gesture but this screen has no `PullToRefreshBox` — the only working recovery affordance is the Retry CTA, so a driver should not fail the entry over the absent pull-to-retry.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`LoadErrorState`)
+- **Expected:** `EditProfileViewModel.State.LoadError` renders `LoadErrorState`: a Close (X) `IconCircle` in the header (not a decorative icon-circle ornament), a `Display` headline reading "Couldn't\nload.", the message "Couldn't load your profile. Pull to retry." as body text, and a "Retry" `PrimaryCta` wired to `viewModel::load`. The copy names a pull gesture but this screen has no `PullToRefreshBox` — the only working recovery affordance is the Retry CTA, so a driver should not fail the entry over the absent pull-to-retry. This screen was NOT migrated to the shared `ErrorType`/`FullScreenError` system on this branch — it still renders its own fixed `LoadErrorState` regardless of CONNECTION vs SERVER. **Silent-success note:** `fetchProfile()` returns `MeProfileDto`, whose fields all default to `""`/`0`/`null`. Before `bodyOrThrow`, a 5xx with a JSON error body did not throw here at all — it silently deserialized into an empty `MeProfileDto`, and the screen rendered `Editing` with **every field blank** instead of `LoadError` — indistinguishable from a member with a genuinely empty profile, with Save reachable from that blank state. `bodyOrThrow` closes this: a 5xx now reaches `LoadError` instead of a blank editable form.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt (`load`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`fetchProfile`, `bodyOrThrow`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`LoadErrorState`)
 - **Platforms:** shared
 
 ### ERR-17 — Edit Profile save failure shows a form-level banner naming a connection problem, resubmit via SAVE
 - **Steps:** In Edit Profile with the form loaded, change a field and tap Save while the save call throws.
-- **Expected:** `EditProfileViewModel`'s catch-all sets `formError = "Couldn't save your changes. Check your connection and try again."`; the screen renders a `FormErrorBanner` above the fields, `isSaving` resets to false so the Save CTA is tappable again, and any field edit clears `formError` (per `setEditing(...formError = null)` in the field-mutation helpers).
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`FormErrorBanner`)
+- **Expected:** `EditProfileViewModel`'s catch-all sets `formError = "Couldn't save your changes. Check your connection and try again."`; the screen renders a `FormErrorBanner` above the fields, `isSaving` resets to false so the Save CTA is tappable again, and any field edit clears `formError` (per `setEditing(...formError = null)` in the field-mutation helpers). This screen was NOT migrated to `ErrorType` on this branch — the banner text is the same fixed string regardless of CONNECTION vs SERVER. **Silent-success note:** `updateProfile()` (the save PATCH) also returns `MeProfileDto`, fully defaulted. Before `bodyOrThrow`, a 5xx with a JSON error body did not throw here either — it silently deserialized into an empty `MeProfileDto` (discarded; the call site only checks that the call didn't throw), so `_state.value = State.Saved` fired and the screen popped back to Profile reporting success on a save that **never persisted**. This is the exact "successful-looking Edit Profile save" bug this branch's design doc names. `bodyOrThrow` is what makes this entry's `FormErrorBanner` reachable at all for a JSON 5xx body — previously it could not fire for that failure shape.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt (`save`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`updateProfile`, `bodyOrThrow`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt (`FormErrorBanner`)
 - **Platforms:** shared
 
 ### ERR-18 — Claim-your-name (signup completion) form distinguishes CONNECTION vs SERVER vs generic submit failure
@@ -1170,10 +1174,22 @@ documents each surface as it actually behaves on main today.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
 
-### ERR-20 — No unified CONNECTION/SERVER classifier exists on main; each surface hand-rolls its own catch blocks
-- **Steps:** Search the codebase for a shared error-classification type (e.g. `ErrorState`, `ConnectionError`, a common `sealed class NetworkFailure`) referenced by more than one ViewModel.
-- **Expected:** None exists. Every `*ViewModel.kt` above independently catches `ResponseException`/generic `Exception` and independently decides its own message and copy (some distinguish network vs 5xx vs other status explicitly — AuthViewModel, SignupCompletionViewModel, SignupSurveyViewModel; others collapse everything to a single "server error" string — ScheduleViewModel, ClassDetailViewModel, HomeViewModel, ProfileViewModel, MyBookingsViewModel). `ArcanaApiClient.kt` defines only the narrow `LoginError`/`BookingError` exception types, not a general connection/server distinction. This confirms the CONNECTION/SERVER unification work is not yet on main (tracked separately, banked on `feature/error-states-overhaul`).
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
+### ERR-20 — A shared CONNECTION/SERVER classifier now exists; hand-rolled per-surface catch blocks are gone
+- **Steps:** Search the codebase for a shared error-classification type (e.g. `ErrorType`) referenced by more than one ViewModel; separately, search for the literal string `"server error"`.
+- **Expected:** **This entry was true on main and becomes false the moment this branch merges — the clearest illustration of why the inventory-update rule exists.** A shared classifier exists at `networking/ErrorType.kt`: `enum class ErrorType { CONNECTION, SERVER }` plus `fun Throwable.toErrorType(): ErrorType`, defined in terms of the pre-existing `apiRequestOutcome(statusCode)` (a guard test locks the two in agreement, so the UI category and the `api_request` telemetry outcome can never disagree). It is consumed by `HomeViewModel`, `ScheduleViewModel`, `ClassDetailViewModel`, `MyBookingsViewModel`, `ProfileViewModel`, and `BookingViewModel`. The matching shared UI family (`FullScreenError`, `InlineError`, `ErrorSnackbar`, `RetryButton`, `RetryLink`, `ErrorCopy`) lives at `sharedUI/.../ui/ErrorState.kt`. No `"server error"` string literal remains anywhere in either module (the only hits left are inside comments explaining the rule). `AuthViewModel` and the Signup ViewModels (`SignupCompletionViewModel`, `SignupSurveyViewModel`) deliberately keep their own pre-existing CONNECTION/SERVER-equivalent copy (see ERR-07 through ERR-10, ERR-18, ERR-19) — out of scope for this migration by design, not an oversight.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ErrorType.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/MyBookingsViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt
+- **Platforms:** shared
+
+### ERR-21 — Home refresh-failed toast on a failed background refresh
+- **Steps:** Load Home successfully (Success content visible). Force a refresh to fail — `./tools/regression/error-state-harness.sh db-down` (SERVER path) or `kill-server` (CONNECTION path) — then pull to refresh. Separately, tap the toast's dismiss `X` without retrying; separately again, restore the server (`db-up`/`start`) and tap the toast's "Retry".
+- **Expected:** The existing content stays on screen unchanged (no error takeover, no shimmer). A dark-Ink `ErrorSnackbar` appears pinned to the bottom, reading "Couldn't refresh. Showing your last update." with a Lime "Retry" link and a small `X` dismiss control (content description "Dismiss notice"). Tapping the dismiss `X` (`HomeViewModel.dismissRefreshFailed()`) clears the toast without retrying and without disturbing the Success content. Tapping "Retry" dismisses the toast and immediately calls `refresh()` again; once the server is reachable this both clears the toast and updates the content. The toast never latches — any later successful `fetch()` (pull-to-refresh or otherwise) also clears it on its own.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`refreshFailed`, `dismissRefreshFailed`, `fetch`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`ErrorSnackbar`)
+- **Platforms:** shared
+
+### ERR-22 — Client request timeout: a stalled server fails instead of hanging forever
+- **Steps:** With the app on any loading screen making a live request (e.g. cold-launch onto Home or Schedule), stall the local dev server so bytes stop flowing but the TCP connection stays open: `./tools/regression/error-state-harness.sh stall` (SIGSTOPs `manage.py runserver`; raw equivalent is `kill -STOP` on its PIDs). Restore with `./tools/regression/error-state-harness.sh unstall` (SIGCONT) and confirm the surface recovers.
+- **Expected:** The request does not hang indefinitely. `HttpTimeout` is installed once on `ArcanaApiClient`'s `HttpClient` and applies to every request, including bookings, with no per-endpoint override: `connectTimeoutMillis = 10_000`, `socketTimeoutMillis = 30_000`, `requestTimeoutMillis = 60_000`. (The previous `createBooking`/`cancelBooking` override to 60s/90s is gone — safe because this blanket 60s still leaves ~9x headroom over the slowest booking observed server-side, ~6.5s.) A stalled socket throws within this window instead of hanging forever (unbounded before this timeout existed — 89s seen in prod), classifies as `ErrorType.CONNECTION` (the throw carries no HTTP status), and the surface reaches its normal CONNECTION state (`FullScreenError`/`InlineError`/`ErrorSnackbar`, depending on surface and prior content). **Timing differs by platform** because the two HTTP engines interpret the same config differently, not because the code differs: Android's OkHttp engine honours `socketTimeoutMillis` and fails at ~30s (device-confirmed: `api_request total_ms=30010`); iOS's Darwin engine ignores `socketTimeoutMillis`, so only `requestTimeoutMillis` bounds it and the same stall instead fails at ~60s (Trello `vVs2x4jG`). A driver running this on iOS should expect roughly double Android's wait before the CONNECTION error appears — that is expected, not a hang. Restoring the server and retrying succeeds normally on both platforms.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`install(HttpTimeout)`), tools/regression/error-state-harness.sh (`stall`, `unstall`)
 - **Platforms:** shared
 
 ## TEL

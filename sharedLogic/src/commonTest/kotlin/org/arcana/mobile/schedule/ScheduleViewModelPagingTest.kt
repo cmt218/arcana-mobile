@@ -120,7 +120,7 @@ class ScheduleViewModelPagingTest {
 
     // ── 3. loadMore ────────────────────────────────────────────────────────
 
-    @Test fun `loadMore appends the page, replaces the cursor, and stops at null`() = runTest {
+    @Test fun `loadMore appends the page replaces the cursor and stops at null`() = runTest {
         val api = FakeScheduleApi()
         api.pageResult = { call ->
             if (call.cursor == null) pageOf(1, 2, nextCursor = "c1") else pageOf(3)
@@ -234,7 +234,7 @@ class ScheduleViewModelPagingTest {
 
     // ── 7. Favorites through the paged pipeline ────────────────────────────
 
-    @Test fun `favorites scope reaches the overview, page-1, and loadMore fetches`() = runTest {
+    @Test fun `favorites scope reaches the overview page one and loadMore fetches`() = runTest {
         val api = FakeScheduleApi()
         api.pageResult = { call ->
             if (call.cursor == null) pageOf(1, nextCursor = "c1") else pageOf(2)

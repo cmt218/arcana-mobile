@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.*
 import org.arcana.mobile.data.*
 import org.arcana.mobile.favorites.FavoritesRepository
+import org.arcana.mobile.networking.ApiHttpError
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
 import kotlin.test.*
@@ -29,6 +31,14 @@ class ProfileViewModelTest {
         override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
             FavoritesDto()
     }
+
+    private class FailingApi(private val error: Throwable) : MembershipApi {
+        override suspend fun membershipMe(): MembershipMeDto = throw error
+    }
+
+    /** A real HTTP-failure exception, the same type `ArcanaApiClient.membershipMe()`
+     *  actually throws in production for a non-2xx (via `bodyOrThrow`). */
+    private fun serverException(statusCode: Int): Throwable = ApiHttpError(statusCode)
 
     private fun vm(api: MembershipApi) = ProfileViewModel(api, FavoritesRepository(FakeFavoritesApi()))
 
@@ -62,6 +72,20 @@ class ProfileViewModelTest {
         vm.load()
         val s = vm.uiState.value
         assertTrue(s is ProfileUiState.Error)
+    }
+
+    @Test
+    fun `a network failure classifies as CONNECTION`() = runTest {
+        val vm = vm(FailingApi(Exception("network failure")))
+        vm.load()
+        assertEquals(ProfileUiState.Error(ErrorType.CONNECTION), vm.uiState.value)
+    }
+
+    @Test
+    fun `a 5xx classifies as SERVER`() = runTest {
+        val vm = vm(FailingApi(serverException(502)))
+        vm.load()
+        assertEquals(ProfileUiState.Error(ErrorType.SERVER), vm.uiState.value)
     }
 
     @Test fun `null currentPeriod gives null credits`() = runTest {

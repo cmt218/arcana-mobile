@@ -22,12 +22,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 ./gradlew :sharedLogic:compileDebugKotlinAndroid :sharedUI:compileDebugKotlinAndroid       # JVM/Android
 ./gradlew :sharedLogic:compileKotlinIosSimulatorArm64 :sharedUI:compileKotlinIosSimulatorArm64  # Kotlin/Native (iOS)
+./gradlew :sharedLogic:compileTestKotlinIosSimulatorArm64  # Kotlin/Native test compile — commonTest only runs as JVM/Android otherwise
 ```
 JVM-only APIs compile on Android but break the iOS build — notably `String.format` / `"%02d".format(x)` / `java.*` / `Locale`. Use string templates, `padStart`, and `kotlinx-datetime` instead. (`compileKotlinMetadata` is a no-op SKIP in this project — don't rely on it.)
+
+Backtick test names (`` @Test fun `like this`() ``): Kotlin/Native rejects **commas and colons** in backtick identifiers ("Name contains illegal characters") — colons additionally break the Android test compile. Neither punctuation mark is safe as a swap-in for the other; rephrase the sentence so it needs no separator at all.
 
 No linter is configured (no ktlint/detekt).
 
 **Clearing the iOS Simulator Keychain** (useful when testing auth flows): Simulator app → Device → Erase All Content and Settings. Uninstalling the app alone does not clear Keychain items.
+
+## Comments — keep them short
+
+Production code in this repo is lightly commented on purpose. Verbose comments are
+not free: they push the actual code off screen, go stale silently, and make a file
+slower to read for someone who already has the context. **Long comments are treated
+as a defect here, not as thoroughness.**
+
+- **Default to none.** Well-named code needs no narration. Never restate what the
+  line does.
+- **Comment only the non-obvious *why*:** a constraint that will be violated by an
+  innocent-looking edit, a value that came from measurement, a deliberate deviation.
+- **Two or three lines.** If it needs more, it belongs in `docs/` or a Trello card,
+  linked by id — not inlined.
+- **No changelogs in code.** No "previously this did X", no incident narration, no
+  "caught during QA on <date>", no restating what a test already proves.
+- **Never annotate a dependency, import, or version bump.** `libs.versions.toml`
+  has no comments; keep it that way.
+- KDoc on a shared public API may be longer, but describe the contract, not its
+  history.
+
+Tests are the exception: comment them as freely as is useful, since a test's intent
+is often less obvious than its mechanics.
+
+If you find yourself explaining a subtlety at length, that is usually a signal the
+code should be clearer — extract a named function instead of writing a paragraph.
 
 ## Android CLI — agent tooling (installed 2026-08-10)
 
@@ -141,7 +170,7 @@ New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 - `auth/SecureStorage` is an `expect/actual` class: `EncryptedSharedPreferences` on Android, iOS Keychain via CoreFoundation/Security on iOS. `TokenStorage` wraps it with typed `accessToken`/`refreshToken` properties.
 - The Ktor `Auth` plugin handles Bearer header injection and 401/token-refresh automatically for all authenticated requests. `sendWithoutRequest` excludes the login, register, and refresh endpoints from receiving auth headers.
 
-**Networking:** Ktor 3.x with `kotlinx-serialization`. `networking/ArcanaApiClient.kt` contains the `HttpClient` and all endpoint methods. Data classes live in `data/` and are annotated with `@Serializable`. ViewModels live in feature packages (e.g. `classes/ClassesViewModel.kt`) and expose `StateFlow<UiState>` sealed interfaces with `Loading`, `Success`, and `Error` states.
+**Networking:** Ktor 3.x with `kotlinx-serialization`. `networking/ArcanaApiClient.kt` contains the `HttpClient` and all endpoint methods. Data classes live in `data/` and are annotated with `@Serializable`. ViewModels live in feature packages (e.g. `classes/ClassesViewModel.kt`) and expose `StateFlow<UiState>` sealed interfaces with `Loading`, `Success`, and `Error` states — where `Error` carries an `ErrorType`, and read endpoints end in `bodyOrThrow()`. See "Error states" below before adding either.
 
 **Date/time:** `kotlinx-datetime` in commonMain. Use `Clock.System.todayIn(TimeZone.currentSystemDefault())` for today, `Clock.System.now().toLocalDateTime(tz)` for current local time. `DayOfWeek` and `Month` are enums with `.name` returning uppercase strings (take(3) for the design's three-letter abbreviations).
 
@@ -238,6 +267,52 @@ The `ui/` package is the mobile design system. New screens compose from these; n
 - **`Inputs.kt`** — `ArcanaTextField` (hairline-underline input; Mist → Moss on focus). Built on `BasicTextField`, not Material's filled/outlined; resist the urge to swap.
 - **`TabBar.kt`** — the bottom nav. `ArcanaTab` enum is the source of truth for the three primary destinations (`Home`, `Schedule`, `Profile`); the Profile tab renders as the member's avatar. `ArcanaTabBar` handles its own `safeBottomBarPadding()` internally — callers in `App.kt` do not pass a safe-area modifier.
 - **`Insets.kt`** — `Modifier.safeContentPadding()` (top + horizontal), `Modifier.safeBottomBarPadding()` (bottom + horizontal), `Modifier.safeHorizontalPadding()` (horizontal only). **Always prefer these to `statusBarsPadding()` / `navigationBarsPadding()`** so display cutouts (camera punch-outs in landscape) are respected. They wrap `WindowInsets.safeDrawing.only(...)` and work the same on Android and iOS.
+- **`ErrorState.kt`** — `FullScreenError`, `InlineError`, `ErrorSnackbar`, and the `ErrorCopy` strings behind them, all keyed off `ErrorType`. **Never hand-roll an error message or a retry control** — see "Error states" below.
+
+## Error states — use the shared system
+
+Every member-facing failure resolves to one of two categories, and the app must
+say which. Conflating them is the production bug this system exists to prevent:
+a member was told the server had failed while the server was healthy and their
+connection had blipped.
+
+- **`ErrorType.CONNECTION`** — no valid answer from the server (offline, flaky,
+  timeout, DNS). Copy must **never** say "server error".
+- **`ErrorType.SERVER`** — the server answered badly. Copy owns the fault.
+
+**Three rules, all cheap to follow and all expensive to miss:**
+
+1. **A ViewModel's `Error` state carries an `ErrorType`**, not a pre-baked
+   message. Derive it with `Throwable.toErrorType()` (:sharedLogic
+   `networking/ErrorType.kt`). Screens pass that type to the shared component and
+   never build their own copy.
+2. **Pick the component by how much of the screen the failure invalidates:**
+   `FullScreenError` when there is nothing to show, `InlineError` when a section
+   failed but the surrounding screen is still good, `ErrorSnackbar` when cached
+   content is still on screen and must survive. A failed refresh must never wipe
+   good content.
+3. **Every new *read* endpoint on `ArcanaApiClient` ends in `bodyOrThrow()`, not
+   `body()`.** This one is not optional and its failure is silent: the client runs
+   `expectSuccess = false`, so a non-2xx never throws, and because most DTO fields
+   are defaulted a 5xx body deserializes into a valid empty object that the app
+   then reports as **success**. Write/auth endpoints are the exception — they
+   inspect `response.status` themselves and may call `body()` inside a verified
+   2xx branch.
+
+For a submit flow, map the caught failure with `Throwable.transportFailureCode()`
+and render `transportErrorCopy(code)`, falling back to your own copy only for
+reason codes the server named. A typed server reason always wins over both.
+
+Copy lives only in `ErrorCopy` / `TransportErrorCopy.kt`. No em or en dashes in
+anything a member reads.
+
+**Verify a change here on a device, not just in tests.** Two real bugs in this
+area (every non-2xx collapsing into one generic booking/concierge code) passed
+unit tests and code review and were only caught by driving a real 5xx.
+`docs/regression/error-states-qa.md` lists every state with the exact command
+that forces it, and `tools/regression/error-state-harness.sh` provides the levers
+(`kill-server`, `db-down`, `stall`, `wifi-off`). Run `preflight` first — the app
+defaults to **prod**, and a storage clear silently resets it there.
 
 ## Surface conventions
 
@@ -259,6 +334,40 @@ Box(modifier = Modifier.fillMaxSize().background(Stone)) {
 ```
 
 This avoids the iOS overscroll-flash trap (transparent LazyColumn lets the Ink strip show through during top overscroll without leaving Ink visible below the last item). `ArcanaTabBar` separately fills its full slot with Stone, so nothing behind the Scaffold can bleed through under the visible tab row.
+
+## Vertical centring — two traps that keep shipping
+
+Both of these produce UI that is arithmetically centred and visibly wrong. They
+have each been caught in review more than once, so treat them as defaults, not
+edge cases.
+
+**1. All-caps labels in filled controls sit high and left.** Compose centres a
+Text's *layout* box (ascent..descent), but all-caps ink only occupies
+cap-height..baseline, so the empty descent space pushes the glyphs up. Letter
+spacing is also applied after the final glyph, pushing them left.
+
+> Every centred ALL-CAPS label inside a pill/button gets
+> `Modifier.opticallyCentredCaps(fontSize, letterSpacingEm)` from
+> `ui/OpticalCentering.kt`. Without it the label lands about a point high and
+> left. Do NOT apply it to sentence-case body text.
+
+Verify rather than eyeball, on a screenshot of the control:
+`tools/regression/measure_centering.py <shot.png> <fill_hex> 3 <x0 y0 x1 y1>` —
+under 0.5pt on both axes passes. The crop box is required; the brand fill also
+appears in the tab bar and wordmark, and an unconstrained search unions them and
+reports a meaningless 0.0px.
+
+**2. Stacking a TopBar above centred content shifts it down.** A
+`Column { TopBar(); Thing(Modifier.weight(1f)) }` centres `Thing` in the space
+*below* the bar, so it sits lower than the same component on a screen without
+one. Consuming the top inset before the content measures does the same thing
+(`windowInsetsPadding` consumes, so a parent's `safeContentPadding()` moves the
+centre down by half the status bar).
+
+> Overlay the bar in a `Box` instead, and apply safe-area padding to the BAR,
+> not to the container that wraps the centred content. `ClassDetailScreen`'s
+> `ErrorBlock` and its loading state are the worked examples; both were wrong in
+> exactly this way and are what the rule came from.
 
 ## Spacing & sizing
 

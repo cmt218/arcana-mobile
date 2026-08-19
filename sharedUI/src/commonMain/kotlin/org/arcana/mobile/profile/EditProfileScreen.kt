@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
@@ -58,6 +59,7 @@ import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
+import org.arcana.mobile.ui.opticallyCentredCaps
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -295,6 +297,10 @@ private fun EditingForm(
  * Top-right "Save". Moss + Stone when there's a valid change to commit; muted
  * (Mist + Ash, inert) until then; a Stone spinner while the PATCH is in flight.
  */
+/** Display's own tracking at this size; the optical offset is derived from it
+ *  so the two can't drift apart. */
+private const val SAVE_LABEL_TRACKING_EM = 0.1f
+
 @Composable
 private fun SaveAction(enabled: Boolean, saving: Boolean, onClick: () -> Unit) {
     val active = enabled && !saving
@@ -309,7 +315,15 @@ private fun SaveAction(enabled: Boolean, saving: Boolean, onClick: () -> Unit) {
         if (saving) {
             CircularProgressIndicator(color = Stone, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
         } else {
-            Display(text = "Save", size = 13, color = if (enabled) Stone else Ash)
+            Display(
+                text = "Save",
+                size = 13,
+                color = if (enabled) Stone else Ash,
+                modifier = Modifier.opticallyCentredCaps(
+                    fontSize = 13.sp,
+                    letterSpacingEm = SAVE_LABEL_TRACKING_EM,
+                ),
+            )
         }
     }
 }
