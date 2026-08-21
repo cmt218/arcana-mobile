@@ -40,10 +40,22 @@ object SecureStorageDiagnostics {
     /** Android has no status code — it throws. Distinct from any real OSStatus. */
     const val STATUS_EXCEPTION: Int = Int.MIN_VALUE
 
+    /** Android: the store itself would not open, so it was rebuilt empty. Ranks
+     *  above [STATUS_EXCEPTION] in severity — every stored value was lost. */
+    const val STATUS_UNREADABLE: Int = Int.MIN_VALUE + 1
+
+    /** Sentinel for [Op.DISCARD], which is about the store rather than one entry.
+     *  Deliberately unlike any real key so it can't shadow one in [lastFailureFor]. */
+    const val KEY_WHOLE_STORE: String = "__store__"
+
     object Op {
         const val LOAD = "load"
         const val SAVE = "save"
         const val DELETE = "delete"
+
+        /** Android only: the encrypted store could not be opened at all and was
+         *  wiped so the app could start. Implies a sign-out on the next auth check. */
+        const val DISCARD = "discard"
     }
 
     /**

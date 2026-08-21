@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API <= 30. The encrypted store's Tink keyset lives inside this prefs file,
+     but the hardware key that decrypts it is device-bound and cannot be backed
+     up, so restoring the file elsewhere yields an unopenable store. Excluding it
+     means a restored install starts clean instead (ARCANA-ANDROID-9). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="arcana_secure_prefs.xml" />
+</full-backup-content>
