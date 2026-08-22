@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+. Device transfer needs the same exclusion as cloud backup: it was a
+     phone-to-phone transfer that shipped an undecryptable store and crash-looped
+     the app on launch (ARCANA-ANDROID-9). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="arcana_secure_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="arcana_secure_prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>
