@@ -29,13 +29,22 @@ enum TelemetryBootstrap {
         var analytics: Analytics? = nil
         var crashReporter: CrashReporter? = nil
 
-        let apiKey = TelemetryKeys.postHogApiKey
         #if DEBUG
-        if apiKey.isEmpty {
-            print("D/Telemetry: PostHog DISABLED — POSTHOG_API_KEY missing. Check that Secrets.xcconfig exists and Config.xcconfig is the project's config file.")
-        } else {
-            print("D/Telemetry: PostHog init — host=\(TelemetryKeys.postHogHost), key=\(apiKey.prefix(8))… (\(apiKey.count) chars)")
-        }
+        let isDebugBuild = true
+        #else
+        let isDebugBuild = false
+        #endif
+        // Shared with Android: only a release build talking to prod may report
+        // analytics. Sentry is exempt and only gets labelled.
+        let environment = TelemetryGate.shared.currentEnvironment()
+        let mayReportAnalytics = TelemetryGate.shared.shouldReportAnalytics(
+            isDebugBuild: isDebugBuild,
+            environment: environment
+        )
+
+        let apiKey = mayReportAnalytics ? TelemetryKeys.postHogApiKey : ""
+        #if DEBUG
+        print("D/Telemetry: PostHog DISABLED (environment=\(environment)). Console echo is unaffected.")
         #endif
         if !apiKey.isEmpty {
             let config = PostHogConfig(apiKey: apiKey, host: TelemetryKeys.postHogHost)
@@ -47,12 +56,6 @@ enum TelemetryBootstrap {
             config.sessionReplay = true
             config.sessionReplayConfig.maskAllTextInputs = true
             config.sessionReplayConfig.maskAllImages = true
-            // Debug builds: flush each event immediately so QA sees events in
-            // PostHog in real time. (Set config.debug = true here for verbose
-            // SDK delivery logs when troubleshooting.)
-            #if DEBUG
-            config.flushAt = 1
-            #endif
             PostHogSDK.shared.setup(config)
             // Super property on every event so the dashboard can break down /
             // filter by platform (iOS vs Android).
@@ -64,6 +67,11 @@ enum TelemetryBootstrap {
         if !dsn.isEmpty {
             SentrySDK.start { options in
                 options.dsn = dsn
+                // Reports from every build on purpose, so alert rules scope on this.
+                options.environment = TelemetryGate.shared.sentryEnvironment(
+                    isDebugBuild: isDebugBuild,
+                    environment: environment
+                )
                 options.tracesSampleRate = 0.2
             }
             crashReporter = SwiftCrashReporter()

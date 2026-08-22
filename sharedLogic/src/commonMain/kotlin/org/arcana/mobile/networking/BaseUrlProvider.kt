@@ -70,9 +70,14 @@ class BaseUrlProvider(
     val isOverridden: Boolean
         get() = _current.value != defaultUrl
 
-    private fun load(): String = storage.load(KEY)?.takeIf { it.isNotBlank() } ?: defaultUrl
+    private fun load(): String = storedUrl(storage, defaultUrl)
 
     companion object {
         private const val KEY = "base_url"
+
+        /** Resolve the persisted override without constructing the provider,
+         *  for callers that run before Koin (see [TelemetryGate]). */
+        fun storedUrl(storage: SecureStorage, defaultUrl: String): String =
+            storage.load(KEY)?.takeIf { it.isNotBlank() } ?: defaultUrl
     }
 }
