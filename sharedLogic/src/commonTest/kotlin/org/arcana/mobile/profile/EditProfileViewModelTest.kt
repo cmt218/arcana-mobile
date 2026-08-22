@@ -115,6 +115,26 @@ class EditProfileViewModelTest {
         )
     }
 
+    // Accounts predating the phone/gender/birthday requirement. Every field the
+    // claim-your-name form collects is required, so these members must backfill
+    // before any edit of theirs saves — the forced backfill is the point, not a
+    // defect (PROFILE-22, adjudicated 2026-08-22). If this test ever starts
+    // failing, the gate has been relaxed; re-read the card before "fixing" it.
+    @Test fun `a pre-requirement account must backfill before an unrelated edit saves`() = runTest {
+        val legacy = { profile().copy(phoneNumber = "", gender = "", birthday = null) }
+        val vm = EditProfileViewModel(FakeApi(getResult = legacy))
+
+        vm.updateCity("Queens")
+        assertFalse(vm.canSave.value, "an unrelated edit must not save around missing required fields")
+
+        vm.updatePhoneNumber("5559876543")
+        assertFalse(vm.canSave.value)
+        vm.updateGender("female")
+        assertFalse(vm.canSave.value)
+        vm.updateBirthday("05071990")
+        assertTrue(vm.canSave.value, "save should enable once every required field is filled in")
+    }
+
     @Test fun `save sends a trimmed PATCH with ISO birthday and transitions to Saved`() = runTest {
         val api = FakeApi(::profile)
         val vm = EditProfileViewModel(api)
