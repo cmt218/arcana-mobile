@@ -16,7 +16,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -46,8 +48,10 @@ import org.arcana.mobile.schedule.ScheduleScreen
 import org.arcana.mobile.session.AppSessionController
 import org.arcana.mobile.booking.MyBookingsScreen
 import org.arcana.mobile.concierge.ConciergeRequestScreen
+import org.arcana.mobile.signup.LeaveSignupDialog
 import org.arcana.mobile.signup.SignupCompletionScreen
 import org.arcana.mobile.signup.SignupCompletionViewModel
+import org.arcana.mobile.signup.SignupStep
 import org.arcana.mobile.signup.SignupSurveyScreen
 import org.arcana.mobile.signup.SignupSurveyViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
@@ -72,6 +76,7 @@ import org.koin.core.parameter.parametersOf
  *   succeeded, or the member chose "log in instead") so the platform can drop its
  *   pending-link reference and not re-deliver it.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun App(
     initialWelcomeToken: String? = null,
@@ -158,6 +163,13 @@ fun App(
             var surveyDone by remember(welcome) {
                 mutableStateOf(session.isSurveyDone(welcome))
             }
+
+            // Deep-link entry points with no previous screen: without a handler,
+            // back finishes the Activity and discards the member's answers.
+            // See NAV-13 in docs/regression/inventory.md.
+            var confirmLeaveSignup by rememberSaveable { mutableStateOf(false) }
+            BackHandler(enabled = !confirmLeaveSignup) { confirmLeaveSignup = true }
+
             if (!surveyDone) {
                 val surveyVm = koinViewModel<SignupSurveyViewModel>(key = "survey-$welcome") {
                     parametersOf(welcome)
@@ -195,6 +207,18 @@ fun App(
                     // lockedEmail stays null until the server token-preview endpoint lands.
                 )
             }
+            if (confirmLeaveSignup) {
+                LeaveSignupDialog(
+                    step = if (surveyDone) SignupStep.Claim else SignupStep.Survey,
+                    onStay = { confirmLeaveSignup = false },
+                    onLeave = {
+                        // Same local exit as "Log in instead"; no server call.
+                        confirmLeaveSignup = false
+                        session.consumeWelcomeToken()
+                        onWelcomeTokenConsumed()
+                    },
+                )
+            }
         } else {
             if (showPasswordReset) {
                 val resetVm = koinViewModel<PasswordResetRequestViewModel>(
@@ -203,6 +227,8 @@ fun App(
                     parametersOf(passwordResetInitialEmail)
                 }
                 LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.PASSWORD_RESET_REQUEST) }
+                // No confirm, unlike signup: nothing but an email is lost.
+                BackHandler { showPasswordReset = false }
                 PasswordResetRequestScreen(
                     viewModel = resetVm,
                     onBackToLogin = { showPasswordReset = false },
