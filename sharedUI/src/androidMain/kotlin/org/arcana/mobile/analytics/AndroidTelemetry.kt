@@ -6,6 +6,7 @@ import com.posthog.android.PostHogAndroid
 import com.posthog.android.PostHogAndroidConfig
 import io.sentry.android.core.SentryAndroid
 import org.arcana.mobile.BuildConfig
+import org.arcana.mobile.isDebugBuild
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
@@ -17,10 +18,13 @@ import org.koin.dsl.module
  *
  * When a key/DSN is blank (fresh clone / local dev without secrets configured)
  * the corresponding SDK is skipped and a no-op binding is used, so the app runs
- * unchanged with telemetry simply disabled.
+ * unchanged with telemetry simply disabled. PostHog is additionally gated on
+ * [TelemetryGate]: only a release build talking to prod may report.
  */
 fun androidTelemetryModule(context: Context): Module {
-    val posthogEnabled = BuildConfig.POSTHOG_API_KEY.isNotBlank()
+    val environment = TelemetryGate.currentEnvironment()
+    val posthogEnabled = TelemetryGate.shouldReportAnalytics(isDebugBuild, environment) &&
+        BuildConfig.POSTHOG_API_KEY.isNotBlank()
     val sentryEnabled = BuildConfig.SENTRY_DSN.isNotBlank()
 
     if (posthogEnabled) {
@@ -38,10 +42,6 @@ fun androidTelemetryModule(context: Context): Module {
             sessionReplay = true
             sessionReplayConfig.maskAllTextInputs = true
             sessionReplayConfig.maskAllImages = true
-            // Debug builds: send each event immediately (default batches ~20
-            // events / ~30s) so QA sees events in PostHog in real time. Release
-            // keeps the efficient default batching.
-            if (BuildConfig.DEBUG) flushAt = 1
         }
         PostHogAndroid.setup(context, config)
         // Super property on every event so the dashboard can break down / filter
@@ -52,6 +52,8 @@ fun androidTelemetryModule(context: Context): Module {
     if (sentryEnabled) {
         SentryAndroid.init(context) { options ->
             options.dsn = BuildConfig.SENTRY_DSN
+            // Reports from every build on purpose, so alert rules scope on this.
+            options.environment = TelemetryGate.sentryEnvironment(isDebugBuild, environment)
             // Low-rate performance tracing: app-start spans + manual network spans.
             options.tracesSampleRate = 0.2
         }
