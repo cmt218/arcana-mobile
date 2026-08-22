@@ -855,10 +855,10 @@ when adding a new annotation.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
 - **Platforms:** shared
 
-### PROFILE-22 — Required address fields block Save when blank
-- **Steps:** Clear "Street address", or "City", or "State", or "ZIP code" (each independently) while other fields are valid and dirty, and attempt Save.
-- **Expected:** Save stays disabled for each — `isValid` requires all four non-blank ("Apt / unit" is the one optional address field and does NOT block Save when blank).
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt
+### PROFILE-22 — Every field except Apt / unit blocks Save when blank
+- **Steps:** Clear each field independently while the rest are valid and dirty, and attempt Save: First name, Last name, Phone number, Gender, Birthday, Street address, City, State, ZIP code. Then separately, sign in as a member whose phone, gender or birthday was never captured (an account predating that field) and edit only an unrelated field such as City.
+- **Expected:** Save stays disabled in every case. "Apt / unit" is the single optional field and does NOT block Save when blank. This is deliberate and matches the claim-your-name form, which requires the same set: every profile created since that screen shipped has all of it, and nothing already captured may be unset. A member on a pre-requirement account must fill the missing field in before any edit of theirs saves; that forced backfill is the intent, not a defect (adjudicated 2026-08-22, Cole — see the PROFILE-22 card). The disabled Save is currently silent about which field is missing.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileViewModel.kt (`isValid`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt (`isValid`, the mirrored signup rules)
 - **Platforms:** shared
 
 ### PROFILE-23 — Save persists and closes back to Profile

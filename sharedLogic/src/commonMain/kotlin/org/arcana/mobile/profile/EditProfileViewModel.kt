@@ -14,8 +14,8 @@ import org.arcana.mobile.signup.SignupCompletionViewModel
 
 /**
  * Backs the "Edit your profile" screen. Loads the member's current profile,
- * pre-fills the same fields the claim-your-name flow collects (minus password
- * and phone), and PATCHes the changes. Save is gated on BOTH "something changed"
+ * pre-fills the same fields the claim-your-name flow collects (minus password),
+ * and PATCHes the changes. Save is gated on BOTH "something changed"
  * and "everything still valid" — mirroring the signup form's rules, so a member
  * can never blank out a required field. Reuses [SignupCompletionViewModel]'s pure
  * birthday/validation helpers verbatim so the two screens never drift.
@@ -151,8 +151,10 @@ class EditProfileViewModel(
 
     private fun isDirty(fields: Fields): Boolean = fields != original
 
-    /** Same rules as the signup form, minus password/phone: no required field may
-     *  be blanked, and the birthday must be a real date for a member 18 or older. */
+    /** Same rules as the signup form, minus password: every field it collects is
+     *  required, so none may be blanked and the birthday must be a real date for
+     *  a member 18 or older. Accounts predating a field (phone, gender, birthday)
+     *  must fill it in before any edit saves; that backfill is intended. */
     private fun isValid(f: Fields): Boolean {
         if (f.firstName.isBlank() || f.lastName.isBlank()) return false
         val displayLen = "${f.firstName.trim()} ${f.lastName.trim()}".trim().length
