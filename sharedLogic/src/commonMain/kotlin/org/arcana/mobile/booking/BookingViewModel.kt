@@ -65,7 +65,10 @@ class BookingViewModel(
     private fun studioIdOrNull() = studioContext.studioId.takeIf { it != 0 }
     private fun locationIdOrNull() = studioContext.locationId.takeIf { it != 0 }
 
-    private val _ctaState = MutableStateFlow(BookCta.NotBookable)
+    // Starts Unknown, not NotBookable: until /me answers we have no basis to
+    // say anything about the member's account. A failed cold load leaves this
+    // as-is; a failed refresh keeps whatever was last established.
+    private val _ctaState = MutableStateFlow(BookCta.Unknown)
     val ctaState: StateFlow<BookCta> = _ctaState
 
     private val _creditsRemaining = MutableStateFlow<Int?>(null)

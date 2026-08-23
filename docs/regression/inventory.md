@@ -605,10 +605,10 @@ when adding a new annotation.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`bookCtaState`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`load`)
 - **Platforms:** shared
 
-### CLASS-14 — No active membership CTA state
-- **Steps:** Open detail as a member with no current/usable membership period.
-- **Expected:** `bookCtaState` resolves `BookCta.NotBookable` ("NO ACTIVE MEMBERSHIP"); the sticky CTA renders as a single centered line with no time/day sub-stamp (`showCtaSubStamp = false`) and is disabled.
-- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`BookCta.NotBookable`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`showCtaSubStamp`)
+### CLASS-14 — No-active-membership CTA, and the unknown state it must not be confused with
+- **Steps:** (a) Open detail as a member with no current/usable membership period. (b) Open detail as a member whose membership IS fine, but with the FIRST `/memberships/me` fetch failing — fail only that endpoint so the session and class detail still load (a full outage shows FullScreenError instead and does not exercise this). Then restore the endpoint and reopen.
+- **Expected:** (a) `bookCtaState` resolves `BookCta.NotBookable` ("NO ACTIVE MEMBERSHIP"). (b) the CTA reads `BookCta.Unknown` ("BOOKING UNAVAILABLE"), NOT "NO ACTIVE MEMBERSHIP": a failed fetch establishes nothing about the account, so the button must not claim the member has no membership. The `ErrorSnackbar` ("Couldn't refresh" + Retry) appears alongside it, and reopening with the endpoint healthy resolves to a real evaluated state. Both render as a single centered line with no time/day sub-stamp (`showCtaSubStamp = false`) and are disabled. Superseded 2026-08-23: `_ctaState` previously defaulted to `NotBookable`, so a failed cold fetch fell through to it and stated something false about a paying member's account.
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`BookCta.NotBookable`, `BookCta.Unknown`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`_ctaState` initial value, `membershipLoadFailed`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`showCtaSubStamp`)
 - **Platforms:** shared
 
 ### CLASS-15 — Outside-membership-window CTA state
