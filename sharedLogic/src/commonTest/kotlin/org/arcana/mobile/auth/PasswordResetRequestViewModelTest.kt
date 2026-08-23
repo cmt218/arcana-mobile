@@ -34,6 +34,37 @@ class PasswordResetRequestViewModelTest {
         assertTrue(vm.canSubmit)
     }
 
+    // The screen calls resetState() on every entry. This ViewModel is keyed on
+    // the prefilled email and outlives the screen, so re-entering after a
+    // successful send would otherwise show the stale "Sent" confirmation with
+    // no way to request a second link (AUTH-14).
+    @Test fun `re-entering after a send is back to a fresh form`() = runTest {
+        val vm = PasswordResetRequestViewModel(FakeApi(), initialEmail = "member@example.com")
+        vm.submit()
+        assertEquals(PasswordResetSubmit.Sent, vm.submitState.value)
+
+        vm.resetState()
+
+        assertEquals(PasswordResetSubmit.Idle, vm.submitState.value)
+        assertEquals("member@example.com", vm.email.value)
+        assertTrue(vm.canSubmit, "the member must be able to request another link")
+    }
+
+    @Test fun `reset restores the prefill, not whatever was last typed`() {
+        val vm = PasswordResetRequestViewModel(FakeApi(), initialEmail = "member@example.com")
+        vm.updateEmail("typo@example.com")
+        vm.resetState()
+        assertEquals("member@example.com", vm.email.value)
+    }
+
+    @Test fun `reset clears a failed attempt too`() = runTest {
+        val vm = PasswordResetRequestViewModel(FakeApi(RuntimeException("boom")), initialEmail = "member@example.com")
+        vm.submit()
+        assertEquals(PasswordResetSubmit.Failed, vm.submitState.value)
+        vm.resetState()
+        assertEquals(PasswordResetSubmit.Idle, vm.submitState.value)
+    }
+
     @Test fun `successful submit trims email and transitions to sent`() = runTest {
         val api = FakeApi()
         val vm = PasswordResetRequestViewModel(api)
