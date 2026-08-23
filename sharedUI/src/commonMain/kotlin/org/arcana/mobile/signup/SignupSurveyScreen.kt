@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.BurntNectar
@@ -88,7 +89,7 @@ fun SignupSurveyScreen(
         WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
 
         Spacer(Modifier.height(44.dp))
-        Overline(text = "Step 01 · Your training profile", color = Moss)
+        Overline(text = "Step 01 · Your training profile", color = Moss, maxLines = Int.MAX_VALUE)
         Spacer(Modifier.height(14.dp))
         Display(text = "Before\nyou join.", size = 52, color = Ink)
         Spacer(Modifier.height(18.dp))
@@ -105,7 +106,7 @@ fun SignupSurveyScreen(
             if (question.section != lastSection) {
                 lastSection = question.section
                 Spacer(Modifier.height(12.dp))
-                Overline(text = question.section, color = Moss)
+                Overline(text = question.section, color = Moss, maxLines = Int.MAX_VALUE)
                 Spacer(Modifier.height(20.dp))
             }
             SurveyQuestionBlock(
@@ -127,6 +128,7 @@ fun SignupSurveyScreen(
             text = "${answeredCount(state.answers)} of ${SURVEY_QUESTIONS.size} answered",
             size = 10,
             color = Graphite,
+            maxLines = Int.MAX_VALUE,
         )
         Spacer(Modifier.height(12.dp))
         if (state.isSubmitting) {
@@ -175,12 +177,16 @@ private fun SurveyQuestionBlock(
         text = "Q${question.n}$optionalStamp",
         size = 10,
         color = Graphite,
+        maxLines = Int.MAX_VALUE,
     )
     Spacer(Modifier.height(8.dp))
     BodyText(text = question.label, size = 16, color = Ink)
     question.hint?.let {
         Spacer(Modifier.height(4.dp))
-        Caption(text = it, color = Ash)
+        // Prose, not a stamp: Caption defaults to one ellipsised line, which
+        // hid the end of longer hints on narrower phones. A member cannot
+        // answer a question they can only half read.
+        Caption(text = it, color = Ash, maxLines = Int.MAX_VALUE, overflow = TextOverflow.Clip)
     }
     Spacer(Modifier.height(14.dp))
 
