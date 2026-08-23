@@ -40,6 +40,14 @@ class DeveloperSettingsViewModel(
     val isOverridden: Boolean
         get() = baseUrlProvider.isOverridden
 
+    /** Re-sync the draft with what is actually persisted. The screen is a
+     *  composition toggle, not a nav destination, so this ViewModel outlives it
+     *  and a discarded edit would otherwise reappear as if it were live. */
+    fun resetState() {
+        _draft.value = baseUrlProvider.get()
+        _status.value = Status.Idle
+    }
+
     fun onDraftChange(value: String) {
         _draft.value = value
         if (_status.value !is Status.Idle) _status.value = Status.Idle
