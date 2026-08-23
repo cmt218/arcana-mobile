@@ -42,6 +42,72 @@ class ProfileViewModelTest {
 
     private fun vm(api: MembershipApi) = ProfileViewModel(api, FavoritesRepository(FakeFavoritesApi()))
 
+    /** Fails until [failing] is flipped off, so a retry can be made to succeed. */
+    private class FlakyFavoritesApi(var failing: Boolean = true) : FavoritesApi {
+        var calls = 0
+        override suspend fun fetchStudios(): List<StudioDto> = emptyList()
+        override suspend fun fetchFavorites(): FavoritesDto {
+            calls++
+            if (failing) throw ApiHttpError(500)
+            return FavoritesDto()
+        }
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
+            FavoritesDto()
+    }
+
+    /** The bug: a failed favorites fetch with nothing cached left `favorites`
+     *  null, which the screen renders as "still loading" — a shimmer that never
+     *  resolves. It has to be distinguishable from not-loaded-yet. */
+    @Test fun `favorites failure with no cache is an error, not endless loading`() = runTest {
+        val favApi = FlakyFavoritesApi()
+        val vm = ProfileViewModel(FakeApi(meDto), FavoritesRepository(favApi))
+        vm.load()
+        advanceUntilIdle()
+
+        assertNull(vm.favorites.value, "nothing cached to show")
+        assertEquals(ErrorType.SERVER, vm.favoritesError.value)
+        assertTrue(vm.uiState.value is ProfileUiState.Success, "the profile itself must still load")
+    }
+
+    @Test fun `retrying favorites clears the error and shows the section`() = runTest {
+        val favApi = FlakyFavoritesApi()
+        val vm = ProfileViewModel(FakeApi(meDto), FavoritesRepository(favApi))
+        vm.load()
+        advanceUntilIdle()
+        assertEquals(ErrorType.SERVER, vm.favoritesError.value)
+
+        favApi.failing = false
+        vm.retryFavorites()
+        advanceUntilIdle()
+
+        assertNull(vm.favoritesError.value)
+        assertEquals(FavoritesDto(), vm.favorites.value)
+    }
+
+    /** Stale favorites beat no favorites: with a cached value the section keeps
+     *  rendering it, which is why the repository swallows failures at all. */
+    @Test fun `a later failure with cached favorites shows no error`() = runTest {
+        val favApi = FlakyFavoritesApi(failing = false)
+        val vm = ProfileViewModel(FakeApi(meDto), FavoritesRepository(favApi))
+        vm.load()
+        advanceUntilIdle()
+        assertNull(vm.favoritesError.value)
+
+        favApi.failing = true
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertNull(vm.favoritesError.value, "cached favorites are still on screen")
+        assertEquals(FavoritesDto(), vm.favorites.value)
+    }
+
+    @Test fun `a favorites failure never blocks the profile`() = runTest {
+        val vm = ProfileViewModel(FakeApi(meDto), FavoritesRepository(FlakyFavoritesApi()))
+        vm.load()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value is ProfileUiState.Success)
+    }
+
     @Test fun `loads profile fields`() = runTest {
         val vm = vm(FakeApi(meDto))
         vm.load()

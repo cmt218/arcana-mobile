@@ -62,6 +62,29 @@ class ProfileViewModel(
     private val _retrying = MutableStateFlow(false)
     val retrying: StateFlow<Boolean> = _retrying
 
+    /** Set only when the favorites fetch failed AND there is nothing cached to
+     *  show. With a cached value we keep showing it, which is the whole point of
+     *  the repository swallowing failures. Without this the section had no way
+     *  to say it failed and shimmered as though still loading. */
+    private val _favoritesError = MutableStateFlow<ErrorType?>(null)
+    val favoritesError: StateFlow<ErrorType?> = _favoritesError
+
+    private val _favoritesRetrying = MutableStateFlow(false)
+    val favoritesRetrying: StateFlow<Boolean> = _favoritesRetrying
+
+    /** Retry just the favorites section, leaving the rest of the profile alone. */
+    fun retryFavorites() {
+        if (_favoritesRetrying.value) return
+        _favoritesRetrying.value = true
+        viewModelScope.launch {
+            try {
+                fetchFavorites()
+            } finally {
+                _favoritesRetrying.value = false
+            }
+        }
+    }
+
     fun load() {
         viewModelScope.launch { fetch() }
     }
@@ -84,6 +107,15 @@ class ProfileViewModel(
         _refreshFailed.value = false
     }
 
+    /** Runs alongside the membership fetch and never blocks it: a favorites
+     *  hiccup must not take down the profile. */
+    private suspend fun fetchFavorites() {
+        val outcome = favoritesRepository.refreshCatching()
+        _favoritesError.value = outcome.exceptionOrNull()
+            ?.takeIf { favorites.value == null }
+            ?.toErrorType()
+    }
+
     /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
      *  current content visible (and untouched on a transient failure). */
     fun refresh() {
@@ -98,10 +130,7 @@ class ProfileViewModel(
     }
 
     private suspend fun fetch() {
-        // Refresh favorites alongside the membership fetch. The repository
-        // swallows failures (keeps the prior cached value), so a favorites
-        // hiccup never blocks the profile itself.
-        favoritesRepository.refresh()
+        fetchFavorites()
         try {
             val me = api.membershipMe()
             // Identify on the first /me of every authenticated launch. This VM's

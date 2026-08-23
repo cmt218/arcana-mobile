@@ -71,6 +71,7 @@ import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.IconCircle
+import org.arcana.mobile.ui.InlineError
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
@@ -126,6 +127,8 @@ fun ProfileScreen(
     val refreshFailed by vm.refreshFailed.collectAsState()
     val retrying by vm.retrying.collectAsState()
     val favorites by vm.favorites.collectAsState()
+    val favoritesError by vm.favoritesError.collectAsState()
+    val favoritesRetrying by vm.favoritesRetrying.collectAsState()
     val deleteVm = koinViewModel<DeleteAccountViewModel>()
     val deleteState by deleteVm.state.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -219,6 +222,19 @@ fun ProfileScreen(
         stoneItem { Spacer(Modifier.height(16.dp)) }
         val favoriteLabels = favorites?.let(::favoriteRowLabels)
         when {
+            // Failed with nothing cached. Its own inline card, like a failed
+            // schedule day: the rest of the profile stays live, and the section
+            // says so instead of shimmering as though it were still loading.
+            favoritesError != null -> stoneItem {
+                InlineError(
+                    type = favoritesError!!,
+                    onRetry = vm::retryFavorites,
+                    retrying = favoritesRetrying,
+                    // Same insets as the shimmer it replaces, so the section
+                    // does not shift when a load fails.
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                )
+            }
             // Not loaded yet — shimmer a single row-sized placeholder,
             // matching the hero's shimmer treatment.
             favoriteLabels == null -> stoneItem {
