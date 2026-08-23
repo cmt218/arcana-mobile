@@ -1332,10 +1332,10 @@ today.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`debugLog`, `isDebugBuild` gate, `LOG_TAG`), sharedUI/src/androidMain/kotlin/org/arcana/mobile/analytics/AndroidTelemetry.kt
 - **Platforms:** shared
 
-### TEL-21 — Edit Profile (and Developer Settings) fire no $screen event
-- **Steps:** From Profile, open Edit Profile (PROFILE-11); watch the debug telemetry echo for a `$screen` event. Separately, open Developer Settings (DEVSET-01/AUTH-13).
-- **Expected:** No `$screen` event fires for either screen. `currentScreenName` (App.kt lines 342-351) enumerates Home, Schedule, Profile, StudioSelection, MyBookings, ConciergeRequest, and ClassDetail, but has no `ArcanaDestination.EditProfile` branch, and `Telemetry.Screens` has no `EDIT_PROFILE` constant — `MainScaffold`'s `if (screenName != null) telemetry.screen(...)` effect simply skips firing, silently leaving whatever screen name was last recorded in place. Developer Settings is not a NavHost destination at all (a plain `var`, see NAV-12) and was never in scope for this mechanism to begin with.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, lines 342-351), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens`, line 573), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
+### TEL-21 — Edit Profile fires $screen; Developer Settings deliberately does not
+- **Steps:** From Profile, open Edit Profile (PROFILE-11) and watch the debug telemetry echo (TEL-20) for a `$screen` event, then close it and watch again. Separately open Developer Settings (DEVSET-01/AUTH-13) and watch.
+- **Expected:** Opening Edit Profile emits `$screen EditProfile`, and closing it back to Profile re-emits `$screen Profile` (the name genuinely changed, same as returning from ClassDetail). Developer Settings emits nothing, on purpose: it is not a NavHost destination at all (a plain `var`, see NAV-12), it is a dev-only screen with no visible entry point, and it was deliberately left out of scope. The tab bar stays hidden on Edit Profile throughout (NAV-04): the iOS shell's at-root test compares `currentScreenName` against Home/Schedule/Profile only, so naming the screen does not reveal the bar.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens.EDIT_PROFILE`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/EditProfileScreen.kt, sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`atRoot`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
 - **Platforms:** shared
 
 ### TEL-22 — PostHog initializes only in a release build talking to prod

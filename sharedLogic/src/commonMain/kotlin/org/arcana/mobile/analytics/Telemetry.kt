@@ -577,6 +577,7 @@ class Telemetry(
         const val STUDIO_SELECTION = "StudioSelection"
         const val MY_BOOKINGS = "MyBookings"
         const val CONCIERGE_REQUEST = "ConciergeRequest"
+        const val EDIT_PROFILE = "EditProfile"
         const val CLASS_DETAIL = "ClassDetail"
         const val AUTH = "Auth"
         const val PASSWORD_RESET_REQUEST = "PasswordResetRequest"

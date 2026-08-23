@@ -373,6 +373,7 @@ internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest.hasRoute<ArcanaDestination.StudioSelection>() -> Telemetry.Screens.STUDIO_SELECTION
     dest.hasRoute<ArcanaDestination.MyBookings>() -> Telemetry.Screens.MY_BOOKINGS
     dest.hasRoute<ArcanaDestination.ConciergeRequest>() -> Telemetry.Screens.CONCIERGE_REQUEST
+    dest.hasRoute<ArcanaDestination.EditProfile>() -> Telemetry.Screens.EDIT_PROFILE
     dest.hasRoute<ArcanaDestination.ClassDetail>() -> Telemetry.Screens.CLASS_DETAIL
     else -> null
 }
