@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -73,6 +72,7 @@ import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import org.koin.compose.viewmodel.koinViewModel
 
 // ── Max upcoming rows shown below the hero card ────────────────────────────────
@@ -91,7 +91,16 @@ fun HomeScreen(
     onOpenClass: (Int) -> Unit,
 ) {
     val vm = koinViewModel<HomeViewModel>()
-    LaunchedEffect(Unit) { vm.load() }
+    // Refetch on every return to the foreground, notably an iOS tab switch back
+    // from Schedule after booking: tab compositions persist there, so the
+    // LaunchedEffect this replaces never re-ran and credits stayed stale.
+    // Replaces rather than joins it, so Android still fetches once per return.
+    // HomeViewModel conflates and rate-limits these, so flipping tabs fast
+    // cannot spray requests.
+    LifecycleResumeEffect(Unit) {
+        vm.load()
+        onPauseOrDispose { }
+    }
     val state by vm.uiState.collectAsState()
     val refreshing by vm.isRefreshing.collectAsState()
     val retrying by vm.retrying.collectAsState()
