@@ -73,7 +73,8 @@ class LoginError(val statusCode: Int) : Exception("login_failed_$statusCode")
  *
  * Grouping is per exception class, so forced logouts get their own Sentry issue
  * rather than sharing one with every other Kotlin nonfatal; `cause` is attached
- * as a tag, so filter on it to separate `refresh_missing` from `refresh_error`.
+ * as a tag, though `refresh_error` is now the only value: an affirmative server
+ * rejection is the sole thing that may end a session.
  * On iOS that depends on `SwiftCrashReporter` deriving the NSError domain from
  * this type — Sentry titles and groups NSError by domain+code, so hardcoding
  * either one silently merges unrelated issues.
@@ -153,7 +154,17 @@ class ArcanaApiClient(
                 refreshTokens {
                     val refresh = tokenStorage.refreshToken
                         ?: run {
-                            forceLogout("refresh_missing")
+                            // A null read is not a rejection. The server never
+                            // said the token was bad, so this is as unproven as
+                            // a timeout: keep the session and let the next
+                            // request retry, like every other branch below.
+                            val failure = SecureStorageDiagnostics
+                                .lastFailureFor(TokenStorage.REFRESH_TOKEN_KEY)
+                            telemetry.authRefreshFailed(
+                                Telemetry.RefreshFailureOutcome.NO_STORED_REFRESH,
+                                osStatus = failure?.status,
+                                storageOp = failure?.op,
+                            )
                             return@refreshTokens null
                         }
                     // A refresh fails two very different ways: the server *rejects*
@@ -200,9 +211,13 @@ class ArcanaApiClient(
                             // logout, so report it (behavior unchanged).
                             val stored = tokenStorage.refreshToken
                             if (stored == null) {
+                                val failure = SecureStorageDiagnostics
+                                    .lastFailureFor(TokenStorage.REFRESH_TOKEN_KEY)
                                 telemetry.authRefreshFailed(
                                     Telemetry.RefreshFailureOutcome.STORED_REFRESH_MISSING,
                                     response.status.value,
+                                    osStatus = failure?.status,
+                                    storageOp = failure?.op,
                                 )
                                 return@refreshTokens null
                             }

@@ -272,10 +272,24 @@ class Telemetry(
      * failure — a successful silent refresh stays unreported, per the volume
      * note above. [outcome] is one of [RefreshFailureOutcome].
      */
-    fun authRefreshFailed(outcome: String, statusCode: Int? = null) =
+    fun authRefreshFailed(
+        outcome: String,
+        statusCode: Int? = null,
+        osStatus: Int? = null,
+        storageOp: String? = null,
+    ) =
         track(
             Events.AUTH_REFRESH_FAILED,
-            mapOf("outcome" to outcome, "status_code" to statusCode),
+            mapOf(
+                "outcome" to outcome,
+                "status_code" to statusCode,
+                // Carried on the storage-shaped outcomes only. `forced_logout`
+                // used to be the only event with these, so leaving them off
+                // here would make a no-longer-fatal storage miss less
+                // observable than the logout it replaced.
+                "storage_os_status" to osStatus,
+                "storage_op" to storageOp,
+            ),
         )
 
     // ---- Class view → booking funnel -------------------------------------
@@ -513,6 +527,13 @@ class Telemetry(
          * silently, leaving the client with no usable token and no trace.
          */
         const val STORED_REFRESH_MISSING = "stored_refresh_missing"
+        /**
+         * There was no refresh token to send in the first place: a 401 arrived,
+         * so an access token existed, but the paired refresh read back null.
+         * Kept separate from [STORED_REFRESH_MISSING], which is the same read
+         * failing straight after a successful write. Session kept.
+         */
+        const val NO_STORED_REFRESH = "no_stored_refresh"
     }
 
     object Events {

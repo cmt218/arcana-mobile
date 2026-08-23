@@ -23,6 +23,7 @@ import platform.Foundation.NSData
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
+import platform.Security.SecItemUpdate
 import platform.Security.errSecItemNotFound
 import platform.Security.errSecSuccess
 import platform.Security.kSecAttrAccessible
@@ -42,25 +43,41 @@ actual class SecureStorage actual constructor() {
 
     private val service = "org.arcana.mobile"
 
+    /**
+     * Update in place, adding only when the item does not exist yet.
+     *
+     * This used to delete then add, which is not atomic: a failed add left the
+     * slot permanently empty because the old value was already gone. Items are
+     * [kSecAttrAccessibleWhenUnlockedThisDeviceOnly], so a write from a locked
+     * device is rejected outright, and rotating refresh tokens rewrites this
+     * every few minutes including from the background. Losing the token that
+     * way signed members out for good. A failed update now leaves the previous
+     * value intact, so the worst case is a stale token the server will refuse,
+     * which is recoverable.
+     */
     actual fun save(key: String, value: String) {
-        delete(key)
         val bytes = value.encodeToByteArray()
         bytes.usePinned { pinned ->
             val cfData = CFDataCreate(null, pinned.addressOf(0).reinterpret(), bytes.size.toLong())!!
-            val query = buildQuery(key, capacity = 5)
-            CFDictionaryAddValue(query, kSecValueData, cfData)
-            CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
-            // This add is NOT atomic with the delete above: if it fails, the old
-            // value is already gone and the slot is left empty. The status was
-            // previously discarded, which is why a lost token was invisible.
-            // Report it (behavior unchanged — a failed write still silently
-            // leaves no value; fixing that is the follow-up change).
-            val status = SecItemAdd(query, null)
+            val query = buildQuery(key, capacity = 3)
+            val attributes = CFDictionaryCreateMutable(null, 1, null, null)!!
+            CFDictionaryAddValue(attributes, kSecValueData, cfData)
+            var status = SecItemUpdate(query, attributes)
+            if (status == errSecItemNotFound) {
+                // First write for this key. Accessibility is fixed at add time,
+                // which is why it is set here and not on the update above.
+                val addQuery = buildQuery(key, capacity = 5)
+                CFDictionaryAddValue(addQuery, kSecValueData, cfData)
+                CFDictionaryAddValue(addQuery, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+                status = SecItemAdd(addQuery, null)
+                CFRelease(addQuery)
+            }
             if (status != errSecSuccess) {
                 SecureStorageDiagnostics.report(SecureStorageDiagnostics.Op.SAVE, key, status)
             }
-            CFRelease(cfData)
+            CFRelease(attributes)
             CFRelease(query)
+            CFRelease(cfData)
         }
     }
 
@@ -108,8 +125,8 @@ actual class SecureStorage actual constructor() {
     actual fun delete(key: String) {
         val query = buildQuery(key, capacity = 3)
         val status = SecItemDelete(query)
-        // errSecItemNotFound is the normal "nothing to remove" case — save()
-        // always deletes first — so reporting it would be pure noise.
+        // errSecItemNotFound is the normal "nothing to remove" case (clearing a
+        // session that was never written), so reporting it would be noise.
         if (status != errSecSuccess && status != errSecItemNotFound) {
             SecureStorageDiagnostics.report(SecureStorageDiagnostics.Op.DELETE, key, status)
         }

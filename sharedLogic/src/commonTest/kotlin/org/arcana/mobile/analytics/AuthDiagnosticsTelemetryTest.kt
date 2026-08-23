@@ -22,6 +22,39 @@ class AuthDiagnosticsTelemetryTest {
 
     @AfterTest fun tearDown() = SecureStorageDiagnostics.resetForTest()
 
+    /** A 401 arrived (so an access token existed) but the paired refresh read
+     *  back null. That is unproven, not a rejection, so it must report and keep
+     *  the session — never forceLogout. Carrying the OSStatus matters: this
+     *  path used to emit `forced_logout`, which was the only event with it. */
+    @Test
+    fun noStoredRefreshReportsStorageContextWithoutLoggingOut() {
+        val (telemetry, analytics, _) = fakeTelemetry()
+
+        telemetry.authRefreshFailed(
+            Telemetry.RefreshFailureOutcome.NO_STORED_REFRESH,
+            osStatus = -25308, // errSecInteractionNotAllowed — device was locked
+            storageOp = SecureStorageDiagnostics.Op.LOAD,
+        )
+
+        val event = analytics.first(Telemetry.Events.AUTH_REFRESH_FAILED)
+        assertEquals("no_stored_refresh", event?.properties?.get("outcome"))
+        assertEquals(-25308, event?.properties?.get("storage_os_status"))
+        assertEquals("load", event?.properties?.get("storage_op"))
+        assertNull(
+            analytics.first(Telemetry.Events.FORCED_LOGOUT),
+            "a null storage read must not sign the member out",
+        )
+    }
+
+    /** The two storage-shaped outcomes answer different questions: nothing to
+     *  send, versus the rotated token vanishing right after a successful write.
+     *  Collapsing them would hide which one is happening. */
+    @Test
+    fun theTwoStorageOutcomesStaySeparate() {
+        assertEquals("no_stored_refresh", Telemetry.RefreshFailureOutcome.NO_STORED_REFRESH)
+        assertEquals("stored_refresh_missing", Telemetry.RefreshFailureOutcome.STORED_REFRESH_MISSING)
+    }
+
     @Test
     fun forcedLogoutCarriesStorageContext() {
         val (telemetry, analytics, _) = fakeTelemetry()
