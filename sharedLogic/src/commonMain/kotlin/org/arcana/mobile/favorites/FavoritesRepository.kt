@@ -21,6 +21,20 @@ class FavoritesRepository(private val api: FavoritesApi) {
     private val _favorites = MutableStateFlow<FavoritesDto?>(null)
     val favorites: StateFlow<FavoritesDto?> = _favorites
 
+    /**
+     * Like [refresh], but hands the failure back instead of swallowing it, for
+     * callers that render their own failure state. Still caches on success, so
+     * the two entry points cannot diverge.
+     */
+    suspend fun refreshCatching(): Result<FavoritesDto> = try {
+        Result.success(api.fetchFavorites().also { _favorites.value = it })
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logWarning("FavoritesRepository", e.message ?: "favorites fetch failed")
+        Result.failure(e)
+    }
+
     /** Fetch from the server. On failure, keeps (and returns) the prior
      *  cached value — stale favorites beat no favorites for filter UX. */
     suspend fun refresh(): FavoritesDto? = try {
