@@ -17,7 +17,7 @@ sealed interface PasswordResetSubmit {
 
 class PasswordResetRequestViewModel(
     private val api: PasswordResetApi,
-    initialEmail: String = "",
+    private val initialEmail: String = "",
 ) : ViewModel() {
 
     private val _email = MutableStateFlow(initialEmail)
@@ -25,6 +25,15 @@ class PasswordResetRequestViewModel(
 
     private val _submitState = MutableStateFlow<PasswordResetSubmit>(PasswordResetSubmit.Idle)
     val submitState: StateFlow<PasswordResetSubmit> = _submitState
+
+    /** Back to a fresh form. This ViewModel is keyed on the prefilled email and
+     *  outlives the screen, so without this a member returning to request a
+     *  second link is met by the previous "Sent" confirmation with no way to
+     *  resubmit. Mirrors AuthScreen's own reset-on-entry. */
+    fun resetState() {
+        _email.value = initialEmail
+        _submitState.value = PasswordResetSubmit.Idle
+    }
 
     fun updateEmail(value: String) {
         _email.value = value
