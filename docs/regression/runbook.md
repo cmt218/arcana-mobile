@@ -497,7 +497,7 @@ own (`ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`)`). So:
    backticks, and `test -f` each resulting repo-relative path.
 
 Sanity-check the extractor before trusting its output: on a clean tree it
-should yield **83 unique paths from 501 comma-split tokens across 226 Source
+should yield **83 unique paths from 502 comma-split tokens across 226 Source
 lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-08-11, 2026-08-15, 2026-08-16 (after
 `feature/error-states-completion` added ERR-21/ERR-22), and 2026-08-19 (after

@@ -91,8 +91,35 @@ class BookingViewModelTest {
         val failing = FailingMeApi(serverException(500))
         val vm2 = BookingViewModel(sessionId = 482, spotsAvailable = 5, requiresSpot = false, bookingApi = failing, membershipApi = failing)
         vm2.load()
-        assertEquals(BookCta.NotBookable, vm2.ctaState.value, "cold failure falls back to the default")
+        assertEquals(
+            BookCta.Unknown,
+            vm2.ctaState.value,
+            "a cold failure knows nothing; it must not claim the member has no membership",
+        )
         assertEquals(true, vm2.membershipLoadFailed.value)
+    }
+
+    /** The bug: a failed first fetch used to land on NotBookable, whose label is
+     *  "NO ACTIVE MEMBERSHIP" — a false statement about a paying member's
+     *  account, shown at the moment they are trying to book. */
+    @Test fun `a cold membership failure never claims the member has no membership`() = runTest {
+        val failing = FailingMeApi(serverException(500))
+        val vm = BookingViewModel(sessionId = 482, spotsAvailable = 5, requiresSpot = false, bookingApi = failing, membershipApi = failing)
+        vm.load()
+
+        assertEquals(BookCta.Unknown, vm.ctaState.value)
+        assertNotEquals(BookCta.NotBookable.label, vm.ctaState.value.label)
+        assertEquals(false, vm.ctaState.value.enabled, "unknown must never be actionable")
+        assertEquals(true, vm.loaded.value, "must not spin forever")
+    }
+
+    /** The opposite case still has to work: a member who genuinely has no usable
+     *  membership is told so, because that IS established. */
+    @Test fun `a member with no usable period still gets NO ACTIVE MEMBERSHIP`() = runTest {
+        val api = FakeApi(me(remaining = 10).copy(currentPeriod = null, upcomingPeriod = null))
+        val vm = BookingViewModel(sessionId = 482, spotsAvailable = 5, requiresSpot = false, bookingApi = api, membershipApi = api)
+        vm.load()
+        assertEquals(BookCta.NotBookable, vm.ctaState.value)
     }
 
     @Test fun `loads eligibility - bookable`() = runTest {

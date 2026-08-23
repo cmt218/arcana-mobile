@@ -463,7 +463,8 @@ private fun SuccessBlock(
             // The no-active-membership state reads as one clear line — drop the
             // time/day sub-stamp. It's the only state that renders NotBookable's
             // label (past/booked/out-of-window/not-open all take precedence above).
-            val showCtaSubStamp = ctaLabel != BookCta.NotBookable.label
+            val showCtaSubStamp =
+                ctaLabel != BookCta.NotBookable.label && ctaLabel != BookCta.Unknown.label
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
