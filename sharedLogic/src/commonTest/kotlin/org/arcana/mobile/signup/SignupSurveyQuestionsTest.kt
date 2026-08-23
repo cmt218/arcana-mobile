@@ -15,12 +15,33 @@ import kotlin.test.assertTrue
  */
 class SignupSurveyQuestionsTest {
 
+    /** Brand rule: no em/en dashes in member-facing copy. Numeric ranges
+     *  ("3–4", "$200–$350", "8–11am") are the one exception — an en dash is
+     *  correct typography there, so this allows one only between digits. */
+    @Test fun `no AI-tell dashes in any member-facing survey string`() {
+        // A range's en dash always follows a digit ("3–4", "$200–$350",
+        // "8–11am"); a prose one follows a space. That is the whole rule.
+        val numericRange = Regex("[0-9]\u2013")
+        fun check(what: String, text: String) {
+            assertFalse(text.contains('—'), "em dash in $what: $text")
+            val strayEnDashes = text.count { it == '–' } - numericRange.findAll(text).count()
+            assertEquals(0, strayEnDashes, "non-numeric en dash in $what: $text")
+        }
+        SURVEY_QUESTIONS.forEach { q ->
+            check("label ${q.id}", q.label)
+            q.hint?.let { check("hint ${q.id}", it) }
+            q.options.forEach { check("option ${q.id}", it) }
+            q.section.let { check("section ${q.id}", it) }
+        }
+    }
+
+
     private fun completeAnswers() = SurveyAnswers(
         singles = mapOf(
             "weeklyFrequency" to "3–4",
             "communityState" to "I mostly train solo",
             "monthlySpend" to "$350–$500",
-            "soloOrSocial" to "Either — depends on the studio",
+            "soloOrSocial" to "Either, depends on the studio",
             "referralIntent" to "Not yet",
             "howHeard" to "Instagram",
         ),

@@ -9,11 +9,13 @@ import kotlinx.serialization.json.JsonPrimitive
  * the claim-your-name screen (August cohort+). Previously asked on the /beta
  * web page before checkout; moved here to keep the purchase flow frictionless.
  *
- * 1:1 PORT of arcana-web `app/beta/survey.ts` (`SURVEY_QUESTIONS`) — ids,
- * option strings, order, and the `__other` suffix must stay IDENTICAL so the
- * server's Google-Sheet mirror lines up under the July web survey's columns
- * (see arcana-server `memberships/survey_views.py`). Change them only in
- * lockstep with that file.
+ * Originally a 1:1 port of arcana-web `app/beta/survey.ts`. That survey is
+ * retired and this is now the only one, so the copy no longer has to match it;
+ * reword freely. **Ids, order, and the `__other` suffix still must not change**
+ * — the server's Google-Sheet mirror keys its columns off them (arcana-server
+ * `memberships/survey_views.py`). Option TEXT is stored as the answer value, so
+ * rewording one splits that column's history across two spellings; acceptable
+ * (the responses are read by eye), but do it knowingly.
  *
  * Required policy (per founder): every question is required EXCEPT the two
  * final open-floor questions (`anythingElse`, `referredBy`). For `howHeard`,
@@ -144,7 +146,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
         n = 7,
         section = "You and your community",
         label = "Outside your regular classes, which of these would you actually show up for?",
-        hint = "Select all that apply — be honest, not aspirational",
+        hint = "Select all that apply. Be honest, not aspirational.",
         type = SurveyQuestionType.Multi,
         options = listOf(
             "Group run",
@@ -174,9 +176,9 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
         label = "Are you more likely to try a new studio alone or with someone you know?",
         type = SurveyQuestionType.Single,
         options = listOf(
-            "Alone — I like exploring on my own",
-            "Either — depends on the studio",
-            "With someone — more likely to commit",
+            "Alone, I like exploring on my own",
+            "Either, depends on the studio",
+            "With someone, more likely to commit",
         ),
         required = true,
     ),
@@ -185,7 +187,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
         n = 10,
         section = "You and your community",
         label = "Is there someone in your life you'd already want to bring into Arcana?",
-        hint = "No commitment — just curious if someone comes to mind.",
+        hint = "No commitment, just curious if someone comes to mind.",
         type = SurveyQuestionType.Single,
         options = listOf("Yes, someone specific", "Maybe a few people", "Not yet"),
         required = true,
@@ -205,7 +207,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
         n = 12,
         section = "One last thing",
         label = "Anything else you want us to know?",
-        hint = "Open floor — what would make Arcana actually worth it to you?",
+        hint = "Open floor. What would make Arcana actually worth it to you?",
         type = SurveyQuestionType.Text,
         required = false,
     ),
@@ -214,7 +216,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
         n = 13,
         section = "One last thing",
         label = "Did someone refer you to Arcana?",
-        hint = "Optional — let us know who so we can thank them.",
+        hint = "Optional, let us know who so we can thank them.",
         type = SurveyQuestionType.Text,
         required = false,
     ),
