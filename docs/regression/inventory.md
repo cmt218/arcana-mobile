@@ -973,10 +973,10 @@ when adding a new annotation.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/BaseUrlProvider.kt
 - **Platforms:** shared
 
-### DEVSET-10 — Close (X) discards an unsaved draft edit
-- **Steps:** Open Developer Settings, type a new URL into the field without tapping Save, then tap the Close (X) icon in the header.
-- **Expected:** Screen closes back to Auth with no change persisted; `BaseUrlProvider.current`/the underlying stored override are untouched by the unsaved draft.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt
+### DEVSET-10 — Close (X) discards an unsaved draft edit, including on reopen
+- **Steps:** Open Developer Settings, type a new URL into the field without tapping Save, then tap the Close (X) icon in the header. Reopen Developer Settings (10-tap wordmark) in the SAME app session and read the Base URL field.
+- **Expected:** Screen closes back to Auth with no change persisted; `BaseUrlProvider.current`/the underlying stored override are untouched by the unsaved draft. On reopen the field shows the value actually in use, NOT the discarded draft: the screen is a composition toggle rather than a nav destination, so its ViewModel survives the close and the draft is re-synced from the provider on entry. A saved value does persist across the same close/reopen.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsScreen.kt (`LaunchedEffect(Unit) { viewModel.resetState() }`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/settings/DeveloperSettingsViewModel.kt (`resetState`)
 - **Platforms:** shared
 
 ### DEVSET-11 — Environment super-property re-tags on override change
