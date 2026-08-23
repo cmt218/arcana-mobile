@@ -3,9 +3,13 @@ package org.arcana.mobile.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.ErrorType
@@ -31,6 +35,7 @@ sealed interface HomeUiState {
 class HomeViewModel(
     private val bookingApi: BookingApi,
     private val membershipApi: MembershipApi,
+    private val timeSource: TimeSource = TimeSource.Monotonic,
 ) : ViewModel() {
     /** Single-arg constructor used by the test's FakeApi (which implements both interfaces). */
     constructor(api: Any) : this(api as BookingApi, api as MembershipApi)
@@ -53,21 +58,39 @@ class HomeViewModel(
     private val _refreshFailed = MutableStateFlow(false)
     val refreshFailed: StateFlow<Boolean> = _refreshFailed
 
-    // Re-fires whenever HomeScreen's composition rebuilds (platform-dependent:
-    // Android tab switches, iOS in-tab push/pop) — not a designed recovery path.
+    private var fetchJob: Job? = null
+    private var lastFetchStarted: TimeMark? = null
+
+    /** Cold load, and the automatic refresh HomeScreen fires from a
+     *  LifecycleResumeEffect on every return to the foreground. Skipped when
+     *  Home already fetched within [MIN_AUTO_REFRESH_INTERVAL], so flipping
+     *  between tabs cannot spray requests. The window is deliberately short:
+     *  a member who just booked must still see the new credit count. */
     fun load() {
-        viewModelScope.launch { fetch() }
+        val sinceLast = lastFetchStarted?.elapsedNow()
+        if (sinceLast != null && sinceLast < MIN_AUTO_REFRESH_INTERVAL) return
+        launchFetch()
     }
 
     /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
-     *  current content visible (and untouched on a transient failure). */
+     *  current content visible (and untouched on a transient failure). Never
+     *  throttled — the member asked for this one. */
     fun refresh() {
-        viewModelScope.launch {
-            _isRefreshing.value = true
+        _isRefreshing.value = true
+        launchFetch { _isRefreshing.value = false }
+    }
+
+    /** One fetch in flight at a time: a new one cancels its predecessor so the
+     *  newest response is always the one that lands. Without this, two fetches
+     *  racing could resolve out of order and briefly show the older data. */
+    private fun launchFetch(onSettled: () -> Unit = {}) {
+        fetchJob?.cancel()
+        lastFetchStarted = timeSource.markNow()
+        fetchJob = viewModelScope.launch {
             try {
                 fetch()
             } finally {
-                _isRefreshing.value = false
+                onSettled()
             }
         }
     }
@@ -80,17 +103,17 @@ class HomeViewModel(
         // that window queues its own fetch.
         if (_retrying.value) return
         _retrying.value = true
-        viewModelScope.launch {
-            try {
-                fetch()
-            } finally {
-                _retrying.value = false
-            }
-        }
+        launchFetch { _retrying.value = false }
     }
 
     fun dismissRefreshFailed() {
         _refreshFailed.value = false
+    }
+
+    private companion object {
+        /** Long enough to swallow a burst of tab switches, short enough that it
+         *  cannot hide a credit change the member just caused. */
+        val MIN_AUTO_REFRESH_INTERVAL = 2.seconds
     }
 
     private suspend fun fetch() {

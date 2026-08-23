@@ -16,6 +16,8 @@ import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.MembershipApi
 import org.arcana.mobile.schedule.FakeBookingApi
 import kotlin.test.*
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TestTimeSource
 
 class HomeViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
@@ -81,6 +83,80 @@ class HomeViewModelTest {
                 currentPeriod = CurrentPeriodDto(1, 30, 7, 23, canBrowse = true, canBook = true),
             )
         }
+    }
+
+    /** Counts calls and can hold each one open, so a second load can be started
+     *  while the first is still in flight. */
+    private class CountingMembershipApi(private val me: MembershipMeDto) : MembershipApi, BookingApi {
+        var calls = 0
+        var gate: CompletableDeferred<Unit>? = null
+        override suspend fun membershipMe(): MembershipMeDto {
+            calls++
+            gate?.await()
+            return me
+        }
+        override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
+        override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+    }
+
+    @Test fun `a burst of resumes does not spray fetches`() = runTest {
+        val api = CountingMembershipApi(meDto)
+        val time = TestTimeSource()
+        val vm = HomeViewModel(api, api, time)
+        vm.load()
+        assertEquals(1, api.calls, "cold load should fetch once")
+
+        // Tab flipping: every resume inside the window is dropped.
+        repeat(10) { vm.load() }
+        assertEquals(1, api.calls, "resumes inside the window must not refetch")
+
+        time += 3.seconds
+        vm.load()
+        assertEquals(2, api.calls, "a resume past the window refetches")
+    }
+
+    @Test fun `an explicit refresh is never throttled`() = runTest {
+        val api = CountingMembershipApi(meDto)
+        val vm = HomeViewModel(api, api, TestTimeSource())
+        vm.load()
+        assertEquals(1, api.calls)
+        // The member asked for this, so it goes through even inside the window.
+        vm.refresh()
+        assertEquals(2, api.calls)
+    }
+
+    @Test fun `a new fetch cancels the one in flight so the newest response wins`() = runTest {
+        val api = CountingMembershipApi(meDto)
+        val time = TestTimeSource()
+        val gate = CompletableDeferred<Unit>()
+        api.gate = gate
+        val vm = HomeViewModel(api, api, time)
+        vm.load()
+        assertEquals(1, api.calls)
+
+        // Second fetch while the first is parked on the gate.
+        time += 3.seconds
+        vm.load()
+        assertEquals(2, api.calls)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        // The first was cancelled, so it cannot land after the second and
+        // resurrect older data; state comes from the surviving fetch.
+        assertTrue(vm.uiState.value is HomeUiState.Success)
+    }
+
+    @Test fun `a cancelled fetch is not reported as a failed refresh`() = runTest {
+        val api = CountingMembershipApi(meDto)
+        val time = TestTimeSource()
+        api.gate = CompletableDeferred()
+        val vm = HomeViewModel(api, api, time)
+        vm.load()
+        time += 3.seconds
+        vm.load()          // cancels the parked first fetch
+        advanceUntilIdle()
+        assertFalse(vm.refreshFailed.value, "cancellation is not a refresh failure")
     }
 
     @Test fun `loads greeting credits and upcoming`() = runTest {

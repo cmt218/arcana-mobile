@@ -30,6 +30,21 @@ patch: in `site-packages/idb/cli/main.py`, replace `loop =
 asyncio.get_event_loop()` with `loop = asyncio.new_event_loop()`. The current
 venv already carries this patch — only re-apply it if recreating the venv.
 
+**Alternative driver: the Claude Code iOS Simulator MCP.** `idb` above is the
+suite's driver. The MCP `control` tool is a workable substitute for one-off
+verification, with three constraints found 2026-08-23:
+- It needs `xcode-select` pointed at the full Xcode, not the Command Line
+  Tools: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+  Without it every action fails, even though `xcodebuild` itself works. The
+  fix needs the user's password, so an agent cannot apply it.
+- **Its `text` action has no backspace.** Control characters are typed
+  literally, so a pre-filled field (the Developer Settings base URL) cannot
+  be cleared, only inserted into at the tap point. To reach a local server,
+  temporarily point `defaultBaseUrl()` at it and rebuild rather than editing
+  the field by hand; revert after. `idb ui key` does not have this limit.
+- Coordinates are device **points**, same as idb, so the pixels/points trap
+  in iOS-specific traps applies here too.
+
 **UI state.** `~/.arcana-tools/idb-venv/bin/idb ui describe-all --udid <UDID>`
 dumps the current accessibility tree as JSON, including `AXFrame` point
 coordinates for every element. This is the read model for the dump→act→verify
@@ -355,12 +370,21 @@ them before concluding something is broken.
   `describe-all`'s `AXFrame` (using the frame's true center,
   `y + height/2`, not its top-left `y`), never estimate a tap point by
   eyeballing a screenshot's pixel coordinates.
-- **`PasswordResetRequestScreen`'s ViewModel doesn't reset on re-navigation
-  within the same process.** Once it reaches the post-submit "Sent" state
-  once, every subsequent nav back into the reset screen shows the stale
-  "Sent" confirmation instead of a fresh form (unlike AuthScreen, which
-  does reset via its own `LaunchedEffect(Unit)`). A full app kill+relaunch
-  is required to get a fresh instance for a retest.
+- **FIXED 2026-08-23 (PR #34):** `PasswordResetRequestScreen` used to keep
+  its post-submit "Sent" state across re-navigation, so a retest needed a
+  full app kill. It now resets on entry like AuthScreen does; re-entering
+  gives a fresh form and the kill+relaunch step is no longer needed. Same
+  for Developer Settings' unsaved base-URL draft (PR #35).
+- **"Returning to Home" means two different things on iOS, and only one of
+  them re-runs a `LaunchedEffect`.** Measured 2026-08-23 by counting
+  `/memberships/me` on the dev server: an in-tab push/pop (Home → My
+  Bookings → close) rebuilds the composition and refetched **1x** on both
+  platforms even before CLASS-25's fix, but a TAB SWITCH (Home → Schedule →
+  Home) refetched **0x** on iOS, because tab compositions persist there and
+  the effect never re-ran. Android refetched either way. When scoring any
+  staleness entry, say which of the two paths you drove: they are not
+  interchangeable, and a card that says "return to Home" without saying how
+  is ambiguous. (Home now refetches on both, via `LifecycleResumeEffect`.)
 
 ### Android-specific
 
