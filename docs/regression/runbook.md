@@ -1332,13 +1332,16 @@ except when reproducing a claimed crash (5.1).
 
 ### 5.1 — Adjudicate EVERY FAIL and every suspect-driver
 
-No exceptions, no sampling. Each one resolves to exactly one of:
+No exceptions, no sampling. **§6.0's filing bar applies to every verdict below
+that produces a card, including findings raised by code review rather than by
+driving.** Each one resolves to exactly one of:
 
 | Verdict | Meaning | What follows |
 |---|---|---|
 | **APP BUG** | The code genuinely does the wrong thing. | Goes to §2 "Confirmed app bugs" and gets filed in Phase 6. |
 | **INVENTORY-EXPECTED-WRONG** | The app behaves correctly; the inventory entry's **Expected** describes something the code never did (or no longer does). | The entry is corrected in Phase 5.2. Usually also worth an §2 "Potential issues" item if the real behavior is itself a rough edge. |
 | **DRIVER ARTIFACT** | The failure was manufactured by how it was driven, not by the app. | Goes to §4 with the mechanism named, and the trap goes into driver-playbook.md in 5.2. |
+| **UNVERIFIED CLAIM** | The symptom is real but the stated cause was inferred, not measured — or the symptom itself was only ever read out of the code. | Filed as `needs-triage`, never `bug`. Must satisfy §6.0's filing bar before it can be relabelled. Three Run 2026-08-16 cards belonged here and were labelled `bug`; all three were later closed as invalid. |
 | **FIXTURE/ENVIRONMENT GAP** | Nothing is wrong with the app, the entry or the driving — the state the entry needs cannot be reached from the current seed/server at all. Usually surfaces as a BLOCKED rather than a FAIL. | Goes to §2 "Suite & tooling gaps" and is filed in Phase 6 as a `suite-gap` card; 5.2 adds or refreshes its row in Phase 2.2's Known-BLOCKED table with the real reason. Never filed as an app bug. |
 
 **Also sweep the run's BLOCKEDs** — not to re-adjudicate the ones Phase 2.2's
@@ -1452,6 +1455,62 @@ one is **not yet connected** — in that case the issues digest in `report.md`
 available") in the final message, and nothing else changes. Do not invent a
 substitute tracker, do not email anyone, and do not drop the digest.
 
+### 6.0 — The filing bar (applies to EVERY card, whatever its origin)
+
+Added 2026-08-24 after **three of the seven Run 2026-08-16 cards were closed
+as invalid** on re-verification: the Android soft-keyboard CTA, the iOS
+`socketTimeoutMillis` claim, and the `IconCircle` tap target. All three named a
+confident root cause, two of them under a bold **Root cause:** heading. None
+survived a measurement that took under an hour. Each one then cost a full
+reproduce-and-disprove cycle to close, which is more expensive than the fix
+would have been had the bug been real.
+
+**The common thread: none of the three came from Phase 3 driving.** They were
+raised by code review on a feature branch and filed straight as `[bug]` with a
+severity, bypassing the FAIL → §5.1 adjudication pipeline entirely. The rigor in
+this runbook only binds entries that were driven. That is the hole.
+
+**A card may be filed only when all five hold.** No exceptions for "obvious from
+the code", and no exceptions for review-sourced findings.
+
+1. **The symptom was OBSERVED on a running build**, not inferred from reading
+   code. Reading `.size(d.dp).clickable(...)` and concluding the touch target is
+   `d` is an inference. Tapping at increasing offsets until it stops responding
+   is an observation, and it returned 48dp.
+2. **The stated cause was CHECKED, not guessed.** If the card claims the code
+   lacks something, grep for it. If it names a library's behavior, open that
+   library's source — both engine claims here were falsified by one `grep` in an
+   already-downloaded sources jar. A cause you have not verified goes under
+   **Suspected cause** and the card is `[needs-triage]`, never `[bug]`. If you
+   catch yourself typing "to confirm", you are writing a Suspected cause.
+3. **A negative control was run.** Either apply the proposed fix and confirm the
+   behavior changes, or confirm the current code genuinely misbehaves. The
+   `IconCircle` fix was built and measured at exactly the same 48dp as the
+   unmodified control — a five-minute check that would have killed the card.
+4. **The tool was ruled out as the cause.** Any silent non-response to a
+   synthetic tap is a driver artifact until proven otherwise: `uiautomator` and
+   `android layout` do not report the soft keyboard, so both hand you
+   coordinates the IME is covering. See the Android traps in
+   `driver-playbook.md`. This is §5.1's DRIVER ARTIFACT verdict; apply it to
+   review-sourced findings too.
+5. **Every quantity in the card was re-read from the source at filing time.**
+   The `socketTimeoutMillis` card warned about a 90s booking override that has
+   never existed in the code — it lived only as an unchecked step in a plan doc.
+   Numbers copied from a plan, a comment, or an earlier draft are not evidence.
+
+**Comments are not evidence.** The `IconCircle` card traces to a stale code
+comment asserting the clickable box equals the visual diameter. When a comment
+is your source, verify the claim and then fix the comment: an uncorrected one
+regenerates the same card next run.
+
+**Prefer the cheap disproof first.** For each of the three, the disproof was
+cheaper than the write-up: one swipe, one grep of the Ktor sources, one tap
+probe. Spend that before writing the card, not after someone else picks it up.
+
+**Filing a valid observation with a wrong cause is still a bad card.** It sends
+the fixer down a specific path. `[needs-triage]` with the raw measurement and no
+cause is strictly more useful than a confident wrong mechanism.
+
 ### Board shape
 
 - **Board:** `Arcana Regressions`.
@@ -1491,7 +1550,12 @@ applies, and say in the description which entry should exist.
 | Label group | Values |
 |---|---|
 | Severity | `Low` / `Medium` / `High` — the run's argued severity. **Cole may re-label; a re-label is authoritative and a later run must not revert it.** |
-| Category | `bug` / `ux-observation` / `suite-gap` / `hazard` |
+| Category | `bug` / `needs-triage` / `ux-observation` / `suite-gap` / `hazard` |
+
+`bug` asserts the app is wrong AND that you verified why. A real observation
+whose cause you have not confirmed is `needs-triage` — see §6.0. If the board
+has no `needs-triage` label, attach `bug` and open the description with
+**SUSPECTED CAUSE, NOT VERIFIED**.
 | Platform | `ios26` / `ios18` / `android` / `all` |
 
 **MCP constraint (verified 2026-08-11 against Trello's official MCP,
