@@ -50,7 +50,7 @@ class PasswordResetRequestViewModelTest {
         assertTrue(vm.canSubmit, "the member must be able to request another link")
     }
 
-    @Test fun `reset restores the prefill, not whatever was last typed`() {
+    @Test fun `reset restores the prefill rather than whatever was last typed`() {
         val vm = PasswordResetRequestViewModel(FakeApi(), initialEmail = "member@example.com")
         vm.updateEmail("typo@example.com")
         vm.resetState()

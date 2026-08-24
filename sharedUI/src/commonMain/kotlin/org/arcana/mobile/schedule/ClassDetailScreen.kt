@@ -150,6 +150,42 @@ internal fun opensAtAvailabilityLine(opensAt: Instant): String {
     return "Booking opens $day, $month ${dt.date.day} · $h12:$minute $ampm ET"
 }
 
+/**
+ * Sticky-CTA label. Pure + internal so the precedence between "past",
+ * "you hold a booking", "outside your membership" and "not open yet" is
+ * unit-testable without a Compose harness.
+ *
+ * `✓` marks *you just did this*; a return visit shows the same status
+ * without it. A direct-integration studio confirms inside the create call, so
+ * the just-booked label follows the returned status instead of assuming the
+ * manual queue's "requested".
+ */
+internal fun classDetailCtaLabel(
+    isPast: Boolean,
+    justBooked: Boolean,
+    bookingStatus: String?,
+    outsideWindow: Boolean,
+    // Non-null only while the booking window is still shut.
+    opensAt: Instant?,
+    fallback: String,
+): String = when {
+    isPast -> "CLASS ENDED"
+    justBooked -> when (bookingStatus) {
+        "confirmed" -> "CONFIRMED ✓"
+        "requested" -> "REQUESTED ✓"
+        else -> "BOOKED ✓"
+    }
+    bookingStatus == "confirmed" -> "CONFIRMED ✓"
+    bookingStatus == "requested" -> "REQUESTED"
+    bookingStatus != null -> bookingStatus.uppercase()
+    // Member holds a wallet but not for this class's month (e.g. a July-only
+    // member on an August class). Outranks the booking window — even once it
+    // opens they still can't book this month.
+    outsideWindow -> "OUTSIDE YOUR MEMBERSHIP"
+    opensAt != null -> opensAtCtaLabel(opensAt)
+    else -> fallback
+}
+
 // Copy of studioColorFor from ScheduleScreen — small intentional duplication.
 private fun studioColorFor(primaryColor: String): Color {
     if (primaryColor.length != 7 || !primaryColor.startsWith("#")) return Moss
@@ -435,26 +471,14 @@ private fun SuccessBlock(
         // it so scrolling list content feathers out instead of butting hard
         // against the pill.
         if (!isCancelled) {
-            // Reflect the member's real booking status on the CTA. Right after
-            // a successful tap it's "Requested ✓"; on a return visit it shows the
-            // live ops-driven status — "REQUESTED" (pending) or "CONFIRMED ✓"
-            // (ops secured it) — instead of a flat "Already booked".
-            val ctaLabel = when {
-                isPast -> "CLASS ENDED"
-                submit is BookingSubmit.Booked -> "REQUESTED ✓"
-                existing?.status == "confirmed" -> "CONFIRMED ✓"
-                existing?.status == "requested" -> "REQUESTED"
-                existing?.status != null -> existing!!.status.uppercase()
-                // Member holds a wallet but not for this class's month (e.g. a
-                // July-only member on an August class). Outranks the booking
-                // window — even once it opens they still can't book this month.
-                outsideWindow != null -> "OUTSIDE YOUR MEMBERSHIP"
-                // Booking window hasn't opened (and the member holds no
-                // booking) — show when it opens, in ET. opensAt is non-null
-                // whenever notOpenYet is true.
-                notOpenYet -> opensAtCtaLabel(opensAt!!)
-                else -> cta.label
-            }
+            val ctaLabel = classDetailCtaLabel(
+                isPast = isPast,
+                justBooked = submit is BookingSubmit.Booked,
+                bookingStatus = existing?.status,
+                outsideWindow = outsideWindow != null,
+                opensAt = if (notOpenYet) opensAt else null,
+                fallback = cta.label,
+            )
             // For the out-of-window state, the sub-line explains the coverage gap
             // in the member's actual months, e.g. "July credits don't cover August."
             val ctaSubOverride = outsideWindow?.let {
