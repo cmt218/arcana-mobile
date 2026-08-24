@@ -127,9 +127,9 @@ class ArcanaApiClient(
 
     private val client = HttpClient {
         // Without this a stalled connection hangs forever. ~9x headroom over the
-        // slowest real call (booking, ~6.5s server-side). iOS caveat: Darwin
-        // ignores socketTimeoutMillis, so it is bounded by requestTimeoutMillis
-        // instead. Trello vVs2x4jG.
+        // slowest real call (booking, ~6.5s server-side). A stalled socket is
+        // bounded by socketTimeoutMillis on BOTH engines; measured 30.5s on
+        // Darwin (docs/regression/inventory.md ERR-22).
         install(HttpTimeout) {
             connectTimeoutMillis = 10_000
             socketTimeoutMillis = 30_000
