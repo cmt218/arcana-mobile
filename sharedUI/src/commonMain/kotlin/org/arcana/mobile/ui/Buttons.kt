@@ -149,6 +149,10 @@ fun TextLink(
  * well contains nothing but a glyph, so without one it is an unlabeled control
  * to TalkBack and an anonymous clickable to `android layout`. Leave it null for
  * the decorative (non-tappable) wells. See [StrokeIcon]'s doc for the rule.
+ *
+ * [diameter] is visual only. Compose expands any pointer-input node to
+ * `ViewConfiguration.minimumTouchTargetSize` (48dp, both platforms), so a 36dp
+ * well is measured 48dp tappable — don't inflate diameters for reach.
  */
 @Composable
 fun IconCircle(

@@ -339,10 +339,9 @@ fun ErrorSnackbar(
         }
         if (onDismiss != null) {
             Spacer(Modifier.width(12.dp))
-            // diameter 44, not 28: IconCircle's clickable box is exactly
-            // `diameter`, and 28dp misses the 44pt/48dp platform touch-target
-            // minimum. No background/border, so only the 14dp glyph is visible;
-            // the offset pulls it back to where a 28dp control would sit.
+            // No background/border, so only the 14dp glyph shows and the
+            // diameter is pure layout; the offset pulls it back to where a
+            // 28dp control would sit.
             IconCircle(
                 icon = ArcanaIcons.Close,
                 modifier = Modifier.offset(x = 8.dp),

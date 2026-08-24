@@ -3,7 +3,7 @@
 Execution guide for the agent-run full regression suite: an orchestrated set
 of agent shifts that drive the real app — real network calls, real
 simulators/emulator, real taps — through every entry in
-`docs/regression/inventory.md` (227 entries at last count) on all three
+`docs/regression/inventory.md` (228 entries at last count) on all three
 target devices, then triage what they found, fold the lessons back into these
 docs, and file the surviving issues to a tracker. Invoked by the
 `/full-regression` skill; this doc is what that skill follows phase by phase.
@@ -480,7 +480,7 @@ else is still a finding — read the entry before accepting the hit.
 
 ### Reverse — find inventory entries pointing at code that no longer exists
 
-For every **Source:** path listed across all 227 inventory entries, verify
+For every **Source:** path listed across all 228 inventory entries, verify
 the file exists in the current tree:
 ```
 test -f <path>
@@ -497,7 +497,7 @@ own (`ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`)`). So:
    backticks, and `test -f` each resulting repo-relative path.
 
 Sanity-check the extractor before trusting its output: on a clean tree it
-should yield **83 unique paths from 504 comma-split tokens across 227 Source
+should yield **84 unique paths from 505 comma-split tokens across 228 Source
 lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-08-11, 2026-08-15, 2026-08-16 (after
 `feature/error-states-completion` added ERR-21/ERR-22), and 2026-08-19 (after
@@ -1222,9 +1222,9 @@ is broken. The audit trail still exists — it is just last, not first.
 run as a whole ("App: PASS with 3 confirmed non-blocking defects"; "App: 1
 blocking defect — see BOOK-04"), then the per-device table: one row per device
 (iOS 26 / iOS 18 / Android) with PASS/FAIL/BLOCKED/SKIP counts and a one-line
-per-device verdict. Applicable counts on today's inventory (227 entries: 199
+per-device verdict. Applicable counts on today's inventory (228 entries: 200
 `shared`, 11 `iOS-only`, 1 `iOS26-only`, 1 `iOS18-only`, 15 `Android-only`)
-are **211** for iOS 26, **211** for iOS 18, **214** for Android — recompute
+are **212** for iOS 26, **212** for iOS 18, **215** for Android — recompute
 from the file rather than trusting these if the inventory has moved. Also name
 the run mode (sequential/parallel) and wall-clock here. Nothing else. §1 fits
 on one screen.
@@ -1278,7 +1278,7 @@ resolve it.
 **§5 — APPENDIX: full per-item results** — every entry, every applicable
 device, PASS/FAIL/BLOCKED/SKIP, in inventory order. This is the audit trail
 and it is **always last**, wrapped in a collapsed `<details><summary>Full
-per-item results (227 entries × 3 devices)</summary>` block so it never
+per-item results (228 entries × 3 devices)</summary>` block so it never
 competes with §2 for the reader's attention.
 
 **Phase 4 merges the logs before it counts anything.** In both modes this
