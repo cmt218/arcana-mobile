@@ -1,7 +1,9 @@
 package org.arcana.mobile.networking
 
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
+import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.authProviders
@@ -110,6 +112,10 @@ class ArcanaApiClient(
     private val tokenStorage: TokenStorage,
     private val baseUrlProvider: BaseUrlProvider,
     private val telemetry: Telemetry = Telemetry.Noop,
+    // Non-null only from commonTest, which drives the real client (auth plugin,
+    // bodyOrThrow, the lot) against MockEngine. Production passes nothing and
+    // Ktor picks the platform engine off the classpath.
+    engine: HttpClientEngine? = null,
 ) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi, ProfileApi, PasswordResetApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
@@ -125,7 +131,7 @@ class ArcanaApiClient(
     // arcana-mobile CLAUDE.md → "Telemetry" → performance instrumentation.
     private fun v1(path: String) = "${baseUrlProvider.get()}/api/v1/$path"
 
-    private val client = HttpClient {
+    private val clientConfig: HttpClientConfig<*>.() -> Unit = {
         // Without this a stalled connection hangs forever. ~9x headroom over the
         // slowest real call (booking, ~6.5s server-side). A stalled socket is
         // bounded by socketTimeoutMillis on BOTH engines; measured 30.5s on
@@ -253,6 +259,8 @@ class ArcanaApiClient(
             }
         }
     }
+
+    private val client = engine?.let { HttpClient(it, clientConfig) } ?: HttpClient(clientConfig)
 
     suspend fun login(email: String, password: String) {
         val response = client.post(v1("auth/token/")) {
@@ -465,7 +473,7 @@ class ArcanaApiClient(
      * Server refreshes from the platform if its cached row is > 30s old. May
      * take 300-900ms on a stale read; the UI should show a loading state.
      */
-    suspend fun fetchClassDetail(id: Int): ScheduleSessionDto {
+    override suspend fun fetchClassDetail(id: Int): ScheduleSessionDto {
         return client.get(v1("classes/$id/")).bodyOrThrow()
     }
 

@@ -16,6 +16,7 @@ import org.arcana.mobile.data.OverviewLocationDto
 import org.arcana.mobile.data.OverviewStudioDto
 import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.data.SchedulePageDto
+import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.SessionFlatDto
 import org.arcana.mobile.data.StudioBriefDto
@@ -109,6 +110,9 @@ internal class FakeScheduleApi : ScheduleApi {
         pageCalls += call
         return pageResult(call)
     }
+
+    override suspend fun fetchClassDetail(id: Int): ScheduleSessionDto =
+        throw AssertionError("class-detail endpoint is not this fake's concern")
 }
 
 /** Always throws [error] from every ScheduleApi method — a total outage, for
@@ -144,6 +148,8 @@ internal class FailingScheduleApi(private val error: Throwable) : ScheduleApi {
         availableOnly: Boolean,
         cursor: String?,
     ): SchedulePageDto = throw error
+
+    override suspend fun fetchClassDetail(id: Int): ScheduleSessionDto = throw error
 }
 
 /** A real HTTP-failure exception, the same type `ArcanaApiClient`'s endpoints
@@ -213,6 +219,9 @@ internal class FlakyScheduleApi(
         }
         return page
     }
+
+    override suspend fun fetchClassDetail(id: Int): ScheduleSessionDto =
+        throw AssertionError("class-detail endpoint is not this fake's concern")
 }
 
 internal class FakeFavoritesApi(
@@ -309,6 +318,32 @@ internal val testLocation = LocationFlatDto(
     id = 41, name = "SolidCore Williamsburg", timezone = "America/New_York", studioId = 3,
 )
 internal val testInstructor = InstructorBriefDto(id = 77, name = "Maya R", photoUrl = "")
+
+/** A detail-shaped session (the nested DTO `fetchClassDetail` returns), against
+ *  the same template/studio/location/instructor fixture graph as [flatSession]. */
+internal fun detailSession(
+    id: Int = 482,
+    spotsAvailable: Int = 6,
+    spotSelectionMode: String = "none",
+) = ScheduleSessionDto(
+    id = id,
+    startAt = "2026-06-11T09:00:00-04:00",
+    endAt = "2026-06-11T09:50:00-04:00",
+    durationMinutes = 50,
+    status = "scheduled",
+    platformCapacity = 20,
+    platformBooked = 14,
+    arcanaSpotsOffered = 20,
+    arcanaSpotsAvailable = spotsAvailable,
+    template = testTemplate.copy(spotSelectionMode = spotSelectionMode),
+    instructors = listOf(testInstructor),
+    location = LocationBriefDto(
+        id = testLocation.id,
+        name = testLocation.name,
+        timezone = testLocation.timezone,
+        studio = testStudio,
+    ),
+)
 
 internal fun flatSession(id: Int) = SessionFlatDto(
     id = id,

@@ -10,7 +10,7 @@ import kotlin.time.Clock
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.logWarning
-import org.arcana.mobile.networking.ArcanaApiClient
+import org.arcana.mobile.networking.ScheduleApi
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.telemetryReasonFor
 import org.arcana.mobile.networking.toErrorType
@@ -22,7 +22,7 @@ sealed interface ClassDetailUiState {
 }
 
 class ClassDetailViewModel(
-    private val api: ArcanaApiClient,
+    private val api: ScheduleApi,
     private val sessionId: Int,
     private val telemetry: Telemetry = Telemetry.Noop,
 ) : ViewModel() {
