@@ -11,11 +11,9 @@ import kotlin.test.assertEquals
  * flattened `reason` from `"server_$code"` to a bare `"server"`, discarding
  * the HTTP status with nothing to catch a repeat.
  *
- * `ClassDetailViewModel` is not driven directly here — it hard-depends on the
- * concrete `ArcanaApiClient` (unlike `BookingViewModel`/`MyBookingsViewModel`,
- * which take narrow, fakeable interfaces) — so this exercises the same two
- * pieces the ViewModel's catch block wires together: [telemetryReasonFor]
- * (see `ErrorTypeTest` for the pure mapping) feeding `Telemetry.classViewFailed`.
+ * This pins the pure mapping — [telemetryReasonFor] feeding
+ * `Telemetry.classViewFailed`. `ClassDetailViewModelTest` drives the ViewModel
+ * that wires them together.
  */
 class ClassDetailTelemetryTest {
     @Test

@@ -6,7 +6,7 @@ import org.arcana.mobile.data.SchedulePageDto
 import org.arcana.mobile.data.ScheduleSessionDto
 
 /** Narrow interface over the schedule read endpoints — extracted so
- *  ScheduleViewModel is fakeable in commonTest. */
+ *  ScheduleViewModel and ClassDetailViewModel are fakeable in commonTest. */
 interface ScheduleApi {
     suspend fun fetchSchedule(
         from: LocalDate,
@@ -43,4 +43,8 @@ interface ScheduleApi {
         availableOnly: Boolean = false,
         cursor: String? = null,
     ): SchedulePageDto
+
+    /** Single-class drill-down. The server syncs from the platform when its
+     *  cached row is stale, so this can take 300-900ms. */
+    suspend fun fetchClassDetail(id: Int): ScheduleSessionDto
 }
