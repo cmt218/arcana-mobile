@@ -388,6 +388,21 @@ them before concluding something is broken.
 
 ### Android-specific
 
+- **Neither `uiautomator dump` nor `android layout` includes the soft
+  keyboard, so both report controls at coordinates the IME is physically
+  covering.** A blind `adb shell input tap` at those coordinates lands on the
+  keyboard: the tap "succeeds", nothing happens, and it reads exactly like a
+  dead button. This cost a full run on 2026-08-16 and produced a bug card for
+  an app defect that does not exist (the sign-in form scrolls; see AUTH-15).
+  Before tapping anything in the lower half of a screen with the keyboard up,
+  get the IME top edge and treat everything below it as unreachable:
+  ```
+  adb shell dumpsys window displays | grep -A2 InputMethod
+  ```
+  or just `android screen capture` and look. Scroll the target above the IME
+  first, or dismiss the keyboard with `adb shell input keyevent 111` (ESC —
+  it does not trigger the system BACK gesture).
+
 - **`android layout`'s reported coordinates can go stale across repeated
   dumps when a screen has just transitioned to an error/expanded state**
   (e.g. an inline error banner pushing a button down). The JSON kept
