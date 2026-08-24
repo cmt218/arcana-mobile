@@ -571,7 +571,7 @@ when adding a new annotation.
 
 ### CLASS-08 — Booking flow: open confirmation sheet and book with credits
 - **Steps:** Open detail for a bookable class (has credits, spots available, window open, no existing booking) and tap the sticky "RESERVE THIS SPOT" CTA.
-- **Expected:** `BookingSheet` opens as a `ModalBottomSheet` showing class name/studio, a credit-usage line ("This uses 1 of N credits"), and the late-cancel cutoff copy (bold-highlighted window from `bookingCancelCopy`). Tapping CONFIRM calls `createBooking`; on success the CTA updates to "REQUESTED ✓", the sheet closes, and `bookingSucceeded` telemetry fires.
+- **Expected:** `BookingSheet` opens as a `ModalBottomSheet` showing class name/studio, a credit-usage line ("This uses 1 of N credits"), and the late-cancel cutoff copy (bold-highlighted window from `bookingCancelCopy`). Tapping CONFIRM calls `createBooking`; on success the sheet closes, `bookingSucceeded` telemetry fires, and the CTA follows the status the server returned — "REQUESTED ✓" at a manual-fulfilment studio, "CONFIRMED ✓" at a direct-integration one (which confirms inside the create call).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`openSheet`, `confirmBooking`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`bookCtaState`)
 - **Platforms:** shared
 

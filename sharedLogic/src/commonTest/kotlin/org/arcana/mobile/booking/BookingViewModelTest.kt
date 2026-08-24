@@ -180,6 +180,38 @@ class BookingViewModelTest {
         assertEquals(99, vm.existingBooking.value?.id)
     }
 
+    /** A direct-integration studio confirms inside the create call, so the
+     *  returned status is already "confirmed". The detail CTA reads
+     *  `existingBooking` to label the just-booked state, so it has to carry the
+     *  server's status rather than a hardcoded "requested". */
+    @Test fun `a direct-studio booking lands as confirmed rather than requested`() = runTest {
+        val api = FakeApi(me(), createResult = { booking(id = 99).copy(status = "confirmed") })
+        val vm = BookingViewModel(482, 5, false, api, api)
+        vm.load()
+        vm.confirmBooking()
+        assertTrue(vm.submitState.value is BookingSubmit.Booked)
+        assertEquals("confirmed", vm.existingBooking.value?.status)
+    }
+
+    /** The CTA reads submitState and existingBooking as two separate flows.
+     *  They are written back-to-back with no suspension between, so no frame
+     *  can observe Booked-with-no-booking — which is why the label never has to
+     *  render a "we booked something but don't know what" state. */
+    @Test fun `Booked is never observable without the booking that caused it`() = runTest {
+        val sched = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(sched)
+        try {
+            val api = FakeApi(me(), createResult = { booking(id = 99).copy(status = "confirmed") })
+            val vm = BookingViewModel(482, 5, false, api, api)
+            vm.load(); advanceUntilIdle()
+            vm.confirmBooking(); advanceUntilIdle()
+            assertTrue(vm.submitState.value is BookingSubmit.Booked)
+            assertNotNull(vm.existingBooking.value)
+        } finally {
+            Dispatchers.setMain(dispatcher)
+        }
+    }
+
     @Test fun `studio-visit prompt gates confirm until answered`() = runTest {
         val api = FakeApi(me(), createResult = { booking() })
         val vm = BookingViewModel(482, 5, requiresSpot = false, bookingApi = api, membershipApi = api)

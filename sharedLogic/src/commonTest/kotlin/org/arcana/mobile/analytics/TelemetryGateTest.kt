@@ -13,7 +13,7 @@ class TelemetryGateTest {
     }
 
     @Test
-    fun `a debug build never reports, whatever it points at`() {
+    fun `a debug build never reports whatever it points at`() {
         listOf(ENV_PROD, ENV_LOCAL, ENV_TUNNEL, ENV_OTHER).forEach { env ->
             assertFalse(
                 TelemetryGate.shouldReportAnalytics(isDebugBuild = true, environment = env),
@@ -40,7 +40,7 @@ class TelemetryGateTest {
     }
 
     @Test
-    fun `the developer settings override decides the gate, not the bundled default`() {
+    fun `the developer settings override decides the gate rather than the bundled default`() {
         // A release build whose base URL was overridden to localhost must go
         // quiet: this is the regression-run leak the gate exists to stop.
         val overridden = classifyEnvironment("http://10.0.2.2:8000")

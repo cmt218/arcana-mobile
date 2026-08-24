@@ -58,7 +58,7 @@ class ProfileViewModelTest {
     /** The bug: a failed favorites fetch with nothing cached left `favorites`
      *  null, which the screen renders as "still loading" — a shimmer that never
      *  resolves. It has to be distinguishable from not-loaded-yet. */
-    @Test fun `favorites failure with no cache is an error, not endless loading`() = runTest {
+    @Test fun `favorites failure with no cache is an error rather than endless loading`() = runTest {
         val favApi = FlakyFavoritesApi()
         val vm = ProfileViewModel(FakeApi(meDto), FavoritesRepository(favApi))
         vm.load()
