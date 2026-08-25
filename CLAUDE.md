@@ -351,12 +351,23 @@ spacing is also applied after the final glyph, pushing them left.
 > `Modifier.opticallyCentredCaps(fontSize, letterSpacingEm)` from
 > `ui/OpticalCentering.kt`. Without it the label lands about a point high and
 > left. Do NOT apply it to sentence-case body text.
+>
+> An all-caps label sitting BESIDE a sibling glyph rather than centred in a box
+> (a `TextLink` and its arrow) gets `opticallyCentredCapsVertical(fontSize)`
+> instead. Only a centred label splits the trailing letter-space, so on a
+> start-aligned one the horizontal nudge corrects nothing and shifts it out of
+> the gutter it shares with the column above it.
+
+Pass the size from the same constant the `TextStyle` uses, so the nudge and the
+type cannot drift apart.
 
 Verify rather than eyeball, on a screenshot of the control:
 `tools/regression/measure_centering.py <shot.png> <fill_hex> 3 <x0 y0 x1 y1>` —
 under 0.5pt on both axes passes. The crop box is required; the brand fill also
 appears in the tab bar and wordmark, and an unconstrained search unions them and
-reports a meaningless 0.0px.
+reports a meaningless 0.0px. That tool finds the control by its fill, so it
+cannot read an unfilled one: for a `TextLink`, compare the label's cap ink
+centre against its arrow's ink centre instead.
 
 **2. Stacking a TopBar above centred content shifts it down.** A
 `Column { TopBar(); Thing(Modifier.weight(1f)) }` centres `Thing` in the space
