@@ -13,6 +13,8 @@ import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.data.StudioLocationDto
 import org.arcana.mobile.favorites.FavoritesRepository
+import org.arcana.mobile.networking.ApiHttpError
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.FavoritesApi
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -44,14 +46,15 @@ class StudioSelectionViewModelTest {
         var favorites: FavoritesDto = FavoritesDto(),
         var failFetch: Boolean = false,
         var failUpdate: Boolean = false,
+        var fetchError: Throwable = RuntimeException("network down"),
     ) : FavoritesApi {
         val updateCalls = mutableListOf<Pair<List<String>, List<Int>>>()
         override suspend fun fetchStudios(): List<StudioDto> {
-            if (failFetch) throw RuntimeException("network down")
+            if (failFetch) throw fetchError
             return studios
         }
         override suspend fun fetchFavorites(): FavoritesDto {
-            if (failFetch) throw RuntimeException("network down")
+            if (failFetch) throw fetchError
             return favorites
         }
         override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto {
@@ -164,6 +167,49 @@ class StudioSelectionViewModelTest {
         val api = FakeApi(failFetch = true)
         val viewModel = vm(api)
         assertTrue(viewModel.uiState.value is StudioSelectionUiState.Error)
+    }
+
+    /** A 5xx and a dropped connection used to render the same "Couldn't load
+     *  Studios." — the conflation this surface was converted to remove. */
+    @Test
+    fun `a server failure and a connection failure classify differently`() = runTest {
+        val server = vm(FakeApi(failFetch = true, fetchError = ApiHttpError(500)))
+        assertEquals(
+            ErrorType.SERVER,
+            (server.uiState.value as StudioSelectionUiState.Error).type,
+        )
+
+        val offline = vm(FakeApi(failFetch = true, fetchError = kotlinx.io.IOException("no route")))
+        assertEquals(
+            ErrorType.CONNECTION,
+            (offline.uiState.value as StudioSelectionUiState.Error).type,
+        )
+    }
+
+    /** Retry must not drop back to Loading: a failing retry would otherwise
+     *  flash the loader and land on the same error. */
+    @Test
+    fun `retry keeps the error on screen instead of flashing the loader`() = runTest {
+        val api = FakeApi(failFetch = true)
+        val viewModel = vm(api)
+        assertTrue(viewModel.uiState.value is StudioSelectionUiState.Error)
+
+        viewModel.retry()
+
+        assertTrue(viewModel.uiState.value is StudioSelectionUiState.Error)
+        assertFalse(viewModel.retrying.value)
+    }
+
+    @Test
+    fun `a successful retry reaches Ready`() = runTest {
+        val api = FakeApi(studios = listOf(solidcore), failFetch = true)
+        val viewModel = vm(api)
+        assertTrue(viewModel.uiState.value is StudioSelectionUiState.Error)
+
+        api.failFetch = false
+        viewModel.retry()
+
+        assertTrue(viewModel.uiState.value is StudioSelectionUiState.Ready)
     }
 
     @Test

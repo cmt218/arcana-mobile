@@ -195,6 +195,23 @@ second half is the actual regression check.
 bodies. An HTML 5xx (a Django debug page, a Cloud Run 503) threw a different exception and did
 not silently succeed. Check the response content type before calling it.
 
+## ES-20 · Studio Selection, CONNECTION / SERVER
+**Forces:** `kill-server`, then Profile → Manage (or Schedule → "Manage Favorites"). Repeat with
+`db-down` for the SERVER variant.
+**Expect:** the shared full-screen error, both variants distinct — no more one fixed
+"Couldn't load Studios." for every failure. The **sticky Save bar is absent** in this state (it
+renders only for `Ready`), so nothing covers the retry. Tapping Retry keeps the error on screen
+while it runs rather than flashing the loader; restore the server and Retry reaches the picker.
+**Covers:** ERR-14.
+
+## ES-21 · Edit Profile load failure, CONNECTION / SERVER
+**Forces:** `kill-server`, then Profile → Edit. Repeat with `db-down`.
+**Expect:** the shared full-screen error with the **close (X) still working** on top of it, the
+same shape as ES-12. Both variants distinct — the old fixed "Couldn't\nload." headline and its
+"Pull to retry." body are gone, along with the pull gesture that copy named and this screen never
+had. Retry keeps the error on screen while it runs.
+**Covers:** ERR-16.
+
 ---
 
 ## Cross-cutting, on every device

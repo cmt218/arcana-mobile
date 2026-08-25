@@ -50,6 +50,8 @@ import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
+import org.arcana.mobile.networking.ErrorType
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.ArcanaDropdownField
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaTextField
@@ -58,7 +60,6 @@ import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
-import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.opticallyCentredCaps
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
@@ -79,13 +80,15 @@ fun EditProfileScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val canSave by viewModel.canSave.collectAsState()
+    val retrying by viewModel.retrying.collectAsState()
 
     when (val s = state) {
         EditProfileViewModel.State.Loading -> CenteredLoader(modifier)
         is EditProfileViewModel.State.LoadError -> LoadErrorState(
-            message = s.message,
+            type = s.type,
             onRetry = viewModel::load,
             onClose = onClose,
+            retrying = retrying,
             modifier = modifier,
         )
         // The save closes the screen; render the loader for the instant before the
@@ -398,15 +401,20 @@ private fun FormErrorBanner(message: String) {
 
 @Composable
 private fun LoadErrorState(
-    message: String,
+    type: ErrorType,
     onRetry: () -> Unit,
     onClose: () -> Unit,
+    retrying: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier.fillMaxSize().background(Stone).safeContentPadding().padding(horizontal = 28.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Box(modifier = modifier.fillMaxSize()) {
+        FullScreenError(
+            type = type,
+            onRetry = onRetry,
+            retrying = retrying,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(modifier = Modifier.safeContentPadding().padding(horizontal = 28.dp, vertical = 4.dp)) {
             IconCircle(
                 icon = ArcanaIcons.Close,
                 diameter = 36, iconSize = 16,
@@ -415,13 +423,6 @@ private fun LoadErrorState(
                 onClick = onClose,
                 contentDescription = "Close without saving",
             )
-        }
-        Column(modifier = Modifier.fillMaxWidth().align(Alignment.Center)) {
-            Display(text = "Couldn't\nload.", size = 44, color = Ink)
-            Spacer(Modifier.height(16.dp))
-            BodyText(text = message, size = 15, color = Ash)
-            Spacer(Modifier.height(28.dp))
-            PrimaryCta(label = "Retry", onClick = onRetry)
         }
     }
 }
