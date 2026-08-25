@@ -36,6 +36,10 @@ import org.jetbrains.compose.resources.DrawableResource
 /** Brings a bare trailing slot up to the label's 24dp inset (Row adds 8dp). */
 private val TRAILING_SLOT_END_INSET = 16.dp
 
+/** Shared by [TextLink]'s style and its optical nudge, which is derived from the
+ *  type size: separate literals would drift and silently un-centre the label. */
+private val LINK_LABEL_SIZE = 13.sp
+
 /**
  * Primary call-to-action — full-width Moss pill with a Lime arrow well.
  * Disabled state drops to a muted Ash fill (matches the studio-selection
@@ -97,8 +101,8 @@ fun PrimaryCta(
 }
 
 /**
- * Underlined display-type text link with a trailing icon — used for the
- * "Sign up →" / "Sign in →" footer actions.
+ * Display-type text link with a trailing arrow, optionally underlined.
+ * Its label is nudged down alone so the caps read centred against the arrow.
  */
 @Composable
 fun TextLink(
@@ -115,21 +119,28 @@ fun TextLink(
     ) {
         Text(
             text = label.uppercase(),
-            modifier = if (underline) {
-                Modifier.drawBehind {
-                    val y = size.height - 1.dp.toPx()
-                    drawLine(
-                        color = color,
-                        start = Offset(0f, y),
-                        end = Offset(size.width, y),
-                        strokeWidth = 1.5.dp.toPx(),
-                    )
-                }
-            } else Modifier,
+            // Nudge on the label, not the Row: the arrow must stay where it is.
+            // Vertical only, so the label keeps the gutter it shares with the
+            // column above it.
+            modifier = Modifier
+                .opticallyCentredCapsVertical(LINK_LABEL_SIZE)
+                .then(
+                    if (underline) {
+                        Modifier.drawBehind {
+                            val y = size.height - 1.dp.toPx()
+                            drawLine(
+                                color = color,
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = 1.5.dp.toPx(),
+                            )
+                        }
+                    } else Modifier,
+                ),
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
+                fontSize = LINK_LABEL_SIZE,
                 letterSpacing = 0.14.em,
                 color = color,
             ),
