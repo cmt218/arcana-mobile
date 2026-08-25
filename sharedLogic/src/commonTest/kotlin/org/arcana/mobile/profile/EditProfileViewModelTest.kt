@@ -8,6 +8,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.arcana.mobile.networking.ApiHttpError
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.data.MeProfileDto
 import org.arcana.mobile.data.UpdateProfileRequest
 import org.arcana.mobile.networking.ProfileApi
@@ -165,6 +167,34 @@ class EditProfileViewModelTest {
     @Test fun `load failure surfaces a retryable error`() = runTest {
         val vm = EditProfileViewModel(FakeApi({ throw RuntimeException("down") }))
         assertTrue(vm.state.value is EditProfileViewModel.State.LoadError)
+    }
+
+    /** Both failures used to render "Couldn't load your profile. Pull to retry."
+     *  — the one-size copy this surface was converted to remove. */
+    @Test fun `a server failure and a connection failure classify differently`() = runTest {
+        val server = EditProfileViewModel(FakeApi({ throw ApiHttpError(500) }))
+        assertEquals(
+            ErrorType.SERVER,
+            (server.state.value as EditProfileViewModel.State.LoadError).type,
+        )
+
+        val offline = EditProfileViewModel(FakeApi({ throw kotlinx.io.IOException("no route") }))
+        assertEquals(
+            ErrorType.CONNECTION,
+            (offline.state.value as EditProfileViewModel.State.LoadError).type,
+        )
+    }
+
+    /** Retry must not drop back to Loading: a failing retry would otherwise
+     *  flash the loader and land on the same error. */
+    @Test fun `retry keeps the error on screen instead of flashing the loader`() = runTest {
+        val vm = EditProfileViewModel(FakeApi({ throw ApiHttpError(500) }))
+        assertTrue(vm.state.value is EditProfileViewModel.State.LoadError)
+
+        vm.load()
+
+        assertTrue(vm.state.value is EditProfileViewModel.State.LoadError)
+        assertFalse(vm.retrying.value)
     }
 
     @Test fun `isoToDigits handles ISO dates nulls and junk`() {

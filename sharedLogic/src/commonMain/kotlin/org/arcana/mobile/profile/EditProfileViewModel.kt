@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.arcana.mobile.data.MeProfileDto
 import org.arcana.mobile.data.UpdateProfileRequest
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.ProfileApi
+import org.arcana.mobile.networking.toErrorType
 import org.arcana.mobile.signup.SignupCompletionViewModel
 
 /**
@@ -41,7 +43,7 @@ class EditProfileViewModel(
 
     sealed interface State {
         data object Loading : State
-        data class LoadError(val message: String) : State
+        data class LoadError(val type: ErrorType) : State
         data class Editing(
             val fields: Fields,
             val birthdayError: String? = null,
@@ -63,10 +65,24 @@ class EditProfileViewModel(
     // The values as loaded — Save is enabled only once the current fields differ.
     private var original: Fields? = null
 
+    /** True while a retry from [State.LoadError] is in flight. Declared above
+     *  [init] because initializers run in declaration order. */
+    private val _retrying = MutableStateFlow(false)
+    val retrying: StateFlow<Boolean> = _retrying.asStateFlow()
+
     init { load() }
 
     fun load() {
-        _state.value = State.Loading
+        val isRetry = _state.value is State.LoadError
+        if (isRetry) {
+            // Claimed synchronously so taps arriving before the coroutine starts
+            // don't each queue their own load.
+            if (_retrying.value) return
+            _retrying.value = true
+        } else {
+            // A retry holds the error on screen; only a cold load shows the loader.
+            _state.value = State.Loading
+        }
         viewModelScope.launch {
             try {
                 val profile = api.fetchProfile()
@@ -75,8 +91,10 @@ class EditProfileViewModel(
                 setEditing(State.Editing(fields = fields))
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Throwable) {
-                _state.value = State.LoadError(LOAD_ERROR_MESSAGE)
+            } catch (e: Throwable) {
+                _state.value = State.LoadError(e.toErrorType())
+            } finally {
+                if (isRetry) _retrying.value = false
             }
         }
     }
@@ -184,7 +202,6 @@ class EditProfileViewModel(
     )
 
     companion object {
-        const val LOAD_ERROR_MESSAGE = "Couldn't load your profile. Pull to retry."
         const val SAVE_ERROR_MESSAGE =
             "Couldn't save your changes. Check your connection and try again."
 

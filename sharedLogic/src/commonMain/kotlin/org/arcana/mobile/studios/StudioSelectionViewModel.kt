@@ -11,7 +11,9 @@ import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
+import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.FavoritesApi
+import org.arcana.mobile.networking.toErrorType
 
 sealed interface StudioSelectionUiState {
     data object Loading : StudioSelectionUiState
@@ -24,7 +26,7 @@ sealed interface StudioSelectionUiState {
         val saved: Boolean = false,
         val error: String? = null,
     ) : StudioSelectionUiState
-    data class Error(val message: String) : StudioSelectionUiState
+    data class Error(val type: ErrorType) : StudioSelectionUiState
 }
 
 class StudioSelectionViewModel(
@@ -36,12 +38,15 @@ class StudioSelectionViewModel(
     private val _uiState = MutableStateFlow<StudioSelectionUiState>(StudioSelectionUiState.Loading)
     val uiState: StateFlow<StudioSelectionUiState> = _uiState
 
+    /** True while [retry] is in flight; the retry control carries the progress. */
+    private val _retrying = MutableStateFlow(false)
+    val retrying: StateFlow<Boolean> = _retrying
+
     init {
         viewModelScope.launch { load() }
     }
 
     private suspend fun load() {
-        _uiState.value = StudioSelectionUiState.Loading
         try {
             val studios = favoritesApi.fetchStudios()
             val favorites = repository.refresh()
@@ -55,12 +60,22 @@ class StudioSelectionViewModel(
             throw e
         } catch (e: Exception) {
             logWarning("StudioSelectionViewModel", e.message ?: "load failed")
-            _uiState.value = StudioSelectionUiState.Error("Couldn't load Studios.")
+            _uiState.value = StudioSelectionUiState.Error(e.toErrorType())
         }
     }
 
     fun retry() {
-        viewModelScope.launch { load() }
+        // Claimed synchronously so taps arriving before the coroutine starts
+        // don't each queue their own load.
+        if (_retrying.value) return
+        _retrying.value = true
+        viewModelScope.launch {
+            try {
+                load()
+            } finally {
+                _retrying.value = false
+            }
+        }
     }
 
     private inline fun update(block: (StudioSelectionUiState.Ready) -> StudioSelectionUiState.Ready) {

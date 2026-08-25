@@ -2,12 +2,10 @@ package org.arcana.mobile.studios
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -29,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -45,11 +41,10 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
-import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
-import org.arcana.mobile.ui.Heading2
+import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
@@ -73,6 +68,7 @@ fun StudioSelectionScreen(
 ) {
     val viewModel = koinViewModel<StudioSelectionViewModel>()
     val state by viewModel.uiState.collectAsState()
+    val retrying by viewModel.retrying.collectAsState()
 
     val saved = (state as? StudioSelectionUiState.Ready)?.saved == true
     LaunchedEffect(saved) { if (saved) onClose() }
@@ -106,9 +102,11 @@ fun StudioSelectionScreen(
                 ) {
                     DotMatrixLoader()
                 }
-                is StudioSelectionUiState.Error -> ErrorBlock(
-                    message = s.message,
+                is StudioSelectionUiState.Error -> FullScreenError(
+                    type = s.type,
                     onRetry = viewModel::retry,
+                    retrying = retrying,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                 )
                 is StudioSelectionUiState.Ready -> ReadyContent(
                     state = s,
@@ -241,21 +239,3 @@ private fun ReadyContent(
  *  bottom padding, so the request never overshoots the scroll range. */
 private val STICKY_CTA_REVEAL_ALLOWANCE = 128.dp
 
-@Composable
-private fun ErrorBlock(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.padding(24.dp)) {
-        Heading2(text = "Couldn't load Studios", size = 22, color = Ink)
-        Spacer(Modifier.height(8.dp))
-        BodyText(text = message, size = 14, color = Ash)
-        Spacer(Modifier.height(16.dp))
-        Row(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(Ink)
-                .clickable(onClick = onRetry)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Overline(text = "RETRY", size = 12, color = Stone)
-        }
-    }
-}
