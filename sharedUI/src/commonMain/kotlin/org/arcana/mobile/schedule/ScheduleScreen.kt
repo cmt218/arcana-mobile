@@ -106,7 +106,6 @@ import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.FilterChip
 import org.arcana.mobile.ui.FlowChipRow
 import org.arcana.mobile.ui.FullScreenError
-import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.InlineError
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
@@ -1418,37 +1417,6 @@ private fun ClassRow(
                     },
                 )
             }
-        }
-        // CTA — Phase-3 has no booking flow yet; the arrow is a placeholder
-        // that becomes a real navigation target in Phase 5. Not-open classes
-        // keep the arrow (they're viewable, not full); only genuinely-full
-        // classes get the muted "+".
-        if (isFull && !notOpen) {
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, Mist, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "+",
-                    style = TextStyle(
-                        fontFamily = Arcana.fonts.display,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                        color = Ash,
-                    ),
-                )
-            }
-        } else {
-            // decorative — the enclosing class row is the tap target and is
-            // named by its class/studio/time text.
-            IconCircle(
-                icon = ArcanaIcons.ArrowRight,
-                diameter = 36, iconSize = 16,
-                background = Ink, contentColor = Stone,
-            )
         }
     }
 }

@@ -498,13 +498,13 @@ when adding a new annotation.
 
 ### SCHED-14 — CLASS FULL rendering on the schedule row
 - **Steps:** Use the session id from the manifest's `classes.full` (Regression Test Studio, +2 days at 12:00 ET, seeded 20/20 booked). Select that day on the Schedule day rail and find its row in the list.
-- **Expected:** The row's title dims to Ash, the studio color bar fades to 35% alpha, the CTA well shows a muted "+" circle instead of the arrow, and the capacity overline reads "FULL" in Ash2 (from `computeCapacityTier`). The row remains tappable into Class Detail.
+- **Expected:** The row's title dims to Ash, the studio color bar fades to 35% alpha, and the capacity overline reads "FULL" in Ash2 (from `computeCapacityTier`). The row remains tappable into Class Detail. **Changed 2026-08-25:** the trailing 36dp CTA well is gone. It previously showed a muted "+" here and an Ink arrow otherwise, but neither carried information the row did not already state, and the fixed 36dp well plus its 16dp gap were truncating the `BRAND · LOCATION` meta line. Fullness now reads only from the dimmed title, the faded color bar and the FULL overline.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`, `CapacityTier.Full`)
 - **Platforms:** shared
 
 ### SCHED-15 — Booking-window-gated ("NOT OPEN") rendering on the schedule row
 - **Steps:** Use the session id from the manifest's `classes.window_gated` — seeded with `bookable_at` = now + 2 days, on Regression Test Studio at +6 days 07:00 ET. Select that day on the Schedule day rail and find its row. **Do not go looking for a real Mariana Tek class**: `bookable_at` is populated by several platforms, the fixture is a synthetic `platform='fake'` regression studio, and the seeded member opens Schedule scoped to Favorites (the two regression studios), so real Mariana Tek rows are filtered out of view anyway.
-- **Expected:** `isNotOpenYet` takes precedence over Full — the row shows the "NOT OPEN" overline (Ash2), suppresses the fill progress bar and scarce shading, and keeps the arrow CTA (still viewable/tappable) rather than the muted "+".
+- **Expected:** `isNotOpenYet` takes precedence over Full — the row shows the "NOT OPEN" overline (Ash2) and suppresses the fill progress bar and scarce shading. The row stays viewable and tappable into Class Detail. **Changed 2026-08-25:** no trailing CTA well is rendered on any row, so the old arrow-vs-"+" distinction that separated this state from SCHED-14 no longer exists; the overline is now the only thing that distinguishes them.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`, `notOpen` derivation), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`, `CapacityTier.NotOpen`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/data/ScheduleDto.kt (`isNotOpenYet`)
 - **Platforms:** shared
 
