@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.SpotDto
 import org.arcana.mobile.theme.Ash
-import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Clay
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Mist
@@ -214,7 +213,7 @@ private fun VisitChip(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .then(
-                if (selected) Modifier.background(BurntNectar)
+                if (selected) Modifier.background(Moss)
                 else Modifier.border(1.dp, Mist, RoundedCornerShape(8.dp))
             )
             .clickable(onClick = onClick)

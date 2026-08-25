@@ -29,7 +29,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
-import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
@@ -250,7 +249,7 @@ private fun SurveyOptionChip(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .then(
-                if (selected) Modifier.background(BurntNectar)
+                if (selected) Modifier.background(Moss)
                 else Modifier.border(1.dp, Mist, RoundedCornerShape(8.dp))
             )
             .clickable(onClick = onClick)
