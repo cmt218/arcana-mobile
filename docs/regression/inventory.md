@@ -840,7 +840,7 @@ when adding a new annotation.
 
 ### PROFILE-16 — Account footer version string
 - **Steps:** Scroll to the bottom of Profile past "Delete account".
-- **Expected:** Manifesto footer shows the fixed line "Earned, never given." followed by an Overline reading `"Arcana · v<appVersionName()>"` where the version is the real platform app version (Android `versionName` / iOS bundle short version), not a hardcoded string.
+- **Expected:** Manifesto footer shows the fixed line "Not for the casual." followed by an Overline reading `"Arcana · v<appVersionName()>"` where the version is the real platform app version (Android `versionName` / iOS bundle short version), not a hardcoded string.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/Platform.kt
 - **Platforms:** shared
 
