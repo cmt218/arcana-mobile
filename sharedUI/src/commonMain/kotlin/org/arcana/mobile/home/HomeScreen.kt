@@ -250,7 +250,7 @@ fun HomeScreen(
                     item { Spacer(Modifier.height(16.dp)) }
                     item {
                         Caption(
-                            text = "No upcoming classes — browse the schedule.",
+                            text = "No upcoming classes.",
                             size = 13,
                             color = Ash,
                             modifier = Modifier.padding(horizontal = 24.dp),

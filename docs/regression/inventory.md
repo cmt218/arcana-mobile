@@ -419,7 +419,7 @@ when adding a new annotation.
 ## SCHED
 
 ### SCHED-01 — Cold-start schedule load (favorites-default scope)
-- **Steps:** Sign in and land on the Schedule tab for the first time in the session.
+- **Steps:** Sign in and land on the Book tab (the middle tab, labelled BOOK) for the first time in the session.
 - **Expected:** `ScheduleViewModel.init` fetches favorites first; if the member has any, scope defaults to `ScopeMode.Favorites`, otherwise `AllStudios`. In parallel it fetches the overview (day chips, studio catalog, categories) and page 1 of today's sessions. A centered `DotMatrixLoader` shows under the "Month." header while `ScheduleUiState.Loading`; on success the day rail, filter bar, and today's class list render.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt
 - **Platforms:** shared
@@ -455,13 +455,13 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### SCHED-07 — Manual refresh: pull-to-refresh
-- **Steps:** On the Schedule tab, pull down from the top of the list to trigger the platform pull-to-refresh gesture.
+- **Steps:** On the Book tab, pull down from the top of the list to trigger the platform pull-to-refresh gesture.
 - **Expected:** `isRefreshing` drives the `PullToRefreshBox` spinner; `ScheduleViewModel.refresh()` re-fetches booked-session pills plus the overview + selected day's page 1 without flashing the full-screen loader, keeping current content visible. Other cached days are dropped and the fetch generation bumps so any stale in-flight page load is discarded.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`refresh`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`PullToRefreshBox`)
 - **Platforms:** shared
 
 ### SCHED-08 — Resume refresh: booked pills refresh on tab return
-- **Steps:** Book or cancel a class from Class Detail, then navigate back to the Schedule tab (or background/foreground the app while on Schedule).
+- **Steps:** Book or cancel a class from Class Detail, then navigate back to the Book tab (or background/foreground the app while on Book).
 - **Expected:** `LifecycleResumeEffect` calls `viewModel.refreshBookings()` on every resume, best-effort re-fetching `/bookings/me/` and republishing over the existing Success state so a just-booked/-cancelled status pill appears/clears without a manual pull-to-refresh; a failed fetch leaves the prior pill map untouched.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`refreshBookings`, `refreshBookedSessions`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`LifecycleResumeEffect`)
 - **Platforms:** shared
@@ -705,7 +705,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### FAV-03 — Favorites add/remove reflected live on Schedule
-- **Steps:** While the Schedule tab is on the back stack, add or remove a favorite in the Profile favorites manager, then return to Schedule.
+- **Steps:** While the Book tab is on the back stack, add or remove a favorite in the Profile favorites manager, then return to Book.
 - **Expected:** `favoritesRepository.favorites` collector in `ScheduleViewModel.init` picks up the change; if the member wasn't actively narrowing a manual studio subset, scope re-evaluates to `Favorites` (if favorites now non-empty) or `AllStudios` (if cleared to empty), filters reset, and a refetch runs — all without disrupting an active Custom (All Studios subset) filter session.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`init`, `favoritesRepository.favorites.collect`)
 - **Platforms:** shared
@@ -1000,21 +1000,21 @@ when adding a new annotation.
 
 ## NAV
 
-### NAV-01 — Tab bar switches between Home / Schedule / You
+### NAV-01 — Tab bar switches between Home / Book / You
 - **Steps:** From any tab root, tap each of the other two tab bar items in turn.
-- **Expected:** The displayed screen changes to match the tapped tab; the tapped item's icon/label highlights (Moss + Lime indicator dot on Android; system selection styling on iOS), and each tab's own scroll position/back stack is preserved when returning to it later in the session.
+- **Expected:** The displayed screen changes to match the tapped tab; the tapped item's icon/label highlights (Moss + Lime indicator dot on Android; system selection styling on iOS), and each tab's own scroll position/back stack is preserved when returning to it later in the session. The middle tab reads **BOOK** (renamed from SCHEDULE 2026-08-25). Only the two label strings changed: `ArcanaTab.Schedule`'s label and the Swift `Tab(...)` title. The enum constant, the `ArcanaDestination.Schedule` route and every telemetry name are deliberately still `Schedule`/`schedule` (see TEL-14) — do not "fix" that mismatch, it is what keeps the event stream continuous across the rename.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/TabBar.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`navigateToTab`, `popUpTo(...){saveState=true}`/`restoreState`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (per-tab `ComposeUIViewController`s), iosApp/iosApp/ArcanaShell.swift (`TabView`)
 - **Platforms:** shared
 
 ### NAV-02 — Per-tab state preservation across tab switches (Android)
-- **Steps:** On Android, scroll down the Schedule tab, switch to Home, then switch back to Schedule.
+- **Steps:** On Android, scroll down the Book tab, switch to Home, then switch back to Book.
 - **Expected:** Schedule's scroll position and navigation back stack are restored exactly as left (via `saveState`/`restoreState` on the shared `NavHost`), not reset to the top.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`navigateToTab`)
 - **Platforms:** Android-only
 
 ### NAV-03 — Per-tab state preservation across tab switches (iOS shell)
 - **Steps:** On iOS, push a class detail from Schedule, switch to Home, then switch back to Schedule.
-- **Expected:** The pushed ClassDetail screen is still on top of the Schedule tab's stack when you return (each tab hosts its own `ComposeUIViewController` + `NavHost`, and empirically the Compose composition persists across `TabView` switches rather than being torn down).
+- **Expected:** The pushed ClassDetail screen is still on top of the Book tab's stack when you return (each tab hosts its own `ComposeUIViewController` + `NavHost`, and empirically the Compose composition persists across `TabView` switches rather than being torn down).
 - **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt
 - **Platforms:** iOS-only
 
@@ -1061,7 +1061,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### NAV-11 — $screen fires once per destination/tab change, no doubles
-- **Steps:** Navigate: cold start to Home, tap into ClassDetail, back to Home, switch to Schedule tab, switch back to Home tab. Watch the debug telemetry echo for `$screen` events.
+- **Steps:** Navigate: cold start to Home, tap into ClassDetail, back to Home, switch to Book tab, switch back to Home tab. Watch the debug telemetry echo for `$screen` events.
 - **Expected:** Exactly one `$screen` event per real destination change (Home → ClassDetail → Home → Schedule → Home), with no duplicate emission on the very first composition of a tab (iOS specifically guards against double-firing the initial root screen since tab compositions persist across `TabView` switches rather than re-running `LaunchedEffect`s).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`MainScaffold`'s `LaunchedEffect(screenName)`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`initialRootConsumed`, `emitInitialRootScreen`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabRootShown`)
 - **Platforms:** shared
@@ -1092,7 +1092,7 @@ inconsistency. This section documents each surface as it actually behaves
 today.
 
 ### ERR-01 — Schedule cold-start load failure shows full-screen error with RETRY
-- **Steps:** With no cached schedule data (fresh app/session), make `ScheduleViewModel`'s initial overview+page-1 fetch fail (e.g. server unreachable or 5xx) and land on the Schedule tab.
+- **Steps:** With no cached schedule data (fresh app/session), make `ScheduleViewModel`'s initial overview+page-1 fetch fail (e.g. server unreachable or 5xx) and land on the Book tab.
 - **Expected:** The tab renders the shared `FullScreenError`, keyed to `ErrorType`, with a small color dot beside the overline (Lime for CONNECTION, Burnt Nectar for SERVER). CONNECTION shows overline "Connection", headline "CAN'T REACH ARCANA.", body "Check your connection and try again."; SERVER shows overline "Server", headline "SOMETHING'S OFF ON OUR END.", body "Give it a moment and try again." A "TRY AGAIN" pill (Moss fill) calls `viewModel.reload()` and re-attempts the fetch. No `"server error"` string literal remains anywhere in the app.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`, `reload`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`, `ErrorCopy`)
 - **Platforms:** shared
@@ -1232,7 +1232,7 @@ today.
 - **Platforms:** Android-only (Android's single NavHost path; see TEL-11/TEL-12 for the iOS bridge-driven equivalent)
 
 ### TEL-02 — $screen Schedule (tab root)
-- **Steps:** From Home, tap the Schedule tab.
+- **Steps:** From Home, tap the Book tab (middle, labelled BOOK).
 - **Expected:** A `$screen` event with name `Schedule` fires on arrival at the Schedule destination.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, `MainScaffold`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens.SCHEDULE`)
 - **Platforms:** Android-only
@@ -1292,7 +1292,7 @@ today.
 - **Platforms:** shared
 
 ### TEL-12 — $screen on iOS tab-root switch (bridge-driven)
-- **Steps:** On iOS, from the Home tab, tap the Schedule tab in the native SwiftUI tab bar, then tap Profile, then tap back to Schedule (a re-visit of an already-composed tab).
+- **Steps:** On iOS, from the Home tab, tap the Book tab in the native SwiftUI tab bar, then tap Profile, then tap back to Book (a re-visit of an already-composed tab).
 - **Expected:** Each real tab switch (including the re-visit) fires exactly one `$screen` event named for the destination tab (`Schedule`, `Profile`, `Schedule` again) via `IosShellBridge.tabRootShown`, even though the tab's Compose content persists across switches and its own `LaunchedEffect` does not re-run. Same-tab re-taps (tapping the currently active tab) fire no `$screen`, only `tab_tapped` (see TEL-14).
 - **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabRootShown`, `tabScreenName`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`emitInitialRootScreen` skip logic in `TabRoot`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
 - **Platforms:** iOS-only
@@ -1305,7 +1305,7 @@ today.
 
 ### TEL-14 — tab_tapped event (Android bottom bar)
 - **Steps:** On Android, from any tab root, tap a different tab in `ArcanaTabBar`.
-- **Expected:** A `tab_tapped` event fires with `tab` = the destination tab name (lowercased: `home`/`schedule`/`profile`) and `from_screen` = the canonical screen name of the tab being left.
+- **Expected:** A `tab_tapped` event fires with `tab` = the destination tab name (lowercased: `home`/`schedule`/`profile`) and `from_screen` = the canonical screen name of the tab being left. **The middle tab still reports `schedule`, not `book`**, after the 2026-08-25 label rename: the payload is `tab.name.lowercase()`, the enum CONSTANT, not the visible label. `$screen` likewise stays `Schedule`. This is intentional so dashboards survive the rename; `Profile`/`You` is the same pattern.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`ArcanaTabBar(onSelect = { telemetry.tabTapped(...) })`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`tabTapped`, `Events.TAB_TAPPED`)
 - **Platforms:** Android-only
 
