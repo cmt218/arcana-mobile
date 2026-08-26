@@ -87,6 +87,10 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
+/** Credits stat for a member with no live wallet. A plain hyphen, not an
+ *  em dash — it sits in the same 36sp display run as the other two stats. */
+internal const val NO_CREDITS = "-"
+
 /**
  * Row labels for the "Your favorites" section: whole-Studio favorites first
  * (by name), then location-grain favorites as "STUDIO · LOCATION" with the
@@ -567,7 +571,9 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                 Box(Modifier.width(1.dp).height(84.dp).background(StoneAlpha18))
                 // Credits cell: neutral label — the membership tier is shown
                 // once, in the Account → Membership row below.
-                val creditsValue = success?.creditsRemaining?.toString()
+                // Null is StatCell's *loading* placeholder: a loaded member with
+                // no live wallet must resolve, or the cell shimmers forever.
+                val creditsValue = success?.let { it.creditsRemaining?.toString() ?: NO_CREDITS }
                 StatCell(
                     value = creditsValue,
                     label = "Credits",
