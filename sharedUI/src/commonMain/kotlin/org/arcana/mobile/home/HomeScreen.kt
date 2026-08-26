@@ -40,6 +40,7 @@ import kotlinx.datetime.todayIn
 import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.booking.bookingInfoOrNull
 import org.arcana.mobile.data.BookingDto
+import org.arcana.mobile.schedule.wallClock
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -223,7 +224,7 @@ fun HomeScreen(
                 if (hero != null) {
                     item {
                         val relLabel = remember(hero.session.startAt) {
-                            relativeTime(hero.session.startAt, tz)
+                            relativeTime(hero.session.startAt)
                         }
                         SectionRule(
                             label = "Next · $relLabel",
@@ -283,7 +284,6 @@ fun HomeScreen(
                             i == rest.lastIndex || rest[i + 1].session.startAt.take(10) != day
                         UpcomingRow(
                             booking = b,
-                            tz = tz,
                             showDayDivider = i == 0 || rest[i - 1].session.startAt.take(10) != day,
                             showBottomDivider = !isLastOfDay,
                             onClick = { onOpenClass(b.session.id) },
@@ -345,7 +345,7 @@ fun HomeScreen(
  *   "in 3h"      — less than 24 hours away
  *   "Mon 6:00am" — further out
  */
-internal fun relativeTime(startAtIso: String, tz: TimeZone): String {
+internal fun relativeTime(startAtIso: String): String {
     return try {
         val start = Instant.parse(startAtIso)
         val now = Clock.System.now()
@@ -354,14 +354,14 @@ internal fun relativeTime(startAtIso: String, tz: TimeZone): String {
         val diffHours = diffMin / 60
         when {
             diffMin < 0 -> {
-                // Already started — show local time
-                val local = start.toLocalDateTime(tz)
+                // Already started — show the studio's wall clock
+                val local = wallClock(startAtIso)
                 formatLocalTime(local.hour, local.minute)
             }
             diffMin < 60 -> "in ${diffMin}min"
             diffHours < 24 -> "in ${diffHours}h"
             else -> {
-                val local = start.toLocalDateTime(tz)
+                val local = wallClock(startAtIso)
                 val day = local.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.titlecase() }
                 "$day ${formatLocalTime(local.hour, local.minute)}"
             }
@@ -444,11 +444,8 @@ private fun HeroHeader(dateLabel: String, greeting: String, displayName: String?
 @Composable
 private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     val session = booking.session
-    val tz = remember { TimeZone.currentSystemDefault() }
     val local = remember(session.startAt) {
-        try {
-            Instant.parse(session.startAt).toLocalDateTime(tz)
-        } catch (_: Exception) { null }
+        try { wallClock(session.startAt) } catch (_: Exception) { null }
     }
     val timeStr = local?.let {
         val h = if (it.hour % 12 == 0) 12 else it.hour % 12
@@ -565,7 +562,6 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
 @Composable
 private fun UpcomingRow(
     booking: BookingDto,
-    tz: TimeZone,
     showDayDivider: Boolean,
     showBottomDivider: Boolean,
     onClick: () -> Unit,
@@ -573,7 +569,7 @@ private fun UpcomingRow(
 ) {
     val session = booking.session
     val local = remember(session.startAt) {
-        try { Instant.parse(session.startAt).toLocalDateTime(tz) } catch (_: Exception) { null }
+        try { wallClock(session.startAt) } catch (_: Exception) { null }
     }
     val timeStr = local?.let {
         val h = if (it.hour % 12 == 0) 12 else it.hour % 12
