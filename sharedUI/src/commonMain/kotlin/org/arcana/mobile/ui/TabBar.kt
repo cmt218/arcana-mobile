@@ -42,7 +42,7 @@ import org.jetbrains.compose.resources.DrawableResource
 /** The three primary destinations. Profile renders as the member's avatar. */
 enum class ArcanaTab(val label: String, val icon: DrawableResource, val isAvatar: Boolean = false) {
     Home("Home", ArcanaIcons.Home),
-    Schedule("Schedule", ArcanaIcons.Calendar),
+    Schedule("Book", ArcanaIcons.Calendar),
     Profile("You", ArcanaIcons.User, isAvatar = true),
 }
 

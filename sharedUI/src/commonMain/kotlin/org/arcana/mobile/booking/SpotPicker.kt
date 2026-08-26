@@ -12,8 +12,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.data.SpotDto
-import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Mist
+import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.Overline
@@ -35,7 +35,7 @@ fun SpotPicker(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .then(if (isSel) Modifier.background(BurntNectar) else Modifier.border(1.dp, Mist, RoundedCornerShape(8.dp)))
+                    .then(if (isSel) Modifier.background(Moss) else Modifier.border(1.dp, Mist, RoundedCornerShape(8.dp)))
                     .clickable { onSelect(spot) }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {

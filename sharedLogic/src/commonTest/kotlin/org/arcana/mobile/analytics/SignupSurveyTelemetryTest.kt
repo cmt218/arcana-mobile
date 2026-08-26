@@ -34,6 +34,7 @@ class SignupSurveyTelemetryTest {
         toggleMulti("fitnessMeaning", "Community")
         selectSingle("communityState", "I mostly train solo")
         toggleMulti("eventInterest", "Group run")
+        toggleMulti("membershipTypes", "Class packs")
         selectSingle("monthlySpend", "$350–$500")
         selectSingle("soloOrSocial", "Either — depends on the studio")
         selectSingle("referralIntent", "Not yet")
@@ -51,7 +52,7 @@ class SignupSurveyTelemetryTest {
         val vm = SignupSurveyViewModel("tok", FakeApi { SignupSurveyResult.Success }, telemetry)
         vm.fillRequired(); vm.submit()
         assertEquals(listOf("signup_survey_started", "signup_survey_submitted"), analytics.names())
-        assertEquals(11, analytics.first("signup_survey_submitted")?.properties?.get("answered_count"))
+        assertEquals(12, analytics.first("signup_survey_submitted")?.properties?.get("answered_count"))
     }
 
     @Test fun `network failure fires failed with reason`() = runTest {

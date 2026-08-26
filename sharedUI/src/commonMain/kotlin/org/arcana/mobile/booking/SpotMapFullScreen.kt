@@ -37,8 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.arcana.mobile.data.SpotDto
-import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Mist
+import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
@@ -280,7 +280,7 @@ private fun SpotMapLegend(modifier: Modifier = Modifier) {
         LegendSwatch(fill = Mist2, border = null)
         Caption("Taken", size = 12, color = Wood)
         Spacer(Modifier.width(12.dp))
-        LegendSwatch(fill = BurntNectar, border = null)
+        LegendSwatch(fill = Moss, border = null)
         Caption("Yours", size = 12, color = Wood)
     }
 }

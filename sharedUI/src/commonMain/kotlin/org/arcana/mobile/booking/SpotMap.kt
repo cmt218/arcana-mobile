@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.data.SpotDto
 import org.arcana.mobile.theme.Ash2
-import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
@@ -118,7 +117,7 @@ internal fun SpotDot(
     onSelect: (() -> Unit)? = null,
 ) {
     val fill = when {
-        selected -> BurntNectar
+        selected -> Moss
         selectable -> Paper
         else -> Mist2 // taken / reserved / blocked
     }

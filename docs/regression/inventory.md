@@ -163,18 +163,18 @@ when adding a new annotation.
 
 ### SIGNUP-03 — Survey: required questions block Continue
 - **Steps:** On SignupSurveyScreen, leave one or more required questions (Q1-Q11) unanswered and observe the "Continue" CTA.
-- **Expected:** `missingRequired(answers)` is non-empty so `SignupSurveyViewModel.canSubmit` is false and the "Continue" `PrimaryCta` renders disabled; the "X of 13 answered" progress stamp above it reflects the count via `answeredCount`.
+- **Expected:** `missingRequired(answers)` is non-empty so `SignupSurveyViewModel.canSubmit` is false and the "Continue" `PrimaryCta` renders disabled; the "X of 14 answered" progress stamp above it reflects the count via `answeredCount`. **Q8 `membershipTypes` ("How do you pay for classes right now?") was added 2026-08-25** as a required multi-select, taking the survey from 13 questions to 14 and the required count from 11 to 12. Its "Other" is a plain option with no specify field, matching `modalities`/`neighborhoods` — only `howHeard` reveals a specify field (SIGNUP-05).
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
 
-### SIGNUP-04 — Survey: Q12/Q13 (open-floor) are optional and never block Continue
-- **Steps:** Answer every required question (Q1-Q11) but leave "Anything else you want us to know?" (Q12) and "Did someone refer you to Arcana?" (Q13) blank.
-- **Expected:** Continue becomes enabled — `missingRequired` only iterates `required = true` questions, and both Q12/Q13 have `required = false`. Their Overline label shows "· optional" next to the question number.
+### SIGNUP-04 — Survey: Q13/Q14 (open-floor) are optional and never block Continue
+- **Steps:** Answer every required question (Q1-Q12) but leave "Anything else you want us to know?" (Q13) and "Did someone refer you to Arcana?" (Q14) blank.
+- **Expected:** Continue becomes enabled — `missingRequired` only iterates `required = true` questions, and both Q13/Q14 have `required = false`. Their Overline label shows "· optional" next to the question number.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
 
 ### SIGNUP-05 — Survey: "How did you hear about Arcana?" Other reveals required specify field
-- **Steps:** On Q11 ("How did you hear about Arcana?"), select "Other". Leave the newly-revealed "Please specify" text field blank and check Continue's enabled state; then fill it in.
+- **Steps:** On Q12 ("How did you hear about Arcana?"), select "Other". Leave the newly-revealed "Please specify" text field blank and check Continue's enabled state; then fill it in.
 - **Expected:** Selecting "Other" (the question's `otherOption`) reveals an `ArcanaTextField` bound to `howHeard__other`. While that text is blank, `missingRequired` still lists `howHeard` (Continue stays disabled) even though a single option is selected; once text is entered, the question clears from `missingRequired` and Continue can enable (assuming all else answered).
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
@@ -419,7 +419,7 @@ when adding a new annotation.
 ## SCHED
 
 ### SCHED-01 — Cold-start schedule load (favorites-default scope)
-- **Steps:** Sign in and land on the Schedule tab for the first time in the session.
+- **Steps:** Sign in and land on the Book tab (the middle tab, labelled BOOK) for the first time in the session.
 - **Expected:** `ScheduleViewModel.init` fetches favorites first; if the member has any, scope defaults to `ScopeMode.Favorites`, otherwise `AllStudios`. In parallel it fetches the overview (day chips, studio catalog, categories) and page 1 of today's sessions. A centered `DotMatrixLoader` shows under the "Month." header while `ScheduleUiState.Loading`; on success the day rail, filter bar, and today's class list render.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt
 - **Platforms:** shared
@@ -455,13 +455,13 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### SCHED-07 — Manual refresh: pull-to-refresh
-- **Steps:** On the Schedule tab, pull down from the top of the list to trigger the platform pull-to-refresh gesture.
+- **Steps:** On the Book tab, pull down from the top of the list to trigger the platform pull-to-refresh gesture.
 - **Expected:** `isRefreshing` drives the `PullToRefreshBox` spinner; `ScheduleViewModel.refresh()` re-fetches booked-session pills plus the overview + selected day's page 1 without flashing the full-screen loader, keeping current content visible. Other cached days are dropped and the fetch generation bumps so any stale in-flight page load is discarded.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`refresh`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`PullToRefreshBox`)
 - **Platforms:** shared
 
 ### SCHED-08 — Resume refresh: booked pills refresh on tab return
-- **Steps:** Book or cancel a class from Class Detail, then navigate back to the Schedule tab (or background/foreground the app while on Schedule).
+- **Steps:** Book or cancel a class from Class Detail, then navigate back to the Book tab (or background/foreground the app while on Book).
 - **Expected:** `LifecycleResumeEffect` calls `viewModel.refreshBookings()` on every resume, best-effort re-fetching `/bookings/me/` and republishing over the existing Success state so a just-booked/-cancelled status pill appears/clears without a manual pull-to-refresh; a failed fetch leaves the prior pill map untouched.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`refreshBookings`, `refreshBookedSessions`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`LifecycleResumeEffect`)
 - **Platforms:** shared
@@ -498,13 +498,13 @@ when adding a new annotation.
 
 ### SCHED-14 — CLASS FULL rendering on the schedule row
 - **Steps:** Use the session id from the manifest's `classes.full` (Regression Test Studio, +2 days at 12:00 ET, seeded 20/20 booked). Select that day on the Schedule day rail and find its row in the list.
-- **Expected:** The row's title dims to Ash, the studio color bar fades to 35% alpha, the CTA well shows a muted "+" circle instead of the arrow, and the capacity overline reads "FULL" in Ash2 (from `computeCapacityTier`). The row remains tappable into Class Detail.
+- **Expected:** The row's title dims to Ash, the studio color bar fades to 35% alpha, and the capacity overline reads "FULL" in Ash2 (from `computeCapacityTier`). The row remains tappable into Class Detail. **Changed 2026-08-25:** the trailing 36dp CTA well is gone. It previously showed a muted "+" here and an Ink arrow otherwise, but neither carried information the row did not already state, and the fixed 36dp well plus its 16dp gap were truncating the `BRAND · LOCATION` meta line. Fullness now reads only from the dimmed title, the faded color bar and the FULL overline.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`, `CapacityTier.Full`)
 - **Platforms:** shared
 
 ### SCHED-15 — Booking-window-gated ("NOT OPEN") rendering on the schedule row
 - **Steps:** Use the session id from the manifest's `classes.window_gated` — seeded with `bookable_at` = now + 2 days, on Regression Test Studio at +6 days 07:00 ET. Select that day on the Schedule day rail and find its row. **Do not go looking for a real Mariana Tek class**: `bookable_at` is populated by several platforms, the fixture is a synthetic `platform='fake'` regression studio, and the seeded member opens Schedule scoped to Favorites (the two regression studios), so real Mariana Tek rows are filtered out of view anyway.
-- **Expected:** `isNotOpenYet` takes precedence over Full — the row shows the "NOT OPEN" overline (Ash2), suppresses the fill progress bar and scarce shading, and keeps the arrow CTA (still viewable/tappable) rather than the muted "+".
+- **Expected:** `isNotOpenYet` takes precedence over Full — the row shows the "NOT OPEN" overline (Ash2) and suppresses the fill progress bar and scarce shading. The row stays viewable and tappable into Class Detail. **Changed 2026-08-25:** no trailing CTA well is rendered on any row, so the old arrow-vs-"+" distinction that separated this state from SCHED-14 no longer exists; the overline is now the only thing that distinguishes them.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`, `notOpen` derivation), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`, `CapacityTier.NotOpen`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/data/ScheduleDto.kt (`isNotOpenYet`)
 - **Platforms:** shared
 
@@ -705,7 +705,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### FAV-03 — Favorites add/remove reflected live on Schedule
-- **Steps:** While the Schedule tab is on the back stack, add or remove a favorite in the Profile favorites manager, then return to Schedule.
+- **Steps:** While the Book tab is on the back stack, add or remove a favorite in the Profile favorites manager, then return to Book.
 - **Expected:** `favoritesRepository.favorites` collector in `ScheduleViewModel.init` picks up the change; if the member wasn't actively narrowing a manual studio subset, scope re-evaluates to `Favorites` (if favorites now non-empty) or `AllStudios` (if cleared to empty), filters reset, and a refetch runs — all without disrupting an active Custom (All Studios subset) filter session.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`init`, `favoritesRepository.favorites.collect`)
 - **Platforms:** shared
@@ -840,7 +840,7 @@ when adding a new annotation.
 
 ### PROFILE-16 — Account footer version string
 - **Steps:** Scroll to the bottom of Profile past "Delete account".
-- **Expected:** Manifesto footer shows the fixed line "Earned, never given." followed by an Overline reading `"Arcana · v<appVersionName()>"` where the version is the real platform app version (Android `versionName` / iOS bundle short version), not a hardcoded string.
+- **Expected:** Manifesto footer shows the fixed line "Not for the casual." followed by an Overline reading `"Arcana · v<appVersionName()>"` where the version is the real platform app version (Android `versionName` / iOS bundle short version), not a hardcoded string.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/Platform.kt
 - **Platforms:** shared
 
@@ -1000,21 +1000,21 @@ when adding a new annotation.
 
 ## NAV
 
-### NAV-01 — Tab bar switches between Home / Schedule / You
+### NAV-01 — Tab bar switches between Home / Book / You
 - **Steps:** From any tab root, tap each of the other two tab bar items in turn.
-- **Expected:** The displayed screen changes to match the tapped tab; the tapped item's icon/label highlights (Moss + Lime indicator dot on Android; system selection styling on iOS), and each tab's own scroll position/back stack is preserved when returning to it later in the session.
+- **Expected:** The displayed screen changes to match the tapped tab; the tapped item's icon/label highlights (Moss + Lime indicator dot on Android; system selection styling on iOS), and each tab's own scroll position/back stack is preserved when returning to it later in the session. The middle tab reads **BOOK** (renamed from SCHEDULE 2026-08-25). Only the two label strings changed: `ArcanaTab.Schedule`'s label and the Swift `Tab(...)` title. The enum constant, the `ArcanaDestination.Schedule` route and every telemetry name are deliberately still `Schedule`/`schedule` (see TEL-14) — do not "fix" that mismatch, it is what keeps the event stream continuous across the rename.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/TabBar.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`navigateToTab`, `popUpTo(...){saveState=true}`/`restoreState`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (per-tab `ComposeUIViewController`s), iosApp/iosApp/ArcanaShell.swift (`TabView`)
 - **Platforms:** shared
 
 ### NAV-02 — Per-tab state preservation across tab switches (Android)
-- **Steps:** On Android, scroll down the Schedule tab, switch to Home, then switch back to Schedule.
+- **Steps:** On Android, scroll down the Book tab, switch to Home, then switch back to Book.
 - **Expected:** Schedule's scroll position and navigation back stack are restored exactly as left (via `saveState`/`restoreState` on the shared `NavHost`), not reset to the top.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`navigateToTab`)
 - **Platforms:** Android-only
 
 ### NAV-03 — Per-tab state preservation across tab switches (iOS shell)
 - **Steps:** On iOS, push a class detail from Schedule, switch to Home, then switch back to Schedule.
-- **Expected:** The pushed ClassDetail screen is still on top of the Schedule tab's stack when you return (each tab hosts its own `ComposeUIViewController` + `NavHost`, and empirically the Compose composition persists across `TabView` switches rather than being torn down).
+- **Expected:** The pushed ClassDetail screen is still on top of the Book tab's stack when you return (each tab hosts its own `ComposeUIViewController` + `NavHost`, and empirically the Compose composition persists across `TabView` switches rather than being torn down).
 - **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt
 - **Platforms:** iOS-only
 
@@ -1032,7 +1032,7 @@ when adding a new annotation.
 
 ### NAV-06 — Deep link, cold start (welcome token)
 - **Steps:** With the app not running and signed out, open a welcome link (`https://arcana.fit/welcome?token=XXX` or `arcana://welcome?token=XXX`).
-- **Expected:** The app launches straight into the onboarding survey (13-question) for a new token, seeded synchronously on the very first composed frame — no flash of the Auth screen and no spurious `Auth` `$screen` event. On Android this is read from the launch `Intent`; on iOS from `onOpenURL`/`onContinueUserActivity` feeding `IosDeepLinkBridge.pendingDeepLink`.
+- **Expected:** The app launches straight into the onboarding survey (14-question) for a new token, seeded synchronously on the very first composed frame — no flash of the Auth screen and no spurious `Auth` `$screen` event. On Android this is read from the launch `Intent`; on iOS from `onOpenURL`/`onContinueUserActivity` feeding `IosDeepLinkBridge.pendingDeepLink`.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/navigation/DeepLinkHandler.kt, sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt (`extractToken`, `pendingDeepLinkToken`), sharedLogic/src/iosMain/kotlin/org/arcana/mobile/navigation/IosDeepLinkBridge.kt, iosApp/iosApp/iOSApp.swift (`onOpenURL`, `onContinueUserActivity`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`remember(initialWelcomeToken) { session.onDeepLinkToken(...) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
 - **Platforms:** shared
 
@@ -1061,7 +1061,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### NAV-11 — $screen fires once per destination/tab change, no doubles
-- **Steps:** Navigate: cold start to Home, tap into ClassDetail, back to Home, switch to Schedule tab, switch back to Home tab. Watch the debug telemetry echo for `$screen` events.
+- **Steps:** Navigate: cold start to Home, tap into ClassDetail, back to Home, switch to Book tab, switch back to Home tab. Watch the debug telemetry echo for `$screen` events.
 - **Expected:** Exactly one `$screen` event per real destination change (Home → ClassDetail → Home → Schedule → Home), with no duplicate emission on the very first composition of a tab (iOS specifically guards against double-firing the initial root screen since tab compositions persist across `TabView` switches rather than re-running `LaunchedEffect`s).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`MainScaffold`'s `LaunchedEffect(screenName)`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`initialRootConsumed`, `emitInitialRootScreen`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabRootShown`)
 - **Platforms:** shared
@@ -1092,7 +1092,7 @@ inconsistency. This section documents each surface as it actually behaves
 today.
 
 ### ERR-01 — Schedule cold-start load failure shows full-screen error with RETRY
-- **Steps:** With no cached schedule data (fresh app/session), make `ScheduleViewModel`'s initial overview+page-1 fetch fail (e.g. server unreachable or 5xx) and land on the Schedule tab.
+- **Steps:** With no cached schedule data (fresh app/session), make `ScheduleViewModel`'s initial overview+page-1 fetch fail (e.g. server unreachable or 5xx) and land on the Book tab.
 - **Expected:** The tab renders the shared `FullScreenError`, keyed to `ErrorType`, with a small color dot beside the overline (Lime for CONNECTION, Burnt Nectar for SERVER). CONNECTION shows overline "Connection", headline "CAN'T REACH ARCANA.", body "Check your connection and try again."; SERVER shows overline "Server", headline "SOMETHING'S OFF ON OUR END.", body "Give it a moment and try again." A "TRY AGAIN" pill (Moss fill) calls `viewModel.reload()` and re-attempts the fetch. No `"server error"` string literal remains anywhere in the app.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`applyRefetchFailure`, `reload`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`, `ErrorCopy`)
 - **Platforms:** shared
@@ -1200,7 +1200,7 @@ today.
 - **Platforms:** shared
 
 ### ERR-19 — Onboarding survey submit failure distinguishes CONNECTION vs SERVER and reveals a "Continue anyway" escape after the first failure
-- **Steps:** On the 13-question onboarding survey, answer all required questions and submit while the submit call fails: first force a network error, then (on a second attempt) force a 5xx.
+- **Steps:** On the 14-question onboarding survey, answer all required questions and submit while the submit call fails: first force a network error, then (on a second attempt) force a 5xx.
 - **Expected:** Each failure sets a distinct `submitError` (`NETWORK_MESSAGE` vs `SERVER_MESSAGE`, same strings as ERR-18) rendered via `SubmitErrorBanner`, and increments `failedAttempts`; all previously-entered answers are preserved (no data loss on failure). Once `failedAttempts >= 1` and not currently submitting, a "Continue anyway" `TextLink` appears that calls `continueAnyway()` — completing the signup flow without a successful survey submit, honoring the "survey must never block a paid member's signup" rule.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
@@ -1232,7 +1232,7 @@ today.
 - **Platforms:** Android-only (Android's single NavHost path; see TEL-11/TEL-12 for the iOS bridge-driven equivalent)
 
 ### TEL-02 — $screen Schedule (tab root)
-- **Steps:** From Home, tap the Schedule tab.
+- **Steps:** From Home, tap the Book tab (middle, labelled BOOK).
 - **Expected:** A `$screen` event with name `Schedule` fires on arrival at the Schedule destination.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`currentScreenName`, `MainScaffold`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`Screens.SCHEDULE`)
 - **Platforms:** Android-only
@@ -1286,13 +1286,13 @@ today.
 - **Platforms:** shared
 
 ### TEL-11 — $screen SignupSurvey
-- **Steps:** Open a fresh welcome deep link (survey not yet completed for that token), reaching the 13-question onboarding survey.
+- **Steps:** Open a fresh welcome deep link (survey not yet completed for that token), reaching the 14-question onboarding survey.
 - **Expected:** A `$screen` event with name `SignupSurvey` fires once on entering the survey.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP_SURVEY) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
 - **Platforms:** shared
 
 ### TEL-12 — $screen on iOS tab-root switch (bridge-driven)
-- **Steps:** On iOS, from the Home tab, tap the Schedule tab in the native SwiftUI tab bar, then tap Profile, then tap back to Schedule (a re-visit of an already-composed tab).
+- **Steps:** On iOS, from the Home tab, tap the Book tab in the native SwiftUI tab bar, then tap Profile, then tap back to Book (a re-visit of an already-composed tab).
 - **Expected:** Each real tab switch (including the re-visit) fires exactly one `$screen` event named for the destination tab (`Schedule`, `Profile`, `Schedule` again) via `IosShellBridge.tabRootShown`, even though the tab's Compose content persists across switches and its own `LaunchedEffect` does not re-run. Same-tab re-taps (tapping the currently active tab) fire no `$screen`, only `tab_tapped` (see TEL-14).
 - **Source:** sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/IosShellBridge.kt (`tabRootShown`, `tabScreenName`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`emitInitialRootScreen` skip logic in `TabRoot`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
 - **Platforms:** iOS-only
@@ -1305,7 +1305,7 @@ today.
 
 ### TEL-14 — tab_tapped event (Android bottom bar)
 - **Steps:** On Android, from any tab root, tap a different tab in `ArcanaTabBar`.
-- **Expected:** A `tab_tapped` event fires with `tab` = the destination tab name (lowercased: `home`/`schedule`/`profile`) and `from_screen` = the canonical screen name of the tab being left.
+- **Expected:** A `tab_tapped` event fires with `tab` = the destination tab name (lowercased: `home`/`schedule`/`profile`) and `from_screen` = the canonical screen name of the tab being left. **The middle tab still reports `schedule`, not `book`**, after the 2026-08-25 label rename: the payload is `tab.name.lowercase()`, the enum CONSTANT, not the visible label. `$screen` likewise stays `Schedule`. This is intentional so dashboards survive the rename; `Profile`/`You` is the same pattern.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`ArcanaTabBar(onSelect = { telemetry.tabTapped(...) })`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt (`tabTapped`, `Events.TAB_TAPPED`)
 - **Platforms:** Android-only
 

@@ -328,7 +328,7 @@ fun ProfileScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AccentText(text = "Earned, never given.", size = 18, color = Ash)
+                AccentText(text = "Not for the casual.", size = 18, color = Ash)
                 Overline(text = "Arcana · v${appVersionName()}", size = 10, color = Ash2)
             }
         }

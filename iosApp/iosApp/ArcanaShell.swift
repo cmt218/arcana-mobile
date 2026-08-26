@@ -191,7 +191,7 @@ struct ArcanaShellView: View {
                                 .toolbar(shell.tabBarHidden ? .hidden : .visible, for: .tabBar)
                         }
                     }
-                    Tab("Schedule", systemImage: "calendar", value: 1) {
+                    Tab("Book", systemImage: "calendar", value: 1) {
                         if let vc = shell.scheduleVC {
                             ComposeVC(vc: vc)
                                 .ignoresSafeArea()
