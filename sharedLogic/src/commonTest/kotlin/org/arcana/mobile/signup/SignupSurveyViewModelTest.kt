@@ -40,6 +40,7 @@ class SignupSurveyViewModelTest {
         toggleMulti("fitnessMeaning", "Community")
         selectSingle("communityState", "I mostly train solo")
         toggleMulti("eventInterest", "Group run")
+        toggleMulti("membershipTypes", "Class packs")
         selectSingle("monthlySpend", "$350–$500")
         selectSingle("soloOrSocial", "Either — depends on the studio")
         selectSingle("referralIntent", "Not yet")

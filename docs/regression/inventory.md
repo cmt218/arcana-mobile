@@ -163,18 +163,18 @@ when adding a new annotation.
 
 ### SIGNUP-03 — Survey: required questions block Continue
 - **Steps:** On SignupSurveyScreen, leave one or more required questions (Q1-Q11) unanswered and observe the "Continue" CTA.
-- **Expected:** `missingRequired(answers)` is non-empty so `SignupSurveyViewModel.canSubmit` is false and the "Continue" `PrimaryCta` renders disabled; the "X of 13 answered" progress stamp above it reflects the count via `answeredCount`.
+- **Expected:** `missingRequired(answers)` is non-empty so `SignupSurveyViewModel.canSubmit` is false and the "Continue" `PrimaryCta` renders disabled; the "X of 14 answered" progress stamp above it reflects the count via `answeredCount`. **Q8 `membershipTypes` ("How do you pay for classes right now?") was added 2026-08-25** as a required multi-select, taking the survey from 13 questions to 14 and the required count from 11 to 12. Its "Other" is a plain option with no specify field, matching `modalities`/`neighborhoods` — only `howHeard` reveals a specify field (SIGNUP-05).
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
 
-### SIGNUP-04 — Survey: Q12/Q13 (open-floor) are optional and never block Continue
-- **Steps:** Answer every required question (Q1-Q11) but leave "Anything else you want us to know?" (Q12) and "Did someone refer you to Arcana?" (Q13) blank.
-- **Expected:** Continue becomes enabled — `missingRequired` only iterates `required = true` questions, and both Q12/Q13 have `required = false`. Their Overline label shows "· optional" next to the question number.
+### SIGNUP-04 — Survey: Q13/Q14 (open-floor) are optional and never block Continue
+- **Steps:** Answer every required question (Q1-Q12) but leave "Anything else you want us to know?" (Q13) and "Did someone refer you to Arcana?" (Q14) blank.
+- **Expected:** Continue becomes enabled — `missingRequired` only iterates `required = true` questions, and both Q13/Q14 have `required = false`. Their Overline label shows "· optional" next to the question number.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
 
 ### SIGNUP-05 — Survey: "How did you hear about Arcana?" Other reveals required specify field
-- **Steps:** On Q11 ("How did you hear about Arcana?"), select "Other". Leave the newly-revealed "Please specify" text field blank and check Continue's enabled state; then fill it in.
+- **Steps:** On Q12 ("How did you hear about Arcana?"), select "Other". Leave the newly-revealed "Please specify" text field blank and check Continue's enabled state; then fill it in.
 - **Expected:** Selecting "Other" (the question's `otherOption`) reveals an `ArcanaTextField` bound to `howHeard__other`. While that text is blank, `missingRequired` still lists `howHeard` (Continue stays disabled) even though a single option is selected; once text is entered, the question clears from `missingRequired` and Continue can enable (assuming all else answered).
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyQuestions.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
@@ -1032,7 +1032,7 @@ when adding a new annotation.
 
 ### NAV-06 — Deep link, cold start (welcome token)
 - **Steps:** With the app not running and signed out, open a welcome link (`https://arcana.fit/welcome?token=XXX` or `arcana://welcome?token=XXX`).
-- **Expected:** The app launches straight into the onboarding survey (13-question) for a new token, seeded synchronously on the very first composed frame — no flash of the Auth screen and no spurious `Auth` `$screen` event. On Android this is read from the launch `Intent`; on iOS from `onOpenURL`/`onContinueUserActivity` feeding `IosDeepLinkBridge.pendingDeepLink`.
+- **Expected:** The app launches straight into the onboarding survey (14-question) for a new token, seeded synchronously on the very first composed frame — no flash of the Auth screen and no spurious `Auth` `$screen` event. On Android this is read from the launch `Intent`; on iOS from `onOpenURL`/`onContinueUserActivity` feeding `IosDeepLinkBridge.pendingDeepLink`.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/navigation/DeepLinkHandler.kt, sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt (`extractToken`, `pendingDeepLinkToken`), sharedLogic/src/iosMain/kotlin/org/arcana/mobile/navigation/IosDeepLinkBridge.kt, iosApp/iosApp/iOSApp.swift (`onOpenURL`, `onContinueUserActivity`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`remember(initialWelcomeToken) { session.onDeepLinkToken(...) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt
 - **Platforms:** shared
 
@@ -1200,7 +1200,7 @@ today.
 - **Platforms:** shared
 
 ### ERR-19 — Onboarding survey submit failure distinguishes CONNECTION vs SERVER and reveals a "Continue anyway" escape after the first failure
-- **Steps:** On the 13-question onboarding survey, answer all required questions and submit while the submit call fails: first force a network error, then (on a second attempt) force a 5xx.
+- **Steps:** On the 14-question onboarding survey, answer all required questions and submit while the submit call fails: first force a network error, then (on a second attempt) force a 5xx.
 - **Expected:** Each failure sets a distinct `submitError` (`NETWORK_MESSAGE` vs `SERVER_MESSAGE`, same strings as ERR-18) rendered via `SubmitErrorBanner`, and increments `failedAttempts`; all previously-entered answers are preserved (no data loss on failure). Once `failedAttempts >= 1` and not currently submitting, a "Continue anyway" `TextLink` appears that calls `continueAnyway()` — completing the signup flow without a successful survey submit, honoring the "survey must never block a paid member's signup" rule.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared
@@ -1286,7 +1286,7 @@ today.
 - **Platforms:** shared
 
 ### TEL-11 — $screen SignupSurvey
-- **Steps:** Open a fresh welcome deep link (survey not yet completed for that token), reaching the 13-question onboarding survey.
+- **Steps:** Open a fresh welcome deep link (survey not yet completed for that token), reaching the 14-question onboarding survey.
 - **Expected:** A `$screen` event with name `SignupSurvey` fires once on entering the survey.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`LaunchedEffect(Unit) { telemetry.screen(Telemetry.Screens.SIGNUP_SURVEY) }`), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/AuthFlowRoot.kt (same call), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/analytics/Telemetry.kt
 - **Platforms:** shared

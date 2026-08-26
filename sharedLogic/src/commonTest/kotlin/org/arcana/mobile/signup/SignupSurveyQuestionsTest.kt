@@ -51,16 +51,18 @@ class SignupSurveyQuestionsTest {
             "neighborhoods" to listOf("Williamsburg"),
             "fitnessMeaning" to listOf("Community"),
             "eventInterest" to listOf("Group run"),
+            "membershipTypes" to listOf("Class packs"),
         ),
     )
 
     @Test
     fun `schema matches the web contract`() {
-        assertEquals(13, SURVEY_QUESTIONS.size)
+        assertEquals(14, SURVEY_QUESTIONS.size)
         assertEquals(
             listOf(
                 "modalities", "weeklyFrequency", "trainingTimes", "neighborhoods",
-                "fitnessMeaning", "communityState", "eventInterest", "monthlySpend",
+                "fitnessMeaning", "communityState", "eventInterest", "membershipTypes",
+                "monthlySpend",
                 "soloOrSocial", "referralIntent", "howHeard", "anythingElse", "referredBy",
             ),
             SURVEY_QUESTIONS.map { it.id },
@@ -79,8 +81,8 @@ class SignupSurveyQuestionsTest {
     }
 
     @Test
-    fun `empty answers are missing all eleven required questions`() {
-        assertEquals(11, missingRequired(SurveyAnswers()).size)
+    fun `empty answers are missing all twelve required questions`() {
+        assertEquals(12, missingRequired(SurveyAnswers()).size)
     }
 
     @Test
@@ -131,9 +133,9 @@ class SignupSurveyQuestionsTest {
     @Test
     fun `answeredCount counts each question at most once`() {
         assertEquals(0, answeredCount(SurveyAnswers()))
-        assertEquals(11, answeredCount(completeAnswers()))
+        assertEquals(12, answeredCount(completeAnswers()))
         assertEquals(
-            12,
+            13,
             answeredCount(completeAnswers().copy(texts = mapOf("anythingElse" to "hi"))),
         )
     }

@@ -161,8 +161,25 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
         required = true,
     ),
     SurveyQuestion(
-        id = "monthlySpend",
+        id = "membershipTypes",
         n = 8,
+        section = "You and your community",
+        label = "How do you pay for classes right now?",
+        hint = "Select all that apply",
+        type = SurveyQuestionType.Multi,
+        options = listOf(
+            "Unlimited membership",
+            "Multiple studio memberships",
+            "Class packs",
+            "ClassPass",
+            "Wellhub",
+            "Other",
+        ),
+        required = true,
+    ),
+    SurveyQuestion(
+        id = "monthlySpend",
+        n = 9,
         section = "You and your community",
         label = "What's your current monthly spend on boutique fitness?",
         type = SurveyQuestionType.Single,
@@ -171,7 +188,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
     ),
     SurveyQuestion(
         id = "soloOrSocial",
-        n = 9,
+        n = 10,
         section = "You and your community",
         label = "Are you more likely to try a new studio alone or with someone you know?",
         type = SurveyQuestionType.Single,
@@ -184,7 +201,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
     ),
     SurveyQuestion(
         id = "referralIntent",
-        n = 10,
+        n = 11,
         section = "You and your community",
         label = "Is there someone in your life you'd already want to bring into Arcana?",
         hint = "No commitment, just curious if someone comes to mind.",
@@ -194,7 +211,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
     ),
     SurveyQuestion(
         id = "howHeard",
-        n = 11,
+        n = 12,
         section = "One last thing",
         label = "How did you hear about Arcana?",
         type = SurveyQuestionType.Single,
@@ -204,7 +221,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
     ),
     SurveyQuestion(
         id = "anythingElse",
-        n = 12,
+        n = 13,
         section = "One last thing",
         label = "Anything else you want us to know?",
         hint = "Open floor. What would make Arcana actually worth it to you?",
@@ -213,7 +230,7 @@ val SURVEY_QUESTIONS: List<SurveyQuestion> = listOf(
     ),
     SurveyQuestion(
         id = "referredBy",
-        n = 13,
+        n = 14,
         section = "One last thing",
         label = "Did someone refer you to Arcana?",
         hint = "Optional, let us know who so we can thank them.",
