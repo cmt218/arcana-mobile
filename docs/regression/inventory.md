@@ -334,7 +334,7 @@ when adding a new annotation.
 
 ### HOME-07 — Next Up hero card renders the soonest upcoming booking
 - **Steps:** Load Home as a member with at least one upcoming booking.
-- **Expected:** A "Next · {relative time}" section rule appears (e.g. "Next · in 18min", "Next · in 3h", or "Next · Mon 6:00am" depending on how far out the class is) followed by a dark Moss card showing the studio (and spot label if assigned), a booking-status pill, the local start time with am/pm, the class name, and a studio/location/duration meta line.
+- **Expected:** A "Next · {relative time}" section rule appears (e.g. "Next · in 18min", "Next · in 3h", or "Next · Mon 6:00am" depending on how far out the class is) followed by a dark Moss card showing the studio (and spot label if assigned), a booking-status pill, the studio-local start time with am/pm (never the device timezone), the class name, and a studio/location/duration meta line.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`NextUpCard`, lines 198-221 and 410-528; `relativeTime`, lines 313-337)
 - **Platforms:** shared
 
@@ -364,7 +364,7 @@ when adding a new annotation.
 
 ### HOME-12 — Upcoming row shows time, duration, status pill, studio/location/spot
 - **Steps:** Load Home as `accounts.<device>.member` from the manifest — its seeded confirmed reservation is the upcoming booking this entry reads (it carries a location; the regression templates are `spot_selection_mode='none'`, so the spot label is absent unless you first book a spot studio, which no seeded fixture is).
-- **Expected:** Each row shows a fitted booking-status pill above the local start time, the class duration below it, and on the right the studio name, a dot-separated location (ellipsized if long) and spot label, plus the class name.
+- **Expected:** Each row shows a fitted booking-status pill above the studio-local start time (never the device timezone), the class duration below it, and on the right the studio name, a dot-separated location (ellipsized if long) and spot label, plus the class name.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 584-635)
 - **Platforms:** shared
 

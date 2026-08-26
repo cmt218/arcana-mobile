@@ -11,9 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlin.time.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
+import org.arcana.mobile.schedule.wallClock
 import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.theme.*
 import org.arcana.mobile.ui.ArcanaIcons
@@ -125,11 +123,11 @@ fun MyBookingsScreen(onClose: () -> Unit, onOpenClass: (Int) -> Unit) {
     }
 }
 
-/** Formats an ISO-8601 start time as "Tue, Jun 2 · 5:00 PM" — Kotlin/Native-safe. */
+/** Formats an ISO-8601 start time as "Tue, Jun 2 · 5:00 PM", in the studio's
+ *  wall clock — Kotlin/Native-safe. */
 private fun formatBookingDateTime(startAt: String): String {
     return try {
-        val tz = TimeZone.currentSystemDefault()
-        val local = Instant.parse(startAt).toLocalDateTime(tz)
+        val local = wallClock(startAt)
         val dow = local.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.titlecase() }
         val mon = local.month.name.take(3).lowercase().replaceFirstChar { it.titlecase() }
         val day = local.date.day

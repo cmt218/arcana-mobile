@@ -297,7 +297,9 @@ private fun SuccessBlock(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
 ) {
-    val tz = remember { TimeZone.currentSystemDefault() }
+    // The studio's clock, not the device's — a traveller must see the same
+    // time the schedule list and the studio's own site show.
+    val tz = remember(session.location.timezone) { sessionTimeZone(session.location.timezone) }
     val startLocal = remember(session.startAt) { Instant.parse(session.startAt).toLocalDateTime(tz) }
     val studio = session.location.studio
     val sc = studioColorFor(studio.primaryColor)

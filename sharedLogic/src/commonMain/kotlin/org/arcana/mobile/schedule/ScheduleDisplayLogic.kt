@@ -2,6 +2,7 @@ package org.arcana.mobile.schedule
 
 import kotlinx.datetime.IllegalTimeZoneException
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 
 /*
@@ -38,6 +39,22 @@ fun sessionTimeZone(id: String): TimeZone = try {
     TimeZone.of(id)
 } catch (_: IllegalTimeZoneException) {
     ScheduleViewModel.ScheduleTimeZone
+}
+
+/**
+ * The wall-clock date-time embedded in a server ISO timestamp
+ * ("2026-08-26T09:00:00-04:00" → 9:00). Class times must render as the
+ * studio's clock, never converted into the device zone; use this on surfaces
+ * whose payload carries no location timezone (bookings).
+ */
+fun wallClock(iso: String): LocalDateTime {
+    val core = when {
+        iso.endsWith("Z") -> iso.dropLast(1)
+        iso.length > 6 && iso[iso.length - 3] == ':' &&
+            (iso[iso.length - 6] == '+' || iso[iso.length - 6] == '-') -> iso.dropLast(6)
+        else -> iso
+    }
+    return LocalDateTime.parse(core)
 }
 
 enum class CapacityTier(val label: String) {
