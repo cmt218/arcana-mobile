@@ -489,6 +489,11 @@ Spec keys: `path` (required, prefix match on the request path), `status`
 defaults to a JSON `{"detail": ...}` so the client parses an error shape),
 `times` (optional, expire after N matches so a retry gets through).
 
+- **`path` is a PREFIX, and the auth paths nest.** `/api/v1/auth/token/` is a
+  prefix of `/api/v1/auth/token/refresh/`, so arming the former faults login
+  AND refresh. Arm the full `/refresh/` path when you mean only refresh
+  (AUTH-12), and remember that an ERR-08/ERR-10 fault on `/auth/token/` covers
+  refresh too, which is harmless pre-auth but not once a session exists.
 - **Clear faults between entries.** An armed fault has no timeout and will
   silently corrupt every later entry that touches that path. `DELETE` is the
   last step of any fault-driven entry, not an afterthought.
@@ -497,6 +502,18 @@ defaults to a JSON `{"detail": ...}` so the client parses an error shape),
 - Dev and test settings only. `prod.py` and `staging.py` hard-code the flag
   off AND omit the middleware from the stack, locked by
   `arcana/tests/test_staging_settings.py`.
+
+**Expiring an access token on demand.** Entries that turn on a token actually
+expiring (AUTH-12) would otherwise need a five-minute wait per attempt. Start
+the dev server with a short lifetime instead:
+
+```bash
+ACCESS_TOKEN_LIFETIME_SECONDS=30 python manage.py runserver
+```
+
+Dev settings only; prod keeps 5 minutes, where a short lifetime would just
+hammer the refresh endpoint. Refresh-token lifetime and rotation are
+untouched, so only the access half shortens.
 
 ## Safety
 
