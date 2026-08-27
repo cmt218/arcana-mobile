@@ -299,9 +299,10 @@ them before concluding something is broken.
   `docker stop`/`start arcana_postgres` is a separate, distinct recipe: a
   clean, fast way to force a 500 from most authenticated endpoints (server
   stays reachable, DB calls fail) without touching app or server code — use
-  it for a "5xx" entry, not a "connection-refused" one. Neither recipe can
-  target a single endpoint; killing the server (or the DB) affects every
-  endpoint at once. Developer Settings' base-URL override is only reachable
+  it for a "5xx" entry, not a "connection-refused" one. **For an entry that
+  needs a SPECIFIC status from a SPECIFIC endpoint, use fault injection
+  instead of either** (see below); killing the server or the DB affects every
+  endpoint at once and only ever produces one failure shape. Developer Settings' base-URL override is only reachable
   pre-auth, so for a network-failure entry reached only while authenticated
   (e.g. Home), kill/restart the actual local dev server process instead —
   find the specific `manage.py runserver` PID via `ps aux | grep manage.py`
@@ -455,6 +456,47 @@ them before concluding something is broken.
   nothing."
 
 ---
+
+## Fault injection (specific status, single endpoint)
+
+`arcana-server` exposes a dev-only fault injector for the error-path entries
+that killing the server cannot reach: ERR-08 (login 5xx), ERR-10 (login
+non-401/non-5xx), FAV-05 (favorites fails while the rest of the API is up),
+and any similar single-endpoint case. Faults are armed on the SERVER, not via
+a request header, because the app is the client and sends no header of ours.
+
+```bash
+BASE=http://localhost:8000
+
+# ERR-08 — login returns 500
+curl -X POST $BASE/api/v1/_faults/ -H 'Content-Type: application/json' \
+     -d '{"path": "/api/v1/auth/token/", "status": 500}'
+
+# ERR-10 — login returns a non-401, non-5xx code
+curl -X POST $BASE/api/v1/_faults/ -H 'Content-Type: application/json' \
+     -d '{"path": "/api/v1/auth/token/", "status": 403}'
+
+# FAV-05 — ONLY favorites fails; login, schedule, bookings stay real
+curl -X POST $BASE/api/v1/_faults/ -H 'Content-Type: application/json' \
+     -d '{"path": "/api/v1/users/me/favorites/", "status": 500}'
+
+curl $BASE/api/v1/_faults/            # list what is armed
+curl -X DELETE $BASE/api/v1/_faults/  # clear everything
+```
+
+Spec keys: `path` (required, prefix match on the request path), `status`
+(required, 100-599), `method` (optional, defaults to any), `body` (optional,
+defaults to a JSON `{"detail": ...}` so the client parses an error shape),
+`times` (optional, expire after N matches so a retry gets through).
+
+- **Clear faults between entries.** An armed fault has no timeout and will
+  silently corrupt every later entry that touches that path. `DELETE` is the
+  last step of any fault-driven entry, not an afterthought.
+- Faults live in the server process's memory, so they also die on restart,
+  and `runserver`'s autoreloader clears them on any file edit.
+- Dev and test settings only. `prod.py` and `staging.py` hard-code the flag
+  off AND omit the middleware from the stack, locked by
+  `arcana/tests/test_staging_settings.py`.
 
 ## Safety
 
