@@ -717,7 +717,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### FAV-05 — Favorites fetch failure keeps prior cache, never empties silently
-- **Steps:** Force `FavoritesApi.fetchFavorites()` to fail during `FavoritesRepository.refresh()`, both on a member's very first favorites load and on a later refresh where a real favorites set is already cached.
+- **Steps:** Fail ONLY the favorites endpoint, leaving the rest of the API up (`curl -X POST localhost:8000/api/v1/_faults/ -H 'Content-Type: application/json' -d '{"path": "/api/v1/users/me/favorites/", "status": 500}'`; see driver-playbook.md "Fault injection"). Drive both cases: a member's very first favorites load, and a later refresh where a real favorites set is already cached. Clear with `curl -X DELETE localhost:8000/api/v1/_faults/`.
 - **Expected:** The repository logs a warning and returns/keeps its previously cached `FavoritesDto` (or null if never loaded) rather than clearing it; `favoritesKnown` stays false only when truly never loaded, which suppresses the "choose favorites" nudge (SCHED-12) so a member who may already have favorites isn't wrongly nudged. **Silent-success note:** this guarantee depends on `bodyOrThrow`. `fetchFavorites()` returns `FavoritesDto`, whose fields all default to empty. Before `bodyOrThrow`, a 5xx with a JSON error body did not throw here at all — it silently deserialized into an empty `FavoritesDto`, and `refresh()` wrote it straight into `_favorites.value`, **overwriting a real cached favorites set with nothing** instead of ever reaching this entry's catch block. `bodyOrThrow` is what makes "keeps prior cache" true for every 5xx shape, not just network-level failures.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/networking/ArcanaApiClient.kt (`fetchFavorites`, `bodyOrThrow`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`favoritesKnown`)
 - **Platforms:** shared
@@ -1134,7 +1134,7 @@ today.
 - **Platforms:** shared
 
 ### ERR-08 — Login SERVER (5xx) failure is distinguished from a connection failure and from bad credentials
-- **Steps:** Submit login credentials against a backend returning a 5xx `LoginError`.
+- **Steps:** Arm a fault on the local server (`curl -X POST localhost:8000/api/v1/_faults/ -H 'Content-Type: application/json' -d '{"path": "/api/v1/auth/token/", "status": 500}'`), submit login credentials, then `curl -X DELETE localhost:8000/api/v1/_faults/`. See driver-playbook.md "Fault injection".
 - **Expected:** The `e.statusCode in 500..599` branch fires distinctly from both the 401 branch and the generic-exception (network) branch, setting `AuthUiState.Error("Something went wrong on our end. Please try again in a moment.", isCredentialError = false)` — copy explicitly different from both the credential-mismatch and the connection-failure strings, still rendered as the general (non-field) message.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
 - **Platforms:** shared
@@ -1146,7 +1146,7 @@ today.
 - **Platforms:** shared
 
 ### ERR-10 — Login failure on an unrecognized non-5xx status code shows the raw status in the general message
-- **Steps:** Submit login credentials against a backend returning a `LoginError` with a status code that is neither 401 nor in the 500-599 range (e.g. 403).
+- **Steps:** Arm a fault on the local server with a status that is neither 401 nor 500-599 (`curl -X POST localhost:8000/api/v1/_faults/ -H 'Content-Type: application/json' -d '{"path": "/api/v1/auth/token/", "status": 403}'`), submit login credentials, then `curl -X DELETE localhost:8000/api/v1/_faults/`. See driver-playbook.md "Fault injection".
 - **Expected:** The `else` branch sets `AuthUiState.Error("Couldn't sign you in (error <code>).")`, rendered as the general (non-field) message per ERR-07.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt
 - **Platforms:** shared
