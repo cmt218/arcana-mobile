@@ -258,13 +258,13 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### SIGNUP-19 — Claim form: already-consumed/expired token routes to "Log in instead"
-- **Steps:** Submit the claim form (or arrive on the claim screen) using a welcome token the server reports as expired or already used (`CompleteSignupResult.TokenExpiredOrConsumed`).
+- **Steps:** Submit the claim form using `accounts.<device>.claim_used.welcome_token`, which the seed issues and then consumes, so the server answers 410 `token_invalid_or_expired` (`CompleteSignupResult.TokenExpiredOrConsumed`).
 - **Expected:** `SignupCompletionState.Error(SignupErrorKind.TokenExpired)` renders a terminal ErrorState: "Already signed up" / "Log in instead." with body "Looks like this link's already been used." and a "Log in" `PrimaryCta`. The editing form is fully replaced — there is no way back to re-edit under this token.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
 - **Platforms:** shared
 
 ### SIGNUP-20 — Claim form: account-already-exists (409) also routes to "Log in instead"
-- **Steps:** Submit the claim form with an email that the server reports already has an account (`409` + `error: account_exists`).
+- **Steps:** Submit the claim form using `accounts.<device>.claim_conflict.welcome_token`. Its token is valid but a User already exists on that email, and `complete_signup` checks the collision before the token, so the server answers 409 `account_exists`.
 - **Expected:** `SignupCompletionState.Error(SignupErrorKind.AlreadyHasAccount)` renders the same terminal ErrorState layout but with body "You already have an account with this email." — distinct copy from the expired-token case, same "Log in" CTA routing to AuthScreen.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt
 - **Platforms:** shared
@@ -485,7 +485,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### SCHED-12 — Favorites nudge banner (no favorites yet)
-- **Steps:** As a member with zero favorites, land on Schedule.
+- **Steps:** Log in as `accounts.<device>.member_no_favorites` (seeded with zero favorites) and land on Schedule.
 - **Expected:** A dismissable Paper-card banner reads "Make it yours. Save your favorite Studios." with a "CHOOSE FAVORITES" link that calls `onManageFavorites`; the ✕ dismisses it for the session only (`nudgeDismissed`, resets on process restart). The banner never shows if the favorites fetch failed (`favoritesKnown == false`), to avoid nudging a member who may already have favorites. **Silent-success note:** this suppression depends on `bodyOrThrow` (see FAV-05) — before it, a 5xx with a JSON error body on the member's first-ever favorites fetch silently reported an empty `FavoritesDto` as success, making `favoritesKnown == true` with zero favorites, which would have WRONGLY shown this nudge to a member whose real favorites status the server never actually confirmed.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`SuccessContent`, "favorites-nudge" item), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleViewModel.kt (`hasFavorites`, `favoritesKnown`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`)
 - **Platforms:** shared
@@ -515,7 +515,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### SCHED-17 — Hidden-capacity studio rendering (no fill bar / no scarce shading)
-- **Steps:** View a session whose studio has `publishesCapacity == false` (e.g. a Mindbody studio with hidden capacity).
+- **Steps:** View `classes.hidden_capacity`, at the seeded Regression Hidden Capacity Studio (`publishes_capacity=false`), which is how a capacity-hidden Mindbody studio presents.
 - **Expected:** No fill progress bar renders; the overline reads binary "AVAILABLE" or "FULL" only (never "FILLING UP"/"ALMOST FULL"), per `computeCapacityTier`'s `!publishesCapacity` branch.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ClassRow`, `showsCapacityVisuals`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleDisplayLogic.kt (`computeCapacityTier`)
 - **Platforms:** shared
@@ -553,7 +553,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### CLASS-04 — Cancelled-by-studio class detail
-- **Steps:** Open the detail of a session whose `status == "cancelled_by_studio"`.
+- **Steps:** Open the detail of `classes.cancelled` (seeded with `status='cancelled_by_studio'`).
 - **Expected:** In place of the Availability block, a "Cancelled" section rule + "This class has been cancelled by the studio." (Warning color) renders; the sticky reserve CTA is hidden entirely.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`SuccessBlock` `isCancelled` branch)
 - **Platforms:** shared
@@ -571,7 +571,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### CLASS-07 — Past class rendering ("CLASS ENDED")
-- **Steps:** Open detail for a session whose `endAt` is in the past.
+- **Steps:** Open detail for a session whose `endAt` is in the past. **BLOCKED, and not a fixture gap:** Schedule never surfaces an already-past session and `DeepLinkHandler` handles only the welcome-token scheme, so a seeded past class would exist with no way to navigate to it. Reaching this needs a class deep link in the app.
 - **Expected:** The Availability block is hidden entirely (isPast); the sticky CTA reads "CLASS ENDED" and is disabled/no-op regardless of any other state.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`SuccessBlock` `isPast`, `StickyReserveCta` label precedence)
 - **Platforms:** shared
@@ -595,7 +595,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### CLASS-11 — Booking flow: spot-preference dropdown (non-spot classes)
-- **Steps:** Open the booking sheet for a class with `spotPreferenceOptions` set and `requiresSpot == false`.
+- **Steps:** Open the booking sheet for `classes.spot_preference`, whose template carries `spot_preference_options` with `spot_selection_mode='none'`, so `requiresSpot` is false.
 - **Expected:** An `ArcanaDropdownField` renders with the template's options; the picked value rides along as free text on the booking but never gates CONFIRM (always optional). Suppressed entirely when `requiresSpot == true` (real spot selection wins).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (spot-preference dropdown), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`spotPreferenceActive`, `setSpotPreferenceOptions`)
 - **Platforms:** shared
@@ -607,19 +607,19 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### CLASS-13 — Out-of-credits CTA state
-- **Steps:** Open detail for a bookable, open class with a covering membership wallet whose `creditsRemaining <= 0`.
+- **Steps:** Log in as `accounts.<device>.member_no_credits` (a covering wallet granting 0 credits) and open detail for any bookable, open class.
 - **Expected:** `bookCtaState` resolves `BookCta.OutOfCredits` ("OUT OF CREDITS", disabled); the sticky CTA shows that label and is not tappable.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`bookCtaState`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`load`)
 - **Platforms:** shared
 
 ### CLASS-14 — No-active-membership CTA, and the unknown state it must not be confused with
-- **Steps:** (a) Open detail as a member with no current/usable membership period. (b) Open detail as a member whose membership IS fine, but with the FIRST `/memberships/me` fetch failing — fail only that endpoint so the session and class detail still load (a full outage shows FullScreenError instead and does not exercise this). Then restore the endpoint and reopen.
+- **Steps:** (a) Open detail as `accounts.<device>.member_no_membership`, whose wallet window has fully elapsed. (b) Open detail as `accounts.<device>.member`, whose membership IS fine, but with the FIRST `/memberships/me` fetch failing — arm a fault on `/api/v1/memberships/me` with `times: 1` (driver-playbook.md "Fault injection") so only that one fetch fails, the session and class detail still load, and reopening finds the endpoint healthy (a full outage shows FullScreenError instead and does not exercise this). Then restore the endpoint and reopen.
 - **Expected:** (a) `bookCtaState` resolves `BookCta.NotBookable` ("NO ACTIVE MEMBERSHIP"). (b) the CTA reads `BookCta.Unknown` ("BOOKING UNAVAILABLE"), NOT "NO ACTIVE MEMBERSHIP": a failed fetch establishes nothing about the account, so the button must not claim the member has no membership. The `ErrorSnackbar` ("Couldn't refresh" + Retry) appears alongside it, and reopening with the endpoint healthy resolves to a real evaluated state. Both render as a single centered line with no time/day sub-stamp (`showCtaSubStamp = false`) and are disabled. Superseded 2026-08-23: `_ctaState` previously defaulted to `NotBookable`, so a failed cold fetch fell through to it and stated something false about a paying member's account.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingEligibility.kt (`BookCta.NotBookable`, `BookCta.Unknown`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`_ctaState` initial value, `membershipLoadFailed`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`showCtaSubStamp`)
 - **Platforms:** shared
 
 ### CLASS-15 — Outside-membership-window CTA state
-- **Steps:** Open detail as a member whose wallet(s) don't cover this class's month (e.g. a July-only member viewing an August class).
+- **Steps:** Log in as `accounts.<device>.member_outside_window`, whose wallet ends 5 days out, and open detail for `classes.outside_window` (13 days out). Check a near class too: the same member CAN book inside the window, which is the boundary this entry is about. The sub-line names covered MONTHS, so it only reads naturally when those 13 days cross a month boundary.
 - **Expected:** The CTA overrides to "OUTSIDE YOUR MEMBERSHIP" with a sub-line naming the gap, e.g. "July credits don't cover August."; this outranks the booking-window-not-open state. Attempting to book anyway (stale UI/race) surfaces `outsideWindowCopy(coveredMonths)` in the sheet, naming no price and pointing to concierge.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`_outsideWindow`, `OutsideWindowInfo`, `load`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingCopy.kt (`outsideWindowCopy`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ClassDetailScreen.kt (`ctaSubOverride`)
 - **Platforms:** shared
@@ -711,7 +711,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### FAV-04 — Favorites toggle unavailable with zero favorites
-- **Steps:** As a member with no saved favorites, open Schedule.
+- **Steps:** Log in as `accounts.<device>.member_no_favorites` (seeded with zero favorites) and open Schedule.
 - **Expected:** No Favorites/All-Studios toggle renders — only a single "ALL STUDIOS" Ink bar that opens/closes the studio accordion on tap; the `hasFavorites` flag gates the toggle's existence.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/schedule/ScheduleScreen.kt (`ScopeToggle`, `!hasFavorites` branch)
 - **Platforms:** shared
@@ -723,7 +723,7 @@ when adding a new annotation.
 - **Platforms:** shared
 
 ### FAV-06 — Favorites cleared on logout
-- **Steps:** Log out of the app while favorites are cached from the prior session, then log in as a different member.
+- **Steps:** Log in as `accounts.<device>.member` (two seeded favorites) and open Schedule so they cache, log out, then log in as `accounts.<device>.member_no_favorites`.
 - **Expected:** `FavoritesRepository.clear()` is wired as an `onSessionCleared` hook (via `AppSessionController`), setting `favorites.value = null` so the next member never briefly sees the prior member's favorites.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`clear`)
 - **Platforms:** shared
@@ -1194,13 +1194,13 @@ today.
 - **Platforms:** shared
 
 ### ERR-18 — Claim-your-name (signup completion) form distinguishes CONNECTION vs SERVER vs generic submit failure
-- **Steps:** On the claim-your-name form (reached via the welcome deep link → survey flow), submit a complete/valid form three separate times, forcing: (a) a network-level failure (`CompleteSignupResult.NetworkError`), (b) a 5xx response, (c) a non-5xx, non-field-specific error response.
+- **Steps:** Reach the claim-your-name form via `accounts.<device>.claim_spare.welcome_token` (the SIGNUP block consumes `claim`, so use the spare). Submit a complete/valid form three times, forcing: (a) a network-level failure by killing the dev server (`CompleteSignupResult.NetworkError`), (b) a 5xx, (c) a non-5xx, non-field-specific error. For (b) and (c) arm a fault on `/api/v1/auth/complete-signup` with `times` set so the form stays reachable: see driver-playbook.md "Fault injection".
 - **Expected:** Each maps to a distinct `formError` string rendered via `FormErrorBanner`: (a) `NETWORK_MESSAGE` = "Couldn't reach the server. Check your connection and try again.", (b) `SERVER_MESSAGE` = "Something went wrong on our end. Please try again in a moment.", (c) `GENERIC_MESSAGE` = "We couldn't complete your signup. Please review your details and try again." In all three the form stays populated (`Editing` state, not a terminal `Error` state) and the SUBMIT control is re-enabled for another attempt — this is separate from field-level `passwordError`/`phoneError`, and separate from the terminal `SignupCompletionState.Error` used only for token-expired/already-has-account (see SIGNUP area for those).
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupCompletionScreen.kt (`FormErrorBanner`)
 - **Platforms:** shared
 
 ### ERR-19 — Onboarding survey submit failure distinguishes CONNECTION vs SERVER and reveals a "Continue anyway" escape after the first failure
-- **Steps:** On the 14-question onboarding survey, answer all required questions and submit while the submit call fails: first force a network error, then (on a second attempt) force a 5xx.
+- **Steps:** Reach the survey via `accounts.<device>.claim_spare.welcome_token` (the SIGNUP block consumes `claim`). Answer all required questions and submit while the submit call fails: first force a network error by killing the dev server, then on a second attempt arm a 5xx on `/api/v1/beta/signup-survey` (driver-playbook.md "Fault injection").
 - **Expected:** Each failure sets a distinct `submitError` (`NETWORK_MESSAGE` vs `SERVER_MESSAGE`, same strings as ERR-18) rendered via `SubmitErrorBanner`, and increments `failedAttempts`; all previously-entered answers are preserved (no data loss on failure). Once `failedAttempts >= 1` and not currently submitting, a "Continue anyway" `TextLink` appears that calls `continueAnyway()` — completing the signup flow without a successful survey submit, honoring the "survey must never block a paid member's signup" rule.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyViewModel.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/signup/SignupSurveyScreen.kt
 - **Platforms:** shared

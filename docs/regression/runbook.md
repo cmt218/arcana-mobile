@@ -622,23 +622,43 @@ JSON manifest** — to the run folder:
 python manage.py seed_regression > ~/arcana-regression-runs/<date>/manifest.json
 ```
 
-**Manifest shape (verified against the real command output, 2026-08-11):**
+**Manifest shape (verified against the real command output, 2026-08-27):**
 ```json
 {
   "accounts": {
-    "ios26":  { "claim": {"email": "...", "welcome_token": "..."}, "member": {"email": "...", "password": "..."} },
-    "ios18":  { "claim": {...}, "member": {...} },
-    "android":{ "claim": {...}, "member": {...} }
+    "ios26": {
+      "claim":                 {"email": "...", "welcome_token": "..."},
+      "claim_spare":           {"email": "...", "welcome_token": "..."},
+      "claim_used":            {"email": "...", "welcome_token": "..."},
+      "claim_conflict":        {"email": "...", "welcome_token": "..."},
+      "member":                {"email": "...", "password": "...", "member_number": "9001"},
+      "member_no_favorites":   {"email": "...", "password": "...", "member_number": "..."},
+      "member_no_credits":     {"email": "...", "password": "...", "member_number": "..."},
+      "member_no_membership":  {"email": "...", "password": "...", "member_number": "..."},
+      "member_outside_window": {"email": "...", "password": "...", "member_number": "..."}
+    },
+    "ios18":  { ...same shape... },
+    "android":{ ...same shape... }
   },
   "classes": {
     "full": <session id>,
     "blocked": <session id>,
     "late_cancel": <session id>,
     "late_cancel_active": <session id>,
-    "window_gated": <session id>
+    "window_gated": <session id>,
+    "cancelled": <session id>,
+    "spot_preference": <session id>,
+    "hidden_capacity": <session id>,
+    "outside_window": <session id>
   }
 }
 ```
+
+**`member_number` is reported, not assumed.** It is unique across every
+membership, including local fixtures the command does not own and never purges
+(`seed_lapsed_member` already holds 9101). The seed steps past a taken number
+rather than aborting, so read the value from the manifest before asserting on
+the member card.
 Read the manifest for every account/session id used in Phase 3 — **never
 hardcode an id or token**, they are freshly generated on every run
 (including the claim tokens — a re-seed always hands you a fresh, unconsumed
@@ -647,8 +667,8 @@ hardcode an id or token**, they are freshly generated on every run
 **Which fixture feeds which entry.** Each of these entries names its manifest
 key in its own Steps line; this table is the index, so a driver can tell at a
 glance what a given fixture is for and what breaks if the seed didn't produce
-it. All five session fixtures live on the two synthetic `regression-*` studios
-(`platform='fake'`), **not** on any real synced studio.
+it. Every session fixture lives on one of the three synthetic `regression-*`
+studios (`platform='fake'`), **not** on any real synced studio.
 
 | Manifest key | What it is | Entries that consume it |
 |---|---|---|
@@ -659,6 +679,27 @@ it. All five session fixtures live on the two synthetic `regression-*` studios
 | `classes.late_cancel_active` | Same 24h studio, ~12h out — **inside** the cutoff; the only forfeit-reachable fixture (needs the Phase 3 fulfilment step) | CLASS-18, CLASS-20, CLASS-22 |
 | `accounts.<device>.claim` | `awaiting_signup` membership + one unconsumed `welcome_token` | SIGNUP-01 … SIGNUP-23 (the whole welcome-deep-link → survey → claim flow) |
 | `accounts.<device>.member` | Activated member (8 credits) + **one confirmed upcoming booking** + **two favorites** (studio-grain + location-grain) | Every authenticated entry logs in with it (AUTH-02 onward). The seeded booking backs SCHED-16, CLASS-16, CLASS-18, HOME-12; the seeded favorites back SCHED-01, SCHED-11, FAV-01, FAV-02 |
+| `classes.cancelled` | `status='cancelled_by_studio'`, +4 days 12:00 ET | CLASS-04 |
+| `classes.spot_preference` | Preference dropdown, **no** real spot selection, +4 days 17:00 ET, Regression Test Studio | CLASS-11 |
+| `classes.hidden_capacity` | Regression Hidden Capacity Studio (`publishes_capacity=false`), 17/20 booked, +2 days 09:00 ET | SCHED-17 |
+| `classes.outside_window` | +13 days 11:00 ET — past `member_outside_window`'s wallet but inside the browse horizon | CLASS-15 |
+| `accounts.<device>.claim_spare` | A SECOND unconsumed `welcome_token`, deliberately left alone by the SIGNUP block | ERR-18, ERR-19, NAV-06, NAV-07, NAV-09, TEL-10, TEL-11 |
+| `accounts.<device>.claim_used` | A token already consumed → 410 `token_invalid_or_expired` | SIGNUP-19 |
+| `accounts.<device>.claim_conflict` | Unconsumed token whose email ALREADY has a User → 409 `account_exists` | SIGNUP-20 |
+| `accounts.<device>.member_no_favorites` | Activated member, credited, **zero favorites** | SCHED-12, FAV-04, and the second login FAV-06 needs |
+| `accounts.<device>.member_no_credits` | Covering wallet granting 0 credits | CLASS-13 |
+| `accounts.<device>.member_no_membership` | Wallet whose window has fully elapsed; browse stays open | CLASS-14 (a) |
+| `accounts.<device>.member_outside_window` | Active wallet ending +5 days, so near classes book but `classes.outside_window` does not | CLASS-15 |
+
+**Order matters for the claim accounts.** `claim` is the one the SIGNUP block
+consumes; `claim_spare` exists because that consumption is what left every
+later fresh-token entry BLOCKED in the 2026-08-11 run. Do not spend the spare
+on a SIGNUP entry.
+
+**CLASS-07 stays BLOCKED and is not a seed gap.** Schedule never surfaces an
+already-past session and `DeepLinkHandler` handles only the welcome-token
+scheme, so a past-dated fixture would exist with no way to navigate to it.
+Reaching it needs a class deep link in the app, not a seed change.
 
 If `seed_regression` produced no manifest (see below), every entry in the
 right-hand column is the SKIP list.
