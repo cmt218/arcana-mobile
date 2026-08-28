@@ -36,6 +36,8 @@ val Ash         = Color(0xFF6B6E5F) // secondary text
 val Ash2        = Color(0xFF9B9F8F) // tertiary / muted text
 val Mist        = Color(0xFFD8D7C7) // dividers, input hairlines
 val Mist2       = Color(0xFFEBEADA) // subtle fills
+val Plate       = Color(0xFFFFFFFF) // the one pure white: a plate under content
+                                    // whose own fills are too close to Stone
 
 // ---- Functional ----
 val Danger      = Color(0xFFB23A2A)

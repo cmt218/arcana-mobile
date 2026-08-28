@@ -584,7 +584,7 @@ when adding a new annotation.
 
 ### CLASS-09 — Booking flow: spot selection required
 - **Steps:** Open the booking sheet for a class whose `template.spotSelectionMode != "none"`, tap CONFIRM without picking a spot.
-- **Expected:** CONFIRM stays disabled (`canConfirm` requires `_selectedSpot.value != null` when `requiresSpot`). Picking a spot from `SpotSelector` (or the expanded full-screen `SpotMapFullScreen` for grid studios with coordinates) enables CONFIRM; `spotSelected` telemetry fires on pick.
+- **Expected:** CONFIRM stays disabled (`canConfirm` requires `_selectedSpot.value != null` when `requiresSpot`). Picking a spot from `SpotSelector` (or the expanded full-screen `SpotMapFullScreen` for grid studios with coordinates) enables CONFIRM; `spotSelected` telemetry fires on pick. The inline map draws on its own white plate (`Plate`), not on the sheet's Stone, so taken dots read as taken; its dots never touch each other.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/BookingSheet.kt (`requiresSpot` branch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotSelector.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMap.kt (map-vs-chips chooser), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotPicker.kt (chip-row fallback when spots lack coordinates), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMapFullScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingViewModel.kt (`canConfirm`, `selectSpot`)
 - **Platforms:** shared
 
@@ -686,8 +686,8 @@ when adding a new annotation.
 
 ### CLASS-26 — Full-screen spot map: pinch-zoom, pan, and close
 - **Steps:** Open the booking sheet for a grid studio with spot coordinates (CLASS-09) and expand to the full-screen room map. Pinch to zoom in/out past the clamped range, drag to pan near an edge, and tap "Close room map".
-- **Expected:** `SpotMapFullScreen` opens as a `Dialog` with pinch-zoom (`detectTransformGestures`) clamped to `minScale..maxScale`, drag-to-pan clamped at the content edges (`clampAxis`), and a `SpotMapLegend`. On first open the map performs a deferred one-frame initial fit-zoom (guarded by a `scale.isNaN()` check) rather than snapping instantly. The "Close room map" `IconCircle` returns to the booking sheet's inline `SpotSelector`.
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMapFullScreen.kt (295 lines; `detectTransformGestures`, `clampAxis`, line 144 `scale.isNaN()` guard, `SpotMapLegend`)
+- **Expected:** `SpotMapFullScreen` opens as a `Dialog` with pinch-zoom (`detectTransformGestures`) clamped to `minScale..maxScale`, drag-to-pan clamped at the content edges (`clampAxis`), and a `SpotMapLegend`. On first open the map performs a deferred one-frame initial fit-zoom (guarded by a `scale.isNaN()` check) rather than snapping instantly. **No two circles touch or overlap at any studio** — `spotContentSize` sizes the canvas off the closest pair so they sit `SPOT_GAP_FRACTION` of a diameter apart, on every room, including shallow two-row rooms (NRTHRN Strong) and dense floors (Barry's Noho, AARMY). **Every station label renders in full, never ellipsized** — a name too wide for its circle at the design size (The Pack's "10,BENCH", Barry's "Instructor") shrinks to fit, and one that already fits is untouched. The "Close room map" `IconCircle` returns to the booking sheet's inline `SpotSelector`.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMapFullScreen.kt (259 lines; `detectTransformGestures`, `clampAxis`, line 142 `scale.isNaN()` guard, `SpotMapLegend`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/SpotLayout.kt (`spotContentSize`, `spotCenters`, `maxSpotDot` — the shared no-overlap math), sharedUI/src/commonMain/kotlin/org/arcana/mobile/booking/SpotMap.kt (`SpotDot` auto-shrinking label)
 - **Platforms:** shared
 
 ## FAV

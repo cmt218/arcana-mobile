@@ -230,12 +230,22 @@ fun Caption(
         modifier = modifier,
         maxLines = maxLines,
         overflow = overflow,
-        style = TextStyle(
-            fontFamily = Arcana.fonts.body,
-            fontWeight = FontWeight.Medium,
-            fontSize = size.sp,
-            letterSpacing = 0.01.em,
-            color = color,
-        ),
+        style = captionStyle(size, color),
     )
 }
+
+/** [Caption]'s style, exposed for the rare caller that must reach for BasicText
+ *  instead (the spot map shrinks a dot label to fit its circle). */
+@Composable
+internal fun captionStyle(
+    size: Int = 12,
+    color: Color = Ash,
+    textAlign: TextAlign = TextAlign.Unspecified,
+): TextStyle = TextStyle(
+    fontFamily = Arcana.fonts.body,
+    fontWeight = FontWeight.Medium,
+    fontSize = size.sp,
+    letterSpacing = 0.01.em,
+    color = color,
+    textAlign = textAlign,
+)

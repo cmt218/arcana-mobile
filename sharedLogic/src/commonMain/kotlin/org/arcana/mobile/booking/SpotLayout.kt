@@ -1,6 +1,8 @@
 package org.arcana.mobile.booking
 
 import org.arcana.mobile.data.SpotDto
+import kotlin.math.min
+import kotlin.math.sqrt
 
 /*
  * Pure spot-map layout math, shared by the SpotMap/SpotMapFullScreen
@@ -9,6 +11,9 @@ import org.arcana.mobile.data.SpotDto
 
 /** A spot placed in unit space: [nx],[ny] ∈ [0,1] after bbox-normalization. */
 data class NormalizedSpot(val spot: SpotDto, val nx: Float, val ny: Float)
+
+/** A spot placed in a concrete box: [cx],[cy] is its centre in that box's units. */
+data class PlacedSpot(val spot: SpotDto, val cx: Float, val cy: Float)
 
 /**
  * Result of laying spots into unit space, plus the metadata the composable
@@ -72,6 +77,113 @@ fun normalizeSpots(spots: List<SpotDto>, marginFraction: Float = 0.05f): SpotLay
         rows = ys.distinct().size,
         cols = xs.distinct().size,
     )
+}
+
+/** Clear space between the two closest dots, as a fraction of a dot diameter. */
+const val SPOT_GAP_FRACTION = 0.05f
+
+/**
+ * Where each dot's centre lands inside a [boxW]×[boxH] box. Mirrors the scatter
+ * layout exactly: a dot is positioned by its top-left within `box - dot`, so the
+ * span the normalized coordinates actually map onto is one dot narrower and
+ * shorter than the box. Hit-testing and the spacing math both go through this so
+ * they cannot drift apart.
+ */
+fun spotCenters(layout: SpotLayout, boxW: Float, boxH: Float, dot: Float): List<PlacedSpot> =
+    layout.spots.map {
+        PlacedSpot(it.spot, it.nx * (boxW - dot) + dot / 2f, it.ny * (boxH - dot) + dot / 2f)
+    }
+
+/** Closest centre-to-centre distance once the layout is drawn at this size. */
+fun closestSpotGap(layout: SpotLayout, boxW: Float, boxH: Float, dot: Float): Float {
+    val p = spotCenters(layout, boxW, boxH, dot)
+    var best = Float.MAX_VALUE
+    for (i in p.indices) for (j in i + 1 until p.size) {
+        val dx = p[i].cx - p[j].cx
+        val dy = p[i].cy - p[j].cy
+        val d = sqrt(dx * dx + dy * dy)
+        if (d < best) best = d
+    }
+    return if (best == Float.MAX_VALUE) Float.MAX_VALUE else best
+}
+
+/** Closest pair in unit space, x scaled by the aspect so both axes compare in
+ *  the room's real proportions. Two spots on different rows are genuinely far
+ *  apart even when they share an x, and must not drive the sizing. */
+private fun closestUnitGap(layout: SpotLayout): Float {
+    val p = layout.spots
+    var best = Float.MAX_VALUE
+    for (i in p.indices) for (j in i + 1 until p.size) {
+        val dx = (p[i].nx - p[j].nx) * layout.bboxAspect
+        val dy = p[i].ny - p[j].ny
+        val d = sqrt(dx * dx + dy * dy)
+        if (d > 1e-4f && d < best) best = d
+    }
+    return if (best == Float.MAX_VALUE) 1f else best // 0 or 1 spot
+}
+
+/**
+ * Canvas size for the full-screen map: preserves the room's proportions while
+ * placing the closest pair of fixed-size dots [SPOT_GAP_FRACTION] of a diameter
+ * apart. Solved on the CENTRE span and the dot added back afterwards, because
+ * that span — not the outer box — is what the normalized coordinates address.
+ */
+fun spotContentSize(layout: SpotLayout, dot: Float, maxSide: Float = 12000f): Pair<Float, Float> {
+    val aspect = layout.bboxAspect
+    var innerH = dot * (1f + SPOT_GAP_FRACTION) / closestUnitGap(layout)
+    var innerW = innerH * aspect
+    val room = (maxSide - dot).coerceAtLeast(0f)
+    if (innerW > room) { innerW = room; innerH = innerW / aspect }
+    if (innerH > room) { innerH = room; innerW = innerH * aspect }
+    return (innerW + dot) to (innerH + dot)
+}
+
+/**
+ * Inverse of [spotContentSize] for the inline map, whose canvas is fixed by the
+ * sheet width: the largest dot ≤ [maxDot] that still leaves [clear] of visible
+ * space between the drawn circles. [drawnInset] is the padding each dot keeps
+ * inside its own box, so the circle is `dot - 2 * drawnInset` across.
+ *
+ * Bisection rather than a closed form: shrinking the dot widens the placement
+ * span on both axes at once, and which pair is closest can change as it does.
+ */
+fun maxSpotDot(
+    layout: SpotLayout,
+    boxW: Float,
+    boxH: Float,
+    drawnInset: Float,
+    clear: Float,
+    minDot: Float,
+    maxDot: Float,
+): Float {
+    fun fits(dot: Float) = closestSpotGap(layout, boxW, boxH, dot) >= dot - 2f * drawnInset + clear
+    val hi0 = min(maxDot, min(boxW, boxH))
+    if (hi0 <= minDot || fits(hi0)) return hi0.coerceAtLeast(minDot)
+    if (!fits(minDot)) return minDot
+    var lo = minDot
+    var hi = hi0
+    repeat(20) {
+        val mid = (lo + hi) / 2f
+        if (fits(mid)) lo = mid else hi = mid
+    }
+    return lo
+}
+
+/**
+ * Largest size (sp) at which a label whose natural width is [naturalPx] at
+ * [atSize] still fits [availablePx]. Glyph advances and em-based tracking both
+ * scale with the font size, so one measurement settles it without a search.
+ *
+ * Do NOT go back to Compose's `TextAutoSize`: it decides a size fits by asking
+ * whether the layout ellipsized, and `SkiaParagraph.isLineEllipsized` returns a
+ * hardcoded false, so on iOS it never shrinks anything.
+ */
+fun fitLabelSize(naturalPx: Float, availablePx: Float, atSize: Int, minSize: Int): Int {
+    if (naturalPx <= 0f || availablePx <= 0f || naturalPx <= availablePx) return atSize
+    // Trim a hair off before flooring: advances round per glyph, so a size that
+    // scales to exactly the available width can still measure a pixel over.
+    val fitted = (atSize * (availablePx / naturalPx) * 0.97f).toInt()
+    return fitted.coerceIn(minOf(minSize, atSize), atSize)
 }
 
 // Require most spots to actually carry coordinates before drawing a map (a
