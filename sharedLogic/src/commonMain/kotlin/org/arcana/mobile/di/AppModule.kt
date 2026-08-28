@@ -5,6 +5,7 @@ import org.arcana.mobile.auth.SecureStorage
 import org.arcana.mobile.auth.SecureStorageDiagnostics
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.auth.AuthViewModel
+import org.arcana.mobile.auth.ReviewerRedirect
 import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingViewModel
@@ -60,6 +61,17 @@ val appModule = module {
     // Default URL is https://api.arcana.fit on BOTH platforms (prod cutover is
     // done). Local dev requires an explicit Developer Settings override.
     single { BaseUrlProvider(get(), get(), defaultBaseUrl()) }
+    single {
+        val storage = get<SecureStorage>()
+        val baseUrl = get<BaseUrlProvider>()
+        ReviewerRedirect(
+            setUrl = baseUrl::set,
+            resetUrl = baseUrl::reset,
+            loadKey = storage::load,
+            saveKey = storage::save,
+            deleteKey = storage::delete,
+        )
+    }
     single { ArcanaApiClient(get(), get(), get()) }
     single<BookingApi> { get<ArcanaApiClient>() }
     single<MembershipApi> { get<ArcanaApiClient>() }
@@ -71,17 +83,22 @@ val appModule = module {
     single { FavoritesRepository(get()) }
     single {
         val storage = get<SecureStorage>()
+        val favorites = get<FavoritesRepository>()
+        val reviewerRedirect = get<ReviewerRedirect>()
         AppSessionController(
             isAuthenticated = get<ArcanaApiClient>().isAuthenticated,
             loadKey = storage::load,
             saveKey = storage::save,
-            onSessionCleared = get<FavoritesRepository>()::clear,
+            onSessionCleared = {
+                favorites.clear()
+                reviewerRedirect.onSessionEnded()
+            },
             pendingTokenProvider = { PendingTokenSource().consumePendingToken() },
         )
     }
     single<CompleteSignupCallable> { CompleteSignupApi(get()) }
     single<SignupSurveyCallable> { SignupSurveyApi(get()) }
-    viewModel { AuthViewModel(get(), get()) }
+    viewModel { AuthViewModel(get(), get(), get()) }
     viewModel { (initialEmail: String) -> PasswordResetRequestViewModel(get(), initialEmail) }
     viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
     viewModel { ProfileViewModel(api = get(), favoritesRepository = get(), telemetry = get()) }

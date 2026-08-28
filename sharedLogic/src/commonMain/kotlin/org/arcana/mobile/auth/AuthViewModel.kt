@@ -22,6 +22,7 @@ sealed interface AuthUiState {
 class AuthViewModel(
     private val api: ArcanaApiClient,
     private val telemetry: Telemetry = Telemetry.Noop,
+    private val reviewerRedirect: ReviewerRedirect? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
@@ -32,6 +33,8 @@ class AuthViewModel(
             _uiState.value = AuthUiState.Loading
             telemetry.loginSubmitted()
             try {
+                // Must run before the request: it decides which host gets it.
+                reviewerRedirect?.applyFor(email)
                 api.login(email.trim(), password)
                 telemetry.loginSucceeded()
                 _uiState.value = AuthUiState.Success
