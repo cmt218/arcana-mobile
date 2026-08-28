@@ -74,6 +74,14 @@ loop below.
   invocation matching `idb ui tap`'s positional-then-flag style fails with a
   "multiple companions" error.
 
+**Reinstalling after an erase: use `xcrun simctl install`, not `idb install`.**
+On 2026-08-27, against a freshly `erase`d-and-rebooted arm64 simulator that had
+been running that same `.app` minutes earlier, `idb install` failed with
+`Targets architecture x86_64 not in the bundles supported architectures:
+(arm64)`. The bundle was fine: `xcrun simctl install <UDID> <same .app path>`
+succeeded immediately. Treat that arch error post-erase as an idb/companion
+false positive and fall through to `simctl install` rather than rebuilding.
+
 **Screenshots.** `xcrun simctl io <UDID> screenshot <path>.png`. This writes a
 device-**pixel** image, not points — see the coordinate-space trap below
 before using pixel coordinates read off a screenshot for a tap.
@@ -96,6 +104,21 @@ afterward. This is a cheap way to bulk-confirm an entire TEL-* section: every
 telemetry call echoes `D/Telemetry: ▶ ...`, so `$screen`/`tab_tapped`/
 `identify`/`reset`/`app_start_completed` all show up in order with zero
 extra device interaction beyond normal navigation.
+
+**`--console-pty` is the ONLY thing that reaches this stream, and it does
+work — do not go hunting for a second mechanism and do not block an entry on
+its absence.** Two plausible-looking alternatives return nothing: `xcrun simctl
+log stream` with a `Telemetry`/`screen`/`posthog` predicate (the echo goes to
+the process's stdout, not to os_log, so the predicate matches only OS framework
+noise), and `simctl launch --stdout=/--stderr=` redirection (the files are
+never created). Re-verified live 2026-08-28 on both pinned sims: eleven
+`D/Telemetry:` lines inside 25s of a cold launch on iPhone 17 Pro Max (26.3)
+and on iPhone 16 Pro (18.5), same builds the run drove. On 2026-08-27 the two
+iOS lanes recorded 34 applicable entries BLOCKED for "no capture mechanism
+exists on iOS" — TEL, plus NAV-11, DEVSET-11, LAUNCH-03, SIGNUP-23 and
+PLAT-06 — while that run's own `telemetry-ios26.log`, which its earlier
+LAUNCH-03 and SIGNUP-23 PASSes were scored from, had been produced by this
+exact command. That claim is false; never record it again.
 
 ---
 
@@ -127,8 +150,12 @@ has stale text" from "field is empty, that's just the placeholder."
 **Act.**
 - `adb shell input tap <x> <y>`
 - `adb shell input swipe <x1> <y1> <x2> <y2> <ms>`
-- `adb shell input text '<str>'` — escape spaces as `%s`. Two characters this
-  app's regression fixtures use are mishandled: `@` is silently **dropped**
+- `adb shell input text '<str>'` — escape spaces as `%s`, **every space,
+  always**. This is not optional polish: a multi-word string handed to `adb
+  shell` through Bash is split by the device-side shell and only the FIRST
+  word lands in the field, silently (typing `A friend at the gym` into a
+  survey "specify" field yields `A`). Two characters this app's regression
+  fixtures use are also mishandled: `@` is silently **dropped**
   (`user@example.com` types as `userexample.com`) — send
   `adb shell input keyevent 77` (`KEYCODE_AT`) between the two halves
   instead. A literal backslash before `!` (attempting to escape it,
@@ -143,7 +170,19 @@ has stale text" from "field is empty, that's just the placeholder."
   `KEYCODE_TAB` and, unlike iOS, this **does** correctly trigger Compose's
   `onPreviewKeyEvent` focus-traversal path (confirmed via PROFILE-26: focus
   genuinely moved to the next field) — don't assume Android inherits iOS's
-  Tab-traversal limitation.
+  Tab-traversal limitation. **Shift+Tab is `adb shell input keycombination 59
+  61`, not `keyevent --shift 61`.** `--shift` is not a flag this adb's `input`
+  accepts (`adb shell input --help` lists no modifier flags); it is parsed away
+  and a bare second Tab is sent, so focus jumps FORWARD two fields and reads
+  exactly like a focus-traversal bug. PROFILE-26 was logged suspect-driver on
+  2026-08-27 for precisely this and passed cleanly once re-driven with
+  `keycombination`.
+- `adb -s <serial> exec-out screencap -p > file.png` — **the `-s <serial>` goes
+  before `exec-out`, not after.** `adb exec-out -s <serial> screencap -p >
+  file.png` does not error visibly: adb writes its own usage/error TEXT down
+  the same redirect, producing a `file.png` full of ASCII that every later step
+  treats as an image. Sanity-check with `file file.png` (expect `PNG image
+  data`) whenever a screenshot "looks wrong" in a tool.
 - `adb shell svc wifi disable` / `adb shell svc wifi enable` (and the `svc
   data` equivalents) — a clean, lower-risk way to force a network failure
   than killing the local server: no risk of collaterally killing another
@@ -160,7 +199,17 @@ has stale text" from "field is empty, that's just the placeholder."
   match," easily mistaken for a real credential mismatch or a stuck button.
   After any full-secure-prefs clear, re-open Developer Settings and confirm
   "CURRENTLY IN USE" reads the expected local URL before treating a login
-  failure as an app bug.
+  failure as an app bug. **`rm`-ing that file does NOT reproduce AUTH-12
+  part (c)'s "unreadable storage" codepath.** A deleted file is simply an
+  absent one: `SecureStorage` recreates it empty on its next write and the
+  refresh succeeds (observed 200 with the file silently rebuilt on
+  2026-08-27), so the run proves only the outcome AUTH-12(c) asserts (no
+  forced logout) and never exercises a real read failure. The only recipe in
+  these docs that produces a genuine `AEADBadTagException` is LAUNCH-06's
+  staged keyset restore (save the prefs file off-device → `pm clear` →
+  relaunch to mint a new master key → force-stop → write the OLD file back →
+  cold launch). Use that if the entry needs the failure itself; otherwise say
+  in the results line which half you proved.
 
 **Telemetry.** `adb logcat -s Telemetry:D` is the primary technique for the
 whole TEL block — reliable, cheap, and precise (exact event name + full
@@ -331,6 +380,84 @@ them before concluding something is broken.
   relaunching the app is the fastest reliable way to clear an active filter
   mid-pass instead (filter state doesn't persist across a process restart),
   when the in-panel clear path isn't working.
+- **The studio/location accordion's DONE control sits BELOW the whole studio
+  list, not at the panel's top.** With the real synced studios present the
+  list is long enough that DONE is several screens down, which reads as "this
+  panel has no way to confirm" — the 2026-08-27 iOS 26 lane blocked SCHED-13's
+  close step, SCHED-17 and SCHED-19 on exactly that reading while the iOS 18
+  lane found DONE by scrolling the panel to its bottom and closed it cleanly.
+  Scroll the panel, or collapse the accordion; neither entry needs a new
+  fixture.
+- **A welcome token is consumed ONLY by a successful `complete_signup`; the
+  survey gate that makes the screen look "used up" is a DEVICE-LOCAL key.**
+  `AppSessionController.SURVEY_DONE_KEY_PREFIX` stores `signup_survey_done:
+  <token>` in SecureStorage, so once a device has finished the survey for a
+  token that device skips straight to claim-your-name forever — even though
+  server-side `SignupToken.consumed_at` is still null. Abandoning the survey
+  ("Log in instead"), a failed claim submit, a 409 collision and a 410 are all
+  non-consuming. Measured on this run's own DB at the end of 2026-08-27:
+  `regression-ios26-spare` and all three `*-conflict` tokens still had
+  `consumed_at = None`, while the two iOS lanes had blocked NAV-06/07/08/09,
+  ERR-18, TEL-10/11, SIGNUP-23 and SIGNUP-24 for "all four tokens consumed."
+  To reach the survey again on the same device: wipe app data (iOS `simctl
+  erase`/reinstall, Android `pm clear`) to drop the local key, **immediately
+  re-set the Developer Settings override** (the wipe restores the prod
+  default — see Safety), then re-deliver a token whose `consumed_at` is null.
+  `claim_conflict` is the best candidate: its collision only bites at submit.
+- **`measure_centering.py` runs — Pillow IS installed on this Mac.** PLAT-11
+  was blocked on both iOS lanes on 2026-08-27 for "`python3 -c "import PIL"`
+  fails, `pip3 show pillow` reports not found"; re-checked 2026-08-28, both
+  `/opt/homebrew/bin/python3` and `/usr/bin/python3` import Pillow 12.3.0, and
+  the Android lane of that same run scored PLAT-11 with the script (ink offset
+  +0.33pt/+0.00pt on the `TRY AGAIN` RetryButton). If the import genuinely
+  fails, name the interpreter you tried before blocking the entry — and never
+  fall back to eyeballing, which the parent CLAUDE.md forbids outright.
+
+### Cross-platform — the reviewer sign-in destroys your base-URL override
+
+**Signing in as a reviewer account (AUTH-16) leaves the device pointed at
+PRODUCTION after sign-out. Restore the override before driving anything else.**
+This is correct app behavior, not a bug, and must never be "fixed" in the app to
+suit the suite — accommodating it is the driver's job.
+
+The mechanism (`auth/ReviewerRedirect.kt` + `networking/BaseUrlProvider.kt`):
+`applyFor(email)` runs on *every* sign-in attempt (`AuthViewModel.kt`). For
+`apple-reviewer@test.com` / `google-reviewer@test.com` it saves a marker and
+calls `setUrl(STAGING_URL)` — `BaseUrlProvider.set()`, writing **the same
+persisted key the Developer Settings override uses**, so the local URL is gone.
+On sign-out `onSessionEnded()` → `clear()` → `resetUrl()` →
+`BaseUrlProvider.reset()`, which **deletes the key and falls back to
+`defaultUrl` = `https://api.arcana.fit`**. A real member has no override, so
+reset-to-prod is exactly right for them; a regression device just lost its
+pointer to the local server.
+
+So: after the reviewer sign-out, re-run the 10-tap wordmark gesture, re-set the
+override, and prove it took by watching a real request land in the run's own
+server log — the "CURRENTLY IN USE" label alone is not proof. If you cannot
+restore it, stop and record BLOCKED; a device left on production is worse than
+an unverified entry. The class KDoc's "A Developer Settings override (no
+marker) is never touched" is true only until a reviewer signs in.
+
+**The marker arms on a FAILED reviewer login too, and that is the dangerous
+case.** `applyFor()` runs *before* `api.login()`, so the marker is persisted on
+any reviewer-email sign-in attempt whether or not the credentials work — and
+against a local run they will NOT work, because the reviewer accounts live only
+in staging's own seed. You are then signed out with the marker armed, so there
+is no Profile → Sign out path to clear it, and the next non-reviewer sign-in
+fires `clear()` → `reset()` to the prod default *before* sending its request.
+**That would put real regression-member credentials on the wire to production.**
+
+Recovery, used successfully on all three devices on 2026-08-28: wipe the
+persisted store, which clears the marker with zero network calls, then re-set
+and verify the override before any further sign-in.
+- iOS: `xcrun simctl shutdown <UDID> && xcrun simctl erase <UDID> && xcrun simctl boot <UDID>`, then reinstall.
+- Android: `adb -s <serial> shell am force-stop org.arcana.mobile && adb -s <serial> shell pm clear org.arcana.mobile`.
+
+**Post-erase iOS install trap:** `idb install` can fail on a freshly erased
+simulator with `Targets architecture x86_64 not in the bundles supported
+architectures: (arm64)` for the *same* .app it ran minutes earlier. `xcrun
+simctl install <UDID> <path>` works immediately — use it as the fallback rather
+than rebuilding.
 
 ### iOS-specific
 
@@ -387,6 +514,19 @@ them before concluding something is broken.
   interchangeable, and a card that says "return to Home" without saying how
   is ambiguous. (Home now refetches on both, via `LifecycleResumeEffect`.)
 
+- **The software keyboard never appears while you drive with `idb`, so
+  AUTH-15's soft-keyboard-obscures-the-CTA case is not reachable on a
+  full-size simulator this way.** `idb ui text`/`idb ui key` deliver HID
+  keystrokes, which the simulator treats as a connected hardware keyboard and
+  therefore suppresses the on-screen one — screenshots show the form with no
+  keyboard at all. Recording AUTH-15 BLOCKED for "the keyboard never renders"
+  is honest but leaves the entry permanently uncovered on iOS. To actually
+  drive it: turn the software keyboard back on for the sim (`I/O → Keyboard →
+  Connect Hardware Keyboard` off, or `xcrun simctl` a device that has it off),
+  or pin an SE-class short-viewport device where the CTA falls under the
+  keyboard's band even at rest. Neither has been run yet — pick one and record
+  what it does before the entry is scored again.
+
 ### Android-specific
 
 - **Neither `uiautomator dump` nor `android layout` includes the soft
@@ -401,8 +541,33 @@ them before concluding something is broken.
   adb shell dumpsys window displays | grep -A2 InputMethod
   ```
   or just `android screen capture` and look. Scroll the target above the IME
-  first, or dismiss the keyboard with `adb shell input keyevent 111` (ESC —
-  it does not trigger the system BACK gesture).
+  first, or dismiss the keyboard. **`keyevent 111` (ESC) is not a reliable
+  dismissal on the `Pixel_9_Pro` AVD** — it left the keyboard up repeatedly
+  across the 2026-08-27 run. `keyevent 4` (BACK) does dismiss it, and is safe
+  for that purpose *provided* no leave-confirmation is armed on the current
+  screen (see the pre-auth back trap below); prefer it, and re-dump to confirm
+  the IME actually went away rather than assuming either key worked.
+
+- **The IME opening or closing re-lays-out the whole form, so every
+  pre-keyboard coordinate is stale.** Android auto-scrolls the focused field
+  to sit just above the keyboard, which moves every other field with it: a tap
+  computed from a dump taken before the keyboard came up lands one or two
+  fields off once it is up, and vice versa. On the 2026-08-27 run this typed a
+  password into the claim form's ZIP field twice (corrupting it with digits and
+  a comma) and silently dropped two attempts at the survey "specify" field.
+  After ANY action that opens or closes the IME, take a fresh **screenshot**
+  (not just a dump — see the placeholder-text caveat above) before the next
+  tap, or move between adjacent fields with `keyevent 61` (Tab) instead of
+  tapping by coordinate. Budget for it: a full claim-form pass costs ~15-20
+  dump/tap cycles, and SIGNUP-19/-20 each need their own complete re-fill
+  because the collision/expiry check only fires at submit, not at survey time.
+
+- **A `clickable="false"` reading on CREATE ACCOUNT or CONTINUE can be stale
+  even when the button is really enabled.** Both showed `clickable=false` in a
+  dump taken moments before a screenshot of the same screen showed them fully
+  enabled (Moss-filled, arrow visible). Re-dump or screenshot immediately
+  before trusting a disabled-button reading on those two CTAs — one dump is
+  not enough to conclude the required-fields gate is broken.
 
 - **`android layout`'s reported coordinates can go stale across repeated
   dumps when a screen has just transitioned to an error/expanded state**
@@ -420,18 +585,21 @@ them before concluding something is broken.
   off a displayed screenshot without correcting for this causes repeated
   mis-taps. Always prefer a fresh `uiautomator dump` for exact bounds over
   estimating from a screenshot.
-- **System back on PRE-AUTH secondary screens exits the whole app to the
-  Android launcher instead of popping one nav step** — reproduced on
-  PasswordResetRequestScreen, SignupSurveyScreen, and SignupCompletionScreen
-  (the claim form), with/without the IME open, cold and warm launches.
-  Relaunching afterward does NOT restore in-progress state — SignupSurvey
-  answers and claim-form field values are silently discarded, no confirm
-  dialog. `adb shell input keyevent 4` IS SAFE specifically for dismissing
-  the IME (it only closes the keyboard) — the app-exit bug only fires on a
-  back press with the IME already closed. This is narrow to these three
-  pre-auth screens: system back on authenticated non-tab destinations
-  (Class Detail, My Bookings, Edit Profile, etc.) correctly pops the nav
-  stack as expected — don't conflate the two.
+- **System back on PRE-AUTH screens does three different things, and using
+  `keyevent 4` to dismiss the IME can trip any of them.** As of NAV-13
+  (shipped 2026-08-19, re-confirmed by driving on 2026-08-27):
+  **SignupSurveyScreen and SignupCompletionScreen** now pop a confirm-to-leave
+  alert ("Leave signup?" / "Your details are not saved yet…") as soon as any
+  field has been touched — tap "Keep going" to stay, and expect the dialog
+  rather than a silent dismissal. **PasswordResetRequestScreen** returns to
+  the Auth screen (NAV-12 (a)). **AuthScreen itself** still backgrounds/exits
+  the app to the launcher on a bare back press with no dialog, correctly — it
+  is the root of the signed-out flow. The older blanket claim that all three
+  secondary screens silently exit the app and discard typed state described
+  the NAV-13 defect, not today's behavior; do not score the confirm dialog as
+  a regression. Still narrow to the pre-auth flow: system back on
+  authenticated non-tab destinations (Class Detail, My Bookings, Edit Profile)
+  pops the nav stack as expected — don't conflate the two.
 - **The Auth screen's hidden 10-tap Developer Settings gesture target is
   NOT the visible "SIGN IN" text node** — it's a separate, unlabeled
   clickable node above it (the same clickable region that contains the
@@ -455,6 +623,18 @@ them before concluding something is broken.
   text-only dump — screenshot to confirm before concluding a tap "did
   nothing."
 
+- **LAUNCH-06's keyset-restore recipe may not fault at all on the AVD.** Run
+  verbatim on `Pixel_9_Pro` (2026-08-27) it produced no crash, no
+  `token_storage_failure {op=discard}` telemetry, and a clean landing on
+  AuthScreen — the app behaved exactly as a healthy cold start. The outer
+  behavior the entry asserts (starts, signed out, no crash) is still
+  observable and still worth a PASS; the `AEADBadTagException` self-heal path
+  specifically is NOT confirmed by an emulator run. **Suspected cause, not
+  measured:** the emulator's Keystore master-key alias may survive `pm clear`
+  differently than a physical device's, so the restored keyset stays
+  decryptable and the fault condition never arises. Say which half you proved
+  in the results line rather than recording a bare PASS.
+
 ---
 
 ## Fault injection (specific status, single endpoint)
@@ -466,7 +646,8 @@ and any similar single-endpoint case. Faults are armed on the SERVER, not via
 a request header, because the app is the client and sends no header of ours.
 
 ```bash
-BASE=http://localhost:8000
+BASE=http://localhost:8000   # this run's server port — 8010 on 2026-08-27,
+                             # see runbook Phase 0.7; never assume 8000
 
 # ERR-08 — login returns 500
 curl -X POST $BASE/api/v1/_faults/ -H 'Content-Type: application/json' \
@@ -494,6 +675,23 @@ defaults to a JSON `{"detail": ...}` so the client parses an error shape),
   AND refresh. Arm the full `/refresh/` path when you mean only refresh
   (AUTH-12), and remember that an ERR-08/ERR-10 fault on `/auth/token/` covers
   refresh too, which is harmless pre-auth but not once a session exists.
+- **`/api/v1/users/me/` nests too, and a `times` fault on it never survives to
+  Edit Profile.** `/api/v1/users/me/favorites/` is under that prefix, and the
+  app fetches favorites at cold launch and again on every Profile-tab load
+  (`ProfileViewModel.fetchFavorites()`; visible as `api_request
+  {endpoint=favorites}` in the telemetry echo). So a `{"path":
+  "/api/v1/users/me/", "status": 500, "times": 1}` armed for ERR-16 is consumed
+  by favorites before Edit Profile's own `GET /users/me/` ever fires, and Edit
+  Profile then loads normally — which reads as "the screen cached the profile
+  and never re-fetched." It did re-fetch: `EditProfileViewModel` calls `load()`
+  from `init {}` unconditionally, every time the screen is constructed.
+  Measured 2026-08-28: armed `times:1` on `/api/v1/users/me/`, one request to
+  `/api/v1/users/me/favorites/` returned the injected 500 and dropped
+  `remaining` to 0; the next `/api/v1/users/me/` passed straight through.
+  **For ERR-16 (and anything else behind a screen the driver must navigate
+  to), arm the fault with NO `times` key, drive the entry, then `DELETE`.** An
+  unlimited fault cannot be eaten by request ordering; `times` exists for
+  "let the retry through," not for aiming a fault at one call.
 - **Clear faults between entries.** An armed fault has no timeout and will
   silently corrupt every later entry that touches that path. `DELETE` is the
   last step of any fault-driven entry, not an afterthought.
@@ -536,6 +734,20 @@ untouched, so only the access half shortens.
   all app data. Always re-verify/re-set the base URL immediately after any
   `pm clear`, before driving anything else, or subsequent requests will
   silently hit production.
+- **Typing a reviewer email into the sign-in form retargets the base URL even
+  if that sign-in FAILS, and it overwrites the Developer Settings override.**
+  `AuthViewModel.login()` calls `ReviewerRedirect.applyFor(email)` *before*
+  `api.login()`, and `applyFor` arms its persisted marker and calls
+  `BaseUrlProvider.set(STAGING_URL)` on any reviewer-email attempt, success or
+  failure. The local override is not saved anywhere: it is overwritten, and the
+  later `clear()` restores the bundled **prod** default, not it. So after a
+  failed reviewer login there is no Profile to sign out from, and the next
+  ordinary sign-in ships real credentials at whatever host the marker resolves
+  to. All three lanes hit this on 2026-08-27. Recovery, used three times and
+  the only one that costs no network call: wipe the app's data (iOS `simctl
+  shutdown` + `erase` + boot + `simctl install`; Android `am force-stop` +
+  `pm clear`), then **re-set and re-verify the Developer Settings override
+  before any other tap**. Never "just try the member login and fix it after."
 - **PROFILE-14 (delete-account submit) is unsafe to drive on an unattended
   automated pass unless the ops-notifier override in runbook.md's Phase 2.1
   is confirmed in place.** `DeleteAccountViewModel.submit()` only posts an
@@ -548,6 +760,19 @@ untouched, so only the access half shortens.
   2026-08-11 on this one), confirming Delete pages the founders for real.
   Use PROFILE-15 (the server-down failure path) as the safe substitute for
   exercising the same dialog machinery without submitting a real request.
+- **DEVSET-08 ("Reset to default") points the app at production**, because the
+  default it restores IS `https://api.arcana.fit` — Safety rule 0 forbids the
+  run reaching prod even momentarily. The reset itself fires no request
+  (`DeveloperSettingsViewModel.reset()` deletes the key, sets `Saved`, and the
+  row's click handler calls `onClose()`; nothing in that path performs a
+  network call), so the sanctioned way to drive it is: reset → immediately
+  verify from the UI alone that the field and "CURRENTLY IN USE" now read
+  `https://api.arcana.fit` and the screen closed to Auth → immediately re-enter
+  Developer Settings and re-set this device's local override, **before any tap
+  that could issue a request** (no sign-in, no relaunch, no tab). If you cannot
+  hold that ordering, record BLOCKED with reason "reset would leave the build
+  pointed at prod" rather than driving it. Same substitution logic as
+  PROFILE-14 → PROFILE-15.
 
 ---
 
@@ -569,36 +794,14 @@ act on.
 
 ---
 
-## Verification notes (2026-08-11)
+## Verification notes
 
-Every command above was checked against its tool's real `help`/usage output
-before landing in this doc; where a booted device was available, the
-read-only ones were spot-run live rather than only checked against `--help`.
-
-- `~/.arcana-tools/idb-venv/bin/idb ui describe-all --udid <UDID>` → spot-run
-  live against a freshly booted iPhone 17 Pro (iOS 26.3) simulator: returned
-  the full accessibility JSON (AXFrame etc.), exit 0. The companion
-  auto-spawn path works from the venv binary. (This was a separate, later
-  verification pass on its own booted device — not the iPhone 17 Pro Max /
-  iPhone 16 Pro pair in the "Two simulators were booted" note below.)
-- `~/.arcana-tools/idb-venv/bin/idb list-targets` → confirmed working,
-  listing simulators. The idb CLI lives in its own venv rather than on bare
-  `PATH` (bare `idb` still resolves to nothing on this Mac — always use the
-  full venv path, per the Invocation note above). `idb_companion` is on
-  `PATH` (`/opt/homebrew/bin/idb_companion`) via Homebrew, as usual.
-- `which adb` → `/opt/homebrew/bin/adb`. Confirmed working.
-- `xcrun simctl help | head -5` → confirmed `simctl` exists and the `help`
-  subcommand works.
-- `xcrun simctl help io` / `help openurl` / `help launch` → confirmed
-  `io screenshot`, `openurl <device> <URL>`, and `launch [--console-pty]
-  <device> <bundle-id>` are real subcommands with the flags used above.
-- Two simulators were booted at verification time (iPhone 17 Pro Max, iOS
-  26.3; iPhone 16 Pro, iOS 18.5), and `~/.arcana-tools/idb-venv/bin/idb
-  list-targets` listed both. Both the *companion* half of the stack and the
-  `idb` CLI half now check out; the CLI's py3.14 patch (see the Invocation
-  note above) is already applied in the venv.
-- `adb shell uiautomator dump` was spot-run live against a connected physical
-  Android device (Pixel 9 Pro) and completed successfully ("UI hierchary
-  dumped to: /sdcard/window_dump.xml" — the misspelling is Android's own
-  output, not a typo here). `adb shell input` (no args) printed real usage
-  confirming `tap`, `swipe`, `text`, and `keyevent` are genuine subcommands.
+Every command in this doc was checked against its tool's real usage output when
+it landed, and the read-only ones were spot-run against a booted device. The
+per-command transcript of that original 2026-08-11 audit added ~50 lines of
+one-time evidence and was removed on 2026-08-28; the commands it validated are
+the ones documented above, and each subsequent run re-validates them by using
+them. Pinned facts worth keeping from it: `idb` lives only at
+`~/.arcana-tools/idb-venv/bin/idb` (bare `idb` is not on PATH), `adb` is at
+`/opt/homebrew/bin/adb`, and `uiautomator dump`'s success message misspells
+"hierchary" — that is Android's own output, not a typo here.
