@@ -39,7 +39,6 @@ import androidx.compose.ui.window.DialogProperties
 import org.arcana.mobile.data.SpotDto
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
@@ -49,7 +48,6 @@ import org.arcana.mobile.ui.IconCircle
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 // A circle big enough to hold a full station label ("DF-26") at a readable size.
 private val NODE_SIZE = 46.dp
@@ -112,11 +110,10 @@ fun SpotMapFullScreen(
                 val vpH = with(density) { maxHeight.toPx() }
                 val nodePx = with(density) { NODE_SIZE.toPx() }
 
-                // Content box preserves the room's aspect while guaranteeing that no
-                // two circles (fixed NODE_SIZE) overlap. Size-independent — depends
-                // only on the layout and node size.
+                // Canvas sized so the closest pair of fixed-size circles stays
+                // clear. Depends only on the layout and node size, never the viewport.
                 val (contentWpx, contentHpx) = remember(spots, nodePx) {
-                    contentSize(layout, nodePx)
+                    spotContentSize(layout, nodePx, MAX_CONTENT_PX)
                 }
                 val contentWDp = with(density) { contentWpx.toDp() }
                 val contentHDp = with(density) { contentHpx.toDp() }
@@ -143,16 +140,9 @@ fun SpotMapFullScreen(
                 }
                 if (scale.isNaN()) return@BoxWithConstraints // wait one frame for init
 
-                // Node centers in content-px, for tap hit-testing (same placement
-                // math as SpotScatter: inset by half a node on each edge).
+                // Node centers in content-px, for tap hit-testing.
                 val centers = remember(spots, contentWpx, contentHpx) {
-                    layout.spots.map { ns ->
-                        SpotCenter(
-                            spot = ns.spot,
-                            cx = ns.nx * (contentWpx - nodePx) + nodePx / 2f,
-                            cy = ns.ny * (contentHpx - nodePx) + nodePx / 2f,
-                        )
-                    }
+                    spotCenters(layout, contentWpx, contentHpx, nodePx)
                 }
 
                 Box(
@@ -236,36 +226,6 @@ fun SpotMapFullScreen(
     }
 }
 
-private data class SpotCenter(val spot: SpotDto, val cx: Float, val cy: Float)
-
-/**
- * Content-box size (px) that preserves the room's aspect ([SpotLayout.bboxAspect])
- * while ensuring fixed-size circles never overlap. Sizing is driven by the closest
- * pair of spots in aspect-corrected 2D space (NOT the per-axis gap): two spots that
- * share an x but sit on different rows are far apart in 2D and must not inflate the
- * canvas — only genuine same-row neighbors constrain it. The canvas is scaled so the
- * closest pair sits exactly one node apart (touching, never overlapping).
- */
-private fun contentSize(layout: SpotLayout, nodePx: Float): Pair<Float, Float> {
-    val aspect = layout.bboxAspect
-    val pts = layout.spots
-    var minMetric = Float.MAX_VALUE
-    for (i in pts.indices) {
-        for (j in i + 1 until pts.size) {
-            val dx = (pts[i].nx - pts[j].nx) * aspect // aspect-correct x into real proportions
-            val dy = pts[i].ny - pts[j].ny
-            val m = sqrt(dx * dx + dy * dy)
-            if (m > 1e-4f && m < minMetric) minMetric = m
-        }
-    }
-    if (minMetric == Float.MAX_VALUE) minMetric = 1f // 0 or 1 spot
-    var h = (nodePx * 1.05f) / minMetric // 5% breathing room between closest circles
-    var w = h * aspect
-    if (w > MAX_CONTENT_PX) { w = MAX_CONTENT_PX; h = w / aspect }
-    if (h > MAX_CONTENT_PX) { h = MAX_CONTENT_PX; w = h * aspect }
-    return w to h
-}
-
 /** Clamp a transform offset so scaled content stays within the viewport (centered when smaller). */
 private fun clampAxis(value: Float, scaledContent: Float, viewport: Float): Float =
     if (scaledContent <= viewport) (viewport - scaledContent) / 2f
@@ -277,7 +237,7 @@ private fun SpotMapLegend(modifier: Modifier = Modifier) {
         LegendSwatch(fill = Paper, border = Mist)
         Caption("Open", size = 12, color = Wood)
         Spacer(Modifier.width(12.dp))
-        LegendSwatch(fill = Mist2, border = null)
+        LegendSwatch(fill = Mist, border = null)
         Caption("Taken", size = 12, color = Wood)
         Spacer(Modifier.width(12.dp))
         LegendSwatch(fill = Moss, border = null)
