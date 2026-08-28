@@ -19,6 +19,11 @@ class AppEnvironmentTest {
         assertEquals("tunnel", classifyEnvironment("https://random-words-here.trycloudflare.com"))
     }
 
+    @Test
+    fun `staging host classifies as staging`() {
+        assertEquals("staging", classifyEnvironment("https://api.staging.arcana.fit"))
+    }
+
     @Test fun `unknown host is other`() {
         assertEquals("other", classifyEnvironment("https://staging.example.com"))
     }

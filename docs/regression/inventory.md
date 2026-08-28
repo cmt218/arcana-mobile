@@ -147,6 +147,12 @@ when adding a new annotation.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/auth/AuthScreen.kt (`BoxWithConstraints`, `viewportMinHeight`, `verticalScroll`, `imePadding`), sharedUI/src/androidMain/kotlin/org/arcana/mobile/MainActivity.kt (`enableEdgeToEdge`)
 - **Platforms:** shared
 
+### AUTH-16 — App-review accounts sign in against staging; everyone else prod
+- **Steps:** Sign in as `apple-reviewer@test.com` (or `google-reviewer@test.com`; passwords in seed_staging REVIEWER_ACCOUNTS). Then sign out, and sign in as any normal member.
+- **Expected:** The reviewer sign-in silently retargets the base URL to `https://api.staging.arcana.fit` before the login request (schedule shows only the two sandbox studios; bookings land in staging). The redirect survives process death mid-session (persisted marker). Signing out, OR a later sign-in attempt with any non-reviewer email, resets the base URL to the default — a normal member can never be left pointed at staging. A Developer Settings override set without the marker is never touched. Email match is exact (case-insensitive, trimmed).
+- **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/ReviewerRedirect.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/auth/AuthViewModel.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/di/AppModule.kt (session teardown hook)
+- **Platforms:** shared
+
 ## SIGNUP
 
 ### SIGNUP-01 — Cold deep link routes straight to the onboarding survey

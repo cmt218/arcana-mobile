@@ -5,6 +5,7 @@ import io.ktor.http.Url
 const val ENV_PROD = "prod"
 const val ENV_LOCAL = "local"
 const val ENV_TUNNEL = "tunnel"
+const val ENV_STAGING = "staging"
 const val ENV_OTHER = "other"
 
 /**
@@ -17,6 +18,8 @@ const val ENV_OTHER = "other"
  * - `local`  → a server on the dev machine (`localhost` / `127.0.0.1` /
  *              `10.0.2.2`, the Android-emulator host-loopback alias)
  * - `tunnel` → a Cloudflare quick tunnel (`*.trycloudflare.com`)
+ * - `staging` → the staging API (`api.staging.arcana.fit`) — reviewer-redirect
+ *              sessions land here; still non-prod for the gate
  * - `other`  → anything else (unrecognized host, or an unparseable URL)
  */
 fun classifyEnvironment(baseUrl: String): String {
@@ -31,6 +34,7 @@ fun classifyEnvironment(baseUrl: String): String {
     }
     return when {
         host == "api.arcana.fit" -> ENV_PROD
+        host == "api.staging.arcana.fit" -> ENV_STAGING
         host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2" -> ENV_LOCAL
         host.endsWith("trycloudflare.com") -> ENV_TUNNEL
         else -> ENV_OTHER
