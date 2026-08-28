@@ -3,7 +3,7 @@
 Execution guide for the agent-run full regression suite: an orchestrated set
 of agent shifts that drive the real app — real network calls, real
 simulators/emulator, real taps — through every entry in
-`docs/regression/inventory.md` (229 entries at last count) on all three
+`docs/regression/inventory.md` (230 entries at last count) on all three
 target devices, then triage what they found, fold the lessons back into these
 docs, and file the surviving issues to a tracker. Invoked by the
 `/full-regression` skill; this doc is what that skill follows phase by phase.
@@ -75,6 +75,45 @@ Every inventory entry, on every device it applies to, ends in exactly one of:
 | **BLOCKED** | Not driven because an upstream entry it depends on is FAIL or BLOCKED (e.g. a booking-flow entry when login itself failed). Record the specific blocking entry ID. |
 | **SKIP** | Not applicable on this device (`Platforms` excludes it) — expected and silent in the summary, not a finding. |
 
+**Read the entry's `Platforms:` field BEFORE driving it, not while writing the
+result line.** An entry excluded on this device is a silent SKIP; attempting it
+anyway and then recording whatever went wrong inflates the device's BLOCKED
+count with entries that were never in scope. The 2026-08-27 iOS 26 lane
+recorded all eight `Android-only` TEL entries (TEL-01…07, TEL-14) as BLOCKED
+for a reason that could not apply to them, and the same shift's iOS 18
+counterpart recorded them correctly as SKIP — the two lanes' numbers then
+disagreed for no product reason.
+
+**A BLOCKED whose reason is "no mechanism/technique exists" must name the
+`driver-playbook.md` section it checked first.** "Exhausted every approach" is
+not a reason, it is a summary — and on 2026-08-27 it wrongly blocked 34 applicable
+iOS TEL/NAV/DEVSET/LAUNCH/SIGNUP/PLAT entries (42 log lines, 8 of them on
+Android-only entries that should have been silent SKIPs) whose capture recipe
+was sitting in the
+playbook's "Telemetry echo" paragraph, and which that very shift had already
+used earlier in its own pass. If the playbook has no section for it, say that;
+that sentence is what turns a BLOCKED into a real, fixable gap.
+
+**"I ran out of time" is not BLOCKED.** BLOCKED means an upstream entry failed
+or the state is genuinely unreachable — never "not driven this shift due to
+time," which 22 log lines across all three lanes said on 2026-08-27 (CLASS-02,
+SCHED-02/06/09/10/13, SIGNUP-09/10, DEVSET-02, PROFILE-05/07/18, CONCIERGE-02,
+PLAT-10 and others). Those entries are indistinguishable in the report from
+entries the suite genuinely cannot reach, and they quietly convert a shift's
+pacing problem into what reads as a product/fixture gap. An entry a shift did
+not reach is left **unrecorded**; the shift says so in its return, and Phase 4
+reports the unrecorded remainder as a run gap in the count reconciliation.
+
+**A "no fixture / no token / no tool" BLOCKED is a factual claim, and this
+suite has been wrong about all three.** Before writing one, check the thing:
+`python3 -c "import PIL"` (PLAT-11 was blocked on both iOS lanes for a missing
+Pillow that was installed, on the same Mac where the Android lane had just used
+it), the token's own `consumed_at` (NAV-06/07/08/09, ERR-18, TEL-10/11,
+SIGNUP-23/24 were blocked for "all four tokens consumed" while
+`regression-ios26-spare` and every `*-conflict` token were unconsumed), and the
+capture recipe (the telemetry cluster above). Cheap to check, and a false gap
+costs the next run the same entries again.
+
 A fifth label, **suspect-driver**, is not a status but an annotation the
 driver-bug protocol can attach instead of FAIL when a failure only
 reproduces via one interaction path. Every suspect-driver annotation is
@@ -90,11 +129,29 @@ driving, and in sequential mode because batching every DB-down entry into one
 tail agent gives the run a single stop/restore cycle with one verified restore
 instead of several scattered through the pass.
 
+**DEFERRED is not a general "come back to this later" marker.** It means one
+of those two exclusive-fault classes and nothing else. "I ran out of an
+unconsumed welcome token, try `claim_spare`" is not a DEFERRED — it is either
+driven with the spare or recorded BLOCKED with that reason (the 2026-08-27 iOS
+26 lane mislabelled SIGNUP-10 this way and had to correct it in-line). A
+DEFERRED costs the tail agent a whole exclusive window; spending one on
+something a lane could have driven itself is how the tail runs out of time.
+
 Because the results log is append-only, the tail phase does **not** rewrite a
 DEFERRED line. It **appends** a new line for the same (device, entry) carrying
 the real outcome, and **the last line for a (device, entry) pair is
 authoritative**. No DEFERRED status may survive into the report Phase 4
 assembles.
+
+**The tail phase sweeps EVERY lane's DEFERRED lines, and it derives them from
+the logs, not from what a shift said it deferred.** The authoritative list is
+`grep -h DEFERRED ~/arcana-regression-runs/<date>/results-*.log` re-run at the
+start of the tail phase; a shift's self-reported `deferred_ids` is a hint that
+can be short. On 2026-08-27 the tail drove only `ios26 CLASS-20` and never saw
+`ios18 CLASS-20`, which sat in the ios18 log as a live DEFERRED all the way
+into the finished report — the exact silent hole this rule exists to prevent.
+Before the tail phase reports done, re-run that grep and confirm every line it
+returns has a later, non-DEFERRED line for the same (device, entry).
 
 **Cross-reference entries are a sanctioned shape, not a gap.** A few entries
 exist only to point at another entry that already covers the same row, gesture
@@ -102,6 +159,45 @@ and file (today: PROFILE-12 → AUTH-11, DEVSET-01 → AUTH-13). Record such an
 entry with the **referenced entry's status** and the notation `see <ID>` (e.g.
 `PROFILE-12: PASS (see AUTH-11)`) — never drive it separately, and never record
 it as SKIP.
+
+---
+
+## Work lists and tiers — what a shift actually reads
+
+**No driving shift reads `inventory.md`.** Phase 2 extracts it once into
+per-device work lists and the shifts read those:
+
+```
+python3 tools/regression/build_worklist.py --out ~/arcana-regression-runs/<date> [--tier 1]
+```
+This writes `worklist-{ios26,ios18,android}.tsv` (plus `worklist-summary.txt`)
+— one row per **applicable** entry, in inventory order, tab-separated:
+`id, tier, platforms, title, steps, expected, source`. A shift gets its ID list
+with `cut -f1`, and pulls one entry at a time with
+`awk -F'\t' '$1=="CLASS-08"'`. The `Platforms:` filtering happens here, once,
+which also removes the class of error where a lane attempted an `Android-only`
+entry on iOS and recorded it BLOCKED.
+
+Why: re-reading runbook + playbook + inventory at the top of every shift was the
+single largest cost of the 2026-08-27 run — roughly 150k tokens per shift across
+~15 shifts, most of a 6M-token bill spent re-reading prose that had not changed,
+and the reason that run needed three attempts to finish. Open `inventory.md`
+only when a row looks wrong or truncated, and record a learning when you do.
+
+**Tiers.** `--tier 1` is the release-blocking core (~111 entries per device):
+auth, onboarding, schedule, class detail, booking, cancel, session teardown and
+the transport-failure handling this suite exists to protect. Tier 2 is
+everything else. The split is defined in `build_worklist.py` (`TIER1_AREAS` /
+`TIER1_IDS`) so it is auditable and reviewable rather than a judgement made per
+run; change it there, in a PR, not in a run.
+
+| Want | Command |
+|---|---|
+| Full pre-release pass | no `--tier` (all 230) |
+| Smoke check after a dependency bump | `--tier 1`, and pass `tier: 1` to the workflow |
+
+A tier-filtered run is **not** a full regression and must say so in its report's
+§1 verdict line. Entries outside the tier are absent from the run, not SKIP.
 
 ---
 
@@ -122,6 +218,13 @@ already shaky, or whenever you want the simplest possible failure story.
 **Parallel is an explicit option, never the silent default.** The three
 devices are driven as three concurrent lanes. Wall-clock is roughly the
 **slowest lane, ~2.5–3h**. Choose it when a human is waiting on the result.
+
+**The intended use for parallel is the fast gut-check**, not the pre-release
+pass: pair it with `--tier 1` after a major dependency bump (a CMP or Kotlin
+upgrade, a Ktor bump) to answer "is the app still fundamentally working on all
+three devices" in about an hour rather than overnight. The overnight
+full-inventory pass stays sequential — nobody is waiting on it, and sequential
+has the simplest failure story.
 
 ### Why parallel is safe here
 
@@ -213,6 +316,13 @@ case all three for no gain. What parallel mode adds is only that sharing one
 file becomes actively corrupting rather than merely awkward. **`results.log`
 is produced by Phase 4's merge in both modes and is never written during
 Phase 3.**
+
+**Write the entry ID exactly as the inventory spells it.** The ID column is
+matched by exact string in the resume ID-diff, the DEFERRED sweep and Phase
+4's merge, so a variant spelling is invisible to all three. On 2026-08-27 an
+Android line recorded `CLASS-14b` for what the inventory calls `CLASS-14(b)`;
+harmless there only because the base `CLASS-14` line existed too. Sub-parts go
+in the notes column (`CLASS-14  PASS  (b) …`), not in the ID.
 
 ---
 
@@ -391,6 +501,21 @@ runserver), record a Phase 0 SKIP for Phase 2's server-start step with
 reason "port 8000 held by <command>, not arcana-server" — do not kill an
 unrelated process automatically.
 
+**Better than reusing another session's server: take your own port.** On
+2026-08-27 port 8000 was held by a live session's runserver on the shared
+checkout, so the run started its own on **8010** from a `git worktree` at
+`/tmp/regression-server` and pointed all three devices at it. That is now the
+preferred shape whenever 8000 is busy — it gives the run its own process,
+its own `.env` (so the null-notifier check is this run's to make, not a
+verdict on someone else's process) and its own log, at the cost of one
+`git worktree add`. **It does not isolate the database**: the worktree still
+talks to the same dev Postgres, so every DB-level rule in this doc (the
+deferred tail, the shared-row mutations) applies unchanged. When you do this,
+carry the port into Phase 2.1's health check, Phase 2.5's per-device override
+(`http://localhost:<port>` / `http://10.0.2.2:<port>`) and every
+`$BASE/api/v1/_faults/` call — the playbook's examples say 8000 and are
+examples, not the pinned value.
+
 ---
 
 ## Phase 1 — Self-audit
@@ -480,7 +605,7 @@ else is still a finding — read the entry before accepting the hit.
 
 ### Reverse — find inventory entries pointing at code that no longer exists
 
-For every **Source:** path listed across all 229 inventory entries, verify
+For every **Source:** path listed across all 230 inventory entries, verify
 the file exists in the current tree:
 ```
 test -f <path>
@@ -497,7 +622,7 @@ own (`ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`)`). So:
    backticks, and `test -f` each resulting repo-relative path.
 
 Sanity-check the extractor before trusting its output: on a clean tree it
-should yield **85 unique paths from 508 comma-split tokens across 229 Source
+should yield **88 unique paths from 513 comma-split tokens across 230 Source
 lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-08-11, 2026-08-15, 2026-08-16 (after
 `feature/error-states-completion` added ERR-21/ERR-22), and 2026-08-19 (after
@@ -537,6 +662,30 @@ which is the actual reason for this rule.
 ## Phase 2 — Environment
 
 ### 2.1 — Start (or verify) the server
+
+**Serve from an isolated worktree, never the shared checkout.** Other sessions
+edit `arcana-server` during the day; an autoreload mid-run restarts the server
+and changes the code under test underneath a driving shift. Create it once, at
+run start:
+
+```
+cd ~/Desktop/arcana/arcana-server && git fetch origin
+git worktree add --detach /tmp/regression-server origin/main
+ln -sfn ~/Desktop/arcana/arcana-server/.env /tmp/regression-server/.env
+```
+Serve from `/tmp/regression-server` using the shared checkout's venv by absolute
+path (`~/Desktop/arcana/arcana-server/.venv/bin/python`) — the worktree has no
+venv of its own, and the dev Postgres is the same, so `seed_regression` works
+normally. **Pass `--noreload`**: it gives exactly one PID to track and kill, and
+stops an armed fault being silently cleared by a reload. Remove the worktree in
+Phase 4 cleanup (`git worktree remove --force /tmp/regression-server && git
+worktree prune`), and confirm the shared checkout is still clean afterwards.
+
+**Port 8000 is usually held by another session's runserver out of the shared
+checkout.** It is neither yours to kill nor yours to reuse — reusing it defeats
+the worktree entirely. Pick a free port (8010 works), point every device's
+override at it, and leave 8000 alone.
+
 
 ```
 cd ../arcana-server
@@ -696,6 +845,17 @@ consumes; `claim_spare` exists because that consumption is what left every
 later fresh-token entry BLOCKED in the 2026-08-11 run. Do not spend the spare
 on a SIGNUP entry.
 
+**Four tokens per device is the whole budget, and the SIGNUP block can eat all
+four.** The 2026-08-27 iOS 18 lane consumed `claim`, `claim_spare`,
+`claim_used` and `claim_conflict` inside the SIGNUP block and then had nothing
+left for NAV-06, SIGNUP-23 and every other post-SIGNUP entry needing an
+unconsumed token — a self-inflicted BLOCKED cluster, not a fixture gap. Two
+ways out, and the shift must pick one before it starts SIGNUP: drive the
+token-hungry NAV/ERR/TEL entries (ERR-18, ERR-19, NAV-06/07/09, TEL-10/11)
+BEFORE the successful claim submit, or treat `claim_used` and `claim_conflict`
+as reserved for SIGNUP-19/SIGNUP-20 alone and never as generic spares. If a
+future seed can mint a fifth token per device, reserve it for post-SIGNUP use.
+
 **CLASS-07 stays BLOCKED and is not a seed gap.** Schedule never surfaces an
 already-past session and `DeepLinkHandler` handles only the welcome-token
 scheme, so a past-dated fixture would exist with no way to navigate to it.
@@ -727,44 +887,87 @@ inventory entries remain executable without the manifest.
    Bookings / Favorites entries should expect to see it present on first
    login, not empty.
 
-### Known hazards — telemetry pollution (measured 2026-08-11)
+### Known hazards — telemetry pollution (CLOSED 2026-08-22)
 
-The mobile app's PostHog + Sentry SDKs initialise on "key is non-blank"
-only — the `environment` super-property (`local` for localhost/10.0.2.2) is
-a *tag*, not a gate. So a Debug build pointed at the local server still sends
-**every event, `$screen`, `identify()`, session recording and Sentry
-breadcrumb to production PostHog project 439926.** Measured for the
-2026-08-11 run: 3,030 `environment=local` events in the run window vs 875
-real prod events (3.5x), 59 of the day's 111 session recordings, 10 permanent
-`@example.com` Persons; only dashboard 1849473 filters `environment=prod`,
-the primary "Beta — App Health & Usage" dashboard does not, so run-day DAU
-read +26% and 30-day `forced_logout` read 5x. Full analysis and the
-recommended fix (client-side gate: no PostHog/replay/Sentry unless
-`environment == prod` or a default-off Developer Settings toggle) live in
-`~/arcana-regression-runs/2026-08-11/telemetry-leak.md` and on the Arcana
-Regressions board. **Until that ships, every run pollutes prod analytics —
-acceptable in beta, unacceptable at launch.** Interim mitigations a run
-cannot apply itself: dashboard-level `environment=prod` filters, and deleting
-`@example.com` Persons after a run.
+**PostHog: closed.** `TelemetryGate` initializes PostHog only when
+`!isDebugBuild && environment == prod`, so a Debug build pointed at localhost
+sends nothing. Covered by TEL-22/TEL-23; the Debug console echo still fires, and
+is what the TEL entries are driven from. **Sentry: still reports from every
+build, by design** — dev and regression crashes are wanted, tagged
+`environment=local-debug`. Historical detail (the 2026-08-11 leak of 3,030 local
+events into prod project 439926) lives in
+`~/arcana-regression-runs/2026-08-11/telemetry-leak.md`; it is closed and does
+not need re-reading before a run.
 
-### Known-BLOCKED entries — no fixture or fault-injection path exists yet
+### Known-BLOCKED entries — verify the row before you trust it
 
-These entries have been re-discovered as BLOCKED across multiple shifts for
-the same underlying reason each time. Record them BLOCKED with the reason
-given here rather than re-deriving it — fixing any of these is a seed/server
-change, not something a driver can work around:
+**This table has been wrong more often than it has been right, and it is the
+most dangerous doc in the suite because it tells a driver NOT to try.** On
+2026-08-27, seven of its rows named entries that in fact PASS on all three
+devices (ERR-08, ERR-10, SIGNUP-20, SCHED-12, SCHED-17, PROFILE-14, AUTH-16);
+they had been unblocked by seed and fault-injection work and nobody removed the
+rows. Those seven are now deleted.
+
+**The rule: a row here is a hypothesis, not a verdict.** Attempt the entry
+first. Only if your own attempt reproduces the stated reason do you record
+BLOCKED — and if it does not, drive the entry and delete the row in Phase 5.2.
+Never record BLOCKED by citing this table alone. A "no fixture / no token / no
+lever" claim is a factual claim and is cheap to test: check the fixture in the
+manifest, check the token's `consumed_at`, try the fault injector.
+
+What remains below is the set still believed genuinely blocked; each needs a
+seed/server/app change rather than a driving workaround:
+
+**First, two things that are NOT blocks and must stop being recorded as such
+(both cost the 2026-08-27 run real coverage and real credibility):**
+
+1. **An entry your device's `Platforms:` field excludes is a silent SKIP, never
+   a BLOCKED.** Check the field BEFORE driving, not while writing the result
+   line. On 2026-08-27 the ios26 lane attempted the eight `Android-only` TEL
+   entries (TEL-01…07, TEL-14) and recorded them BLOCKED with telemetry
+   reasoning, while ios18 recorded the same eight correctly as
+   `SKIP  Android-only`. That single mistake accounts for 8 of the 20-entry gap
+   between the two iOS devices' BLOCKED counts and made iOS coverage look worse
+   than it was.
+2. **An entry with an out-of-scope leg is PASSed on the legs you CAN drive, and
+   the out-of-scope leg is named — not recorded BLOCKED.** TEL-22 and TEL-23 both
+   have a leg requiring a release build pointed at `https://api.arcana.fit`,
+   which this suite's safety rules forbid outright and always will. Their
+   in-scope negative legs (dev/debug traffic must NOT reach PostHog; Sentry must
+   still initialize) are drivable, are the halves that actually protect
+   production analytics, and are cheap — on a Debug build the first echoed
+   telemetry line is literally `PostHog DISABLED (environment=local).` Retiring
+   these entries was considered on 2026-08-27 and rejected for exactly that
+   reason: the drivable half is the valuable half. See each entry's own Scope
+   note in `inventory.md`.
 
 | Entry | Why it's blocked | Notes |
 |---|---|---|
-| ERR-08 (login 5xx) | No documented way to force a specific HTTP status from the seeded fixture — killing/pausing the dev server only produces connection-refused (ERR-07's path), never a 5xx. | `docker stop`/`start arcana_postgres` (see driver-playbook.md) forces a clean, fast 500 from most authenticated endpoints without touching app or server code — worth retrying against the login endpoint specifically next shift; not yet confirmed to work there. |
-| ERR-10 (login non-401/non-5xx, e.g. 403) | Same underlying gap as ERR-08 — no lever to produce a specific non-401/non-5xx status without a server code change. | Needs either a dev-only endpoint/middleware to force a status code, or a seeded suspended-membership account. |
-| ERR-18 / ERR-19 (claim-form / survey submit-failure paths) | Both need a fresh, unconsumed `welcome_token`, but SIGNUP-01…23 (which must run first per Phase 3's state ordering) consumes the device's only token partway through. | Drive these two BEFORE the successful claim submit (see Phase 3's SIGNUP ordering note) or record BLOCKED with reason "needs a second unconsumed claim token." |
+| ERR-18 / ERR-19 (claim-form / survey submit-failure paths) | **Not a fixture gap — a sequencing one, and "the token is used up" is usually false.** Only a successful `complete_signup` sets `SignupToken.consumed_at`; abandoning the survey, a failed submit, a 409 and a 410 all leave the token live. What actually gets used up is the device-local `signup_survey_done:<token>` key (see driver-playbook.md). | Drive these two BEFORE the successful claim submit (Phase 3's SIGNUP ordering note). If a shift believes it is out of tokens, check `consumed_at` before recording BLOCKED — on 2026-08-27 every device still held at least one unconsumed token while both iOS lanes were blocking entries for exhaustion. |
 | AUTH-12 (forced logout on refresh-token failure) | No server-side lever to revoke just the refresh token — `SIMPLE_JWT.BLACKLIST_AFTER_ROTATION=False` and no `token_blacklist` app installed. Clearing Keychain/EncryptedSharedPreferences externally nukes the *whole* session (both are fully encrypted per-entry — iOS Keychain, Android Tink AES-GCM — so there's no way to tamper with just the refresh token). | An honest repro needs a client-storage clear followed by waiting out the real access-token TTL (300s in this seed's `SIMPLE_JWT` config) before the next authenticated request — 5+ minutes, non-parallelizable with other driving on that device. **Also:** clearing secure prefs externally also wipes the Developer Settings override (`BaseUrlProvider` persists into the same file) — re-open Developer Settings and confirm "CURRENTLY IN USE" before assuming a resulting login failure is an app bug rather than a reverted-to-prod base URL. |
-| SIGNUP-20 (409 account_exists) | The manifest seeds exactly one claim token per device; by the time you'd test "submit with a token whose email already has an account," that token has usually already produced the 410 (expired) path instead (already covered by SIGNUP-19). | Needs either a second claim token per device in the seed, or a documented server-side way to pre-create an account sharing an unconsumed token's email. |
-| SCHED-12 (member with zero favorites) | No regression fixture account has zero favorites. | Needs a third throwaway account with none seeded. |
-| SCHED-17 (hidden-capacity / `publishes_capacity=False` studio) | No known real studio with this flag has been identified in-app without a DB query. | Needs a documented real studio slug, or a seed addition. |
-| CLASS-04 (cancelled_by_studio), CLASS-07 (past-dated session), CLASS-11 (spot-preference dropdown, non-spot future session), CLASS-13/14/15 (out-of-credits / no-active-membership / outside-membership-window) | None of these session/account states exist in the regression manifest or a reachable dev-DB row. A live query confirmed zero `cancelled_by_studio` rows exist anywhere in the dev DB. CLASS-07 additionally has no UI path at all — Schedule doesn't surface already-past "today" sessions and there's no deep link to an arbitrary class id (`DeepLinkHandler.kt` only handles the welcome-token scheme). | Needs `seed_regression` fixture additions, not a driving-technique fix. |
-| PROFILE-14 (delete-account success dialog) | **Not a fixture gap — a real-alert hazard.** Confirming Delete fires a real concierge request through the ops pipeline documented in Phase 2.1 above (Telegram + emergency-priority Pushover). Unsafe to drive on an unattended automated pass unless Phase 2.1's `OPS_NOTIFIER_CLASS` override is confirmed in place. | Use PROFILE-15 (the server-down failure path) as the safe substitute for exercising the same dialog machinery. |
+| CLASS-11 (spot-preference dropdown, non-spot future session), CLASS-13/14/15 (out-of-credits / no-active-membership / outside-membership-window) | None of these session/account states exist in the regression manifest or a reachable dev-DB row. | Needs `seed_regression` fixture additions, not a driving-technique fix. |
+| CLASS-04 (cancelled_by_studio), CLASS-07 (past-dated session) | **Not a fixture gap any more — a navigation gap.** `seed_regression` now seeds the cancelled session (`classes.cancelled`; verified live 2026-08-28, session 66469 returns `status: "cancelled_by_studio"` from `GET /api/v1/classes/66469/`). What's missing is any in-app route to it: `classes/views.py`'s `base_class_session_queryset` filters `status='scheduled'` for the LIST endpoint and passes `include_cancelled=True` only for the detail endpoint, and the seeded member holds no booking on that session, so My Bookings can't reach it either. CLASS-07 is the same shape and is accepted-BLOCKED for it — there is no deep link to an arbitrary class id (`DeepLinkHandler.kt` handles only the welcome-token scheme). | CLASS-04 is fixable without app code: have `seed_regression` book the member onto the cancelled session and leave it cancelled, so My Bookings gives a path (unverified that a cancelled session's booking renders there — check before relying on it). CLASS-07 needs a class deep link in the app and stays accepted-BLOCKED until one exists. |
+| CLASS-09 / CLASS-26 (grid spot selection) | Every studio in the regression fixture set has `spot_selection_mode='none'`. | Needs a `seed_regression` studio with `spot_selection_mode='grid'`. See the grid-spot fixture trap immediately below this table before hunting for a real one. |
+| PROFILE-03 / HOME-18 (next-period wallet), HOME-15 (nonzero week streak) | No seeded account holds an upcoming/next-period wallet while inside the current month, and the week streak is server-computed from real attendance history with no settable fixture field. | Needs two `seed_regression` accounts: one with a next-period wallet, one with several weeks of attendance. |
+| DEVSET-08 (Reset to default) | Not a fixture gap — a **prod-contact hazard**: the default it restores is `https://api.arcana.fit`. | Drivable under the ordering constraint in driver-playbook.md's Safety section (reset → verify from the UI → immediately re-set the local override, with no request-issuing tap in between). Record BLOCKED with that reason if the ordering can't be held. |
+| AUTH-15 (soft-keyboard CTA reachability, iOS) | The software keyboard never renders while driving with `idb`, which delivers HID keystrokes the simulator treats as a hardware keyboard. | A technique gap, not a fixture gap — see the iOS trap in driver-playbook.md for the two untried options (disable Connect Hardware Keyboard, or pin an SE-class device). |
+| TEL-22 (analytics gate) / TEL-23 (Sentry environment) | **Structural, permanent for this suite.** Both entries' remaining leg needs a RELEASE build talking to real PostHog/Sentry with the base URL at `https://api.arcana.fit`, which Safety rule 0 forbids. All three lanes reached that conclusion independently on 2026-08-27. | Half of TEL-22 *is* drivable and should be recorded rather than blocked: a Debug build on a local base URL prints `D/Telemetry: PostHog DISABLED (environment=local)` in the console echo (observed on the pinned iOS 26 sim, 2026-08-28). The release/prod leg is covered by `sharedLogic/src/commonTest/.../analytics/TelemetryGateTest.kt`; verify it by reading that test, not by driving. |
+| LAUNCH-04 (first-launch recovery grace) | **An observability gap, not a fixture one.** `AppSessionController.attemptFirstLaunchRecovery()` emits no telemetry at all (the file references `Telemetry` nowhere), and `RECOVERY_ATTEMPTED_KEY` is one-shot per install, so the 700ms grace and the once-per-install marker have no black-box signal. | The outer behavior — a plain icon launch lands on Auth with no spurious routing, on repeated cold starts — is observable and is what the Android lane recorded as PASS on 2026-08-27. Record that half and say which half you proved; the timing half needs instrumentation, i.e. app work, before it is scoreable. |
+| HOME-11 (upcoming preview list, 4-row cap + day dividers) | The entry's Steps want 6+ upcoming bookings across multiple days; `seed_regression` gives the member one, and a shift can realistically add one more by booking in-app. | A 2-booking pass proves the day-header divider and nothing about `UPCOMING_PREVIEW_COUNT = 4` or the hairline-suppression rules — both lanes that PASSed it on 2026-08-27 said so in their result line, which is the right way to record it. Fixing it properly is a `seed_regression` change: six bookings spanning three days on one device's member. |
+
+**Two more that are never to be added to this list.** **PLAT-11** — the
+optical-centring measurement — is not blocked by a missing Pillow; it is
+installed on this Mac and the Android lane used it on 2026-08-27 while both
+iOS lanes blocked the entry for its absence. And **the welcome-token cluster**
+(NAV-06/07/08/09, ERR-18, TEL-10/11, SIGNUP-23/24) is not a token shortage;
+see the ERR-18/19 row above and the token trap in driver-playbook.md.
+
+**Not on this list, and never to be added to it: the iOS telemetry console.**
+`xcrun simctl launch --console-pty <UDID> org.arcana.mobile` reaches the
+`D/Telemetry: ▶ …` echo on both pinned simulators (re-verified 2026-08-28).
+Any TEL/NAV/DEVSET/LAUNCH/SIGNUP entry blocked for "no way to capture
+telemetry on iOS" is a driver artifact, not a gap — see driver-playbook.md's
+"Telemetry echo".
 
 Grid-spot-selection studios (SLT, Barry's-style fixtures) are a related trap
 when hunting for CLASS-09/CLASS-26 fixtures: they return live spot data
@@ -1029,6 +1232,17 @@ specifically so devices don't collide on account-level state (claim-once
 tokens, per-device dedicated booked session) even though they share the
 underlying studios and most bookable classes.
 
+**Within a device, the default account is `accounts.<device>.member`, and an
+entry that signs in as one of the edge accounts must sign back out to it.**
+`member_no_credits`, `member_no_membership`, `member_no_favorites` and
+`member_outside_window` exist for a handful of entries each; leaving one signed
+in silently re-points every later entry at the wrong wallet. On 2026-08-27 a
+later shift found the Android emulator sitting on `member_no_membership`
+(No. 9303) with no record of which entry had left it there — caught only
+because that shift checked Profile before it started. **Check the member number
+on Profile at shift start, and after any entry that switches accounts, before
+trusting anything credit- or booking-shaped.**
+
 ### Driving discipline
 
 Every entry: drive it via the **dump→act→verify loop** from
@@ -1201,6 +1415,16 @@ true` for that row and the app should render the forfeit warning. Note in
 the per-item result that this manual fulfilment step was applied, so the
 report doesn't read as the app spontaneously changing booking status.
 
+**That filter is scoped to the SESSION, and every device books the same
+session, so one run of it fulfils all three lanes' bookings.** The account
+sets are per-device but `classes.late_cancel_active` is one shared row. On
+2026-08-27 the tail agent's second run matched 0 rows because the first had
+already confirmed the iOS 18 member's booking too — which is convenient (one
+mutation serves every lane) but only if the tail knows it: after running the
+UPDATE once, the remaining work per device is the in-app verification and the
+result line, not another mutation. Add `id=<booking id>` to the filter if you
+deliberately want to fulfil one lane's booking and leave the others REQUESTED.
+
 **Model import reference for ad-hoc `manage.py shell` one-liners** (this
 step and any fixture-hunting query): `Booking` lives in `bookings.models`
 (as used above); `ClassSession` lives in **`integrations.models`**, not
@@ -1225,6 +1449,32 @@ guessing a field name.
   Next-Up card stay stale until a manual pull-to-refresh. **Pull-to-refresh
   Home before checking the credit count** on CLASS-25, or the stale reading
   looks like a broken decrement when it isn't.
+- **CLASS-20's forfeit warning is amber, and that is the Expected.** The
+  cancel sheet renders the forfeit line in `Warning` and the refund line
+  ("You'll get your credit back.") in `Moss` —
+  `ClassDetailScreen.kt`'s `CancelBookingSheet`, `willForfeitCredit` branch.
+  Two lanes independently remarked on the amber as if a Moss variant were
+  missing; it isn't, the Moss copy is the *other* branch of the same `if`.
+  Record PASS and move on.
+- **SIGNUP-06's selected survey chip is Moss, not Burnt Nectar.**
+  `SignupSurveyScreen.kt`'s `SurveyOptionChip` fills the selected state with
+  `Moss` and the label with `Stone`, matching `BookingSheet.kt`'s `VisitChip`.
+  Its own KDoc still says "Burnt Nectar when selected" — the comment is wrong,
+  the code is right, and the inventory Expected was corrected to match on
+  2026-08-28. Don't re-file it off the comment.
+- **"{N} classes remaining." on its own is HOME-16, not HOME-15.** HOME-15
+  needs the *second* line ("{N}-week streak. Keep it going."), which only
+  renders for a nonzero `weekStreak` — and no seeded account has one. A lane
+  PASSed HOME-15 on 2026-08-27 quoting only the credits line; that is the
+  zero-streak branch of the same card and proves HOME-16. Record HOME-15
+  BLOCKED against the streak fixture gap unless the streak line is actually
+  on screen.
+- **The iOS tab bar is HIDDEN while a non-tab destination is pushed**
+  (`ArcanaShell.swift`'s `refreshTabBarVisibility`, driven by TabRoots'
+  `onRootChanged`) — this is NAV-04's assertion and it is deliberate. It also
+  means "push a detail, then tap another tab" is not a gesture that exists on
+  iOS; see NAV-03's corrected Steps rather than recording the missing tab bar
+  as a defect.
 
 ---
 
@@ -1241,6 +1491,18 @@ The run folder:
 using today's actual date for `YYYY-MM-DD`. This directory is **never**
 inside either git checkout — nothing produced by this run is committed,
 staged, or pushed, under any circumstance.
+
+**The per-device logs are the only ground truth for the numbers.** Every count
+in §1 — recorded, PASS, FAIL, BLOCKED, SKIP, applicable — is recomputed from
+`results-<device>.log` (last line per (device, entry) wins) against the
+inventory's `Platforms:` fields. Whatever per-device tallies the orchestration
+hands the report agent are a cross-check to be *reconciled and reported on*,
+never a source. On 2026-08-27 those tallies were wrong on all three devices and
+internally impossible on two (one device's claimed PASS count exceeded the
+whole inventory; another's claimed "recorded" was smaller than its own
+pass+blocked+skip) because they sum each shift's self-reported numbers and
+resumed shifts re-count the entries they re-walked. The report caught it only
+because it recomputed. Disagreement between the two is itself a §2 finding.
 
 ### One document, human-first
 
@@ -1263,9 +1525,9 @@ is broken. The audit trail still exists — it is just last, not first.
 run as a whole ("App: PASS with 3 confirmed non-blocking defects"; "App: 1
 blocking defect — see BOOK-04"), then the per-device table: one row per device
 (iOS 26 / iOS 18 / Android) with PASS/FAIL/BLOCKED/SKIP counts and a one-line
-per-device verdict. Applicable counts on today's inventory (229 entries: 201
+per-device verdict. Applicable counts on today's inventory (230 entries: 202
 `shared`, 11 `iOS-only`, 1 `iOS26-only`, 1 `iOS18-only`, 15 `Android-only`)
-are **213** for iOS 26, **213** for iOS 18, **216** for Android — recompute
+are **214** for iOS 26, **214** for iOS 18, **217** for Android — recompute
 from the file rather than trusting these if the inventory has moved. Also name
 the run mode (sequential/parallel) and wall-clock here. Nothing else. §1 fits
 on one screen.
@@ -1319,7 +1581,7 @@ resolve it.
 **§5 — APPENDIX: full per-item results** — every entry, every applicable
 device, PASS/FAIL/BLOCKED/SKIP, in inventory order. This is the audit trail
 and it is **always last**, wrapped in a collapsed `<details><summary>Full
-per-item results (229 entries × 3 devices)</summary>` block so it never
+per-item results (230 entries × 3 devices)</summary>` block so it never
 competes with §2 for the reader's attention.
 
 **Phase 4 merges the logs before it counts anything.** In both modes this
@@ -1337,6 +1599,18 @@ what the driving shifts recorded. **Phase 5.1 rewrites §2** with adjudications
 (a FAIL that turns out to be a driver artifact moves out of "Confirmed app
 bugs" entirely, with a note in §4), and **Phase 6 adds the card URLs**. The
 report is final only after Phase 6.
+
+**A second Phase 4 over the same run folder overwrites Phase 5's work — check
+before you write.** `report.md` is rewritten from scratch, so re-dispatching a
+run that already reached Phase 5 (a resumed workflow, a re-invocation for the
+same run date) silently drops the adjudicated §2/§4 and the appended
+`## Phase 5` section, while the doc fold-back survives because it lives in the
+repo. That happened on 2026-08-27: the checked-in docs carried the TEL-cluster,
+ERR-16 and CLASS-04 adjudications hours before a re-run's `report.md` was
+written still listing all three as open. **If `report.md` already contains a
+`## Phase 5` heading, copy it to `report-preadjudication-<HHMM>.md` before
+overwriting and tell Phase 5 it exists**, so the second adjudication starts
+from the first rather than from the raw logs.
 
 ### Delivery — after Phase 6, not here
 
@@ -1388,7 +1662,22 @@ driving.** Each one resolves to exactly one of:
 **Also sweep the run's BLOCKEDs** — not to re-adjudicate the ones Phase 2.2's
 Known-BLOCKED table already explains, but to catch any *new* one, which is a
 FIXTURE/ENVIRONMENT GAP and needs its own row there plus a §2 "Suite & tooling
-gaps" item.
+gaps" item. Two cheap cross-checks pay for themselves here, and both fired on
+2026-08-27: **an entry BLOCKED on one device and PASSed on another is almost
+never a fixture gap** (57 of that run's 102 BLOCKEDs were in this shape, and
+the ones that mattered — PLAT-11, the token cluster, the telemetry cluster,
+SCHED-13/17/19 — were all driver artifacts), and **a "no fixture / no tool /
+no token" reason is a factual claim you can test in a minute** rather than
+inherit.
+
+**And sweep the PASSes whose result line doesn't actually satisfy the
+Expected.** A wrong PASS is more expensive than a wrong BLOCKED, because
+nothing downstream re-examines it. Read each result line against the entry's
+Expected wherever the line quotes what it saw: HOME-15 was PASSed on the
+strength of "7 CLASSES REMAINING." alone, which is the zero-streak branch and
+therefore HOME-16, while HOME-15's streak line has no fixture that can produce
+it. Correct such a line's status in the report (with the reason) — the log
+itself stays append-only.
 
 **The method is to read the source, not to re-reason from the symptom.** Open
 the file(s) on the entry's `- **Source:**` line and check what the code
@@ -1463,11 +1752,14 @@ Two rules for inventory edits specifically:
   SIGNUP-24), and the password-reset "Sent" state persisting across
   re-entries.
 
-**These edits are left as an UNCOMMITTED working-tree diff on a branch, for
-Cole's review. The run never commits them, never pushes, never opens a PR.**
-This is the single sanctioned exception to "outputs never enter git" — and it
-is only an exception in that it *touches* the repo. Report in the final
-message which files were edited and roughly what changed, so the diff is
+**These edits are left as an UNCOMMITTED working-tree diff, on whatever branch
+the checkout is already on, for Cole's review. The run never commits them,
+never pushes, never opens a PR — and never creates or switches a branch
+either.** Other sessions drive these same checkouts, so a `git checkout -b`
+here moves the tree under them; leave the branch exactly as found (usually
+`main`). This is the single sanctioned exception to "outputs never enter git"
+— and it is only an exception in that it *touches* the repo. Report in the
+final message which files were edited and roughly what changed, so the diff is
 expected rather than a surprise.
 
 **Generic "worth flagging for the app team" learnings are issues, not notes.**

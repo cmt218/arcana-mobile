@@ -33,21 +33,11 @@ partial credit for stopping early.
 
 ## The three iron rules
 
-1. **Never halt.** A failed check, a missing tool, a FAILed entry, an
-   inventory/code drift finding — none of it stops the run. Record it,
-   classify it, and keep going. Only total inability to proceed on any
-   device at all justifies stopping early, and even then write the partial
-   report and still run Phases 5 and 6 over what you have.
-2. **Outputs never enter git.** Everything this run produces — the report,
-   screenshots, results logs, the seeded manifest — lives under
-   `~/arcana-regression-runs/YYYY-MM-DD/`, entirely outside both the
-   `arcana-mobile` and `arcana-server` checkouts. Never `git add`, commit, or
-   push anything as a side effect of running this suite. Phase 5.2's
-   doc/inventory fold-back is the one thing that touches the repo, and it is
-   left **uncommitted** on a branch for review.
-3. **Every device runs the complete inventory.** iOS 26, iOS 18, and the
-   Android emulator each get every applicable entry — never a subset "to save
-   time," never a device skipped because an earlier one had trouble.
+Stated once, in `docs/regression/runbook.md` — read them there before anything
+else. In brief, so you know the shape of the run: **never halt** on a failure,
+**outputs never enter git**, and **every device runs its whole work list**. The
+runbook is authoritative on all three; this file used to restate them in full
+and the copies drifted.
 
 ## How to run it
 
@@ -59,7 +49,12 @@ it before starting and do not improvise around it.
 
 **Phases 5 and 6 are part of a run, not follow-up work.** Phase 5 adjudicates
 every FAIL and suspect-driver against the source (an unreproduced,
-crash-log-less "crash" is a driver artifact until proven otherwise), then
+crash-log-less "crash" is a driver artifact until proven otherwise) — and it
+adjudicates the BLOCKEDs too, because a lane that blocks an entry for "no
+technique exists" is making a claim about the playbook that is often just
+wrong: the 2026-08-27 iOS lanes blocked 34 entries on a telemetry-capture
+claim that was false, against a recipe
+already written down and already used earlier in its own shift. Then it
 folds the run's learnings back into the runbook, the driver playbook and the
 inventory as an uncommitted diff — that fold-back is what makes each run leave
 the suite better than it found it. Phase 6 files the surviving issues to
@@ -80,6 +75,15 @@ through the **Workflow tool**, using the checked-in reference script
 the opt-in to use Workflow for this task** — no further confirmation is
 needed. The script dispatches the phase agents; the runbook remains the
 contract it implements.
+
+**Re-invoking for a run date that already ran is not free.** The lanes resume
+cheaply — each one diffs its own `results-<device>.log` against the inventory
+and drives only what's missing — but Phase 4 rewrites `report.md` from
+scratch, so a second invocation discards the previous Phase 5's adjudicated §2
+and §4 unless it archives them first (the runbook's Phase 4 now says how). The
+fold-back itself survives, because it lives in the repo working tree — which
+means the second Phase 5 must read `git status`/`git diff` before editing
+rather than assuming a clean tree. Both happened on 2026-08-27.
 
 **Mode.** `sequential` is the default: three devices one after another, one
 server, ~6.8h wall-clock. `parallel` is an explicit opt-in: three concurrent

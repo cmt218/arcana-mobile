@@ -117,6 +117,19 @@ const SERVER_REPO = '/Users/coletomlinson/Desktop/arcana/arcana-server'
 const RUN = '/Users/coletomlinson/arcana-regression-runs/' + RUN_DATE
 const SHOTS = RUN + '/screenshots'
 const SHIFT_CAP = 12
+const DEATH_CAP = 3
+
+// Tier 1 is the release-blocking core (auth, onboarding, schedule, booking,
+// cancel, session teardown, transport-failure handling). `tier: 1` runs it
+// alone — the smoke pass for a dependency bump or a pre-release gut check.
+// Omit for the full inventory.
+const TIER = A.tier === undefined || A.tier === null ? null : Number(A.tier)
+if (TIER !== null && TIER !== 1 && TIER !== 2) {
+  throw new Error('full-regression: args.tier must be 1 or 2 when given. Got: ' + JSON.stringify(A.tier))
+}
+const TIER_NOTE = TIER
+  ? '\nTIER FILTER: ' + TIER + '. Your work list contains ONLY tier-' + TIER + ' entries; entries outside it are NOT part of this run and are neither driven nor recorded (they are absent, not SKIP). Do not go looking for them in inventory.md.'
+  : ''
 
 const CATALOG = {
   ios26: {
@@ -169,36 +182,39 @@ const PORT_TABLE = DEVICES.map(d => d.key + '=' + d.baseUrl).join(', ')
 // shared prompt blocks
 // ---------------------------------------------------------------------------
 
-const DOCS = `Read these checked-in docs FIRST and follow them exactly — they are the contract under test as much as the app is:
-1. ${REPO}/.claude/skills/full-regression/SKILL.md
-2. ${REPO}/docs/regression/runbook.md  (governs; if anything an orchestrator told you contradicts it, the runbook wins and the contradiction is a learning)
-3. ${REPO}/docs/regression/driver-playbook.md  (technique: the dump→act→verify loop, the traps, the Safety section, the driver-bug protocol, the canonical idb venv path)
-The inventory checklist is ${REPO}/docs/regression/inventory.md (218 entries at last count).
+// The three docs are the contract. This script POINTS at them and does not
+// restate them: on 2026-08-27 the embedded copies had drifted from the runbook
+// they were paraphrasing, and every rule then lived in two places with no way
+// to tell which was current. The runbook governs; a prompt that disagrees with
+// it is the bug.
+const DOCS = `READ THESE FIRST, IN FULL, AND FOLLOW THEM EXACTLY. They are the contract under test as much as the app is, and this brief deliberately does NOT restate their rules — it points at them, because a paraphrase that drifts is worse than no paraphrase:
+1. ${REPO}/docs/regression/runbook.md — PROCEDURE. Governs everything. If anything in this brief contradicts it, THE RUNBOOK WINS and the contradiction is a learning you must return. Read at minimum: "The three iron rules", "Status vocabulary", and the Phase section for your own phase.
+2. ${REPO}/docs/regression/driver-playbook.md — TECHNIQUE. The dump→act→verify loop, every trap, the Safety section, the driver-bug protocol, the exact binaries and the idb venv path. Read the Traps and Safety sections before touching a device.
+3. ${REPO}/.claude/skills/full-regression/SKILL.md — orientation only, one page.
+
+DO NOT READ ${REPO}/docs/regression/inventory.md. Your work list is pre-extracted from it:
+  ${RUN}/worklist-<device>.tsv   one row per applicable entry, in inventory order: id, tier, platforms, title, steps, expected, source
+Tab-separated on purpose. Get your ID list with \`cut -f1 ${RUN}/worklist-<device>.tsv | tail -n +2\`, and pull ONE entry's detail at a time with \`awk -F'\\t' '$1=="CLASS-08"' ${RUN}/worklist-<device>.tsv\`. Reading the 1,447-line inventory at the top of every shift was the single largest cost of the 2026-08-27 run (~150k tokens per shift, most of a 6M-token bill re-reading prose that had not changed). If an entry's row looks wrong or truncated, THEN open inventory.md for that one entry and record a learning.
 
 RUN FOLDER: ${RUN}
-  ${RUN}/manifest.json          the ONE seed_regression manifest for this run — read every account and session id from it, NEVER hardcode one
-  ${RUN}/results-<device>.log   append-only per-device results log — one per device in BOTH modes, per the runbook's "Results logs" (Phase 3 writes only these; Phase 4 merges them into results.log, so do NOT write a shared results.log during Phase 3)
+  ${RUN}/manifest.json          the ONE seed_regression manifest — read every account and session id from it, NEVER hardcode one
+  ${RUN}/worklist-<device>.tsv  your work list (above)
+  ${RUN}/results-<device>.log   append-only per-device results log, one per device in BOTH modes (Phase 3 writes only these; Phase 4 merges them into results.log)
   ${SHOTS}/                     screenshots
   ${RUN}/report-draft.md        running phase notes
-NOTHING is written inside either git checkout by Phases 0-4. Statuses are PASS / FAIL / BLOCKED / SKIP (plus the DEFERRED convention below and the suspect-driver annotation); every one gets recorded and the run moves past it. NEVER halt the run on a failure.
+NOTHING is written inside either git checkout by Phases 0-4. Statuses are PASS / FAIL / BLOCKED / SKIP, plus the DEFERRED convention and the suspect-driver annotation — all four defined in the runbook's "Status vocabulary", which you have read.
 
-MODE: ${MODE}. Devices in this run: ${DEVICES.map(d => d.key).join(', ')}. Base URLs: ${PORT_TABLE}.
+MODE: ${MODE}. Devices in this run: ${DEVICES.map(d => d.key).join(', ')}. Base URLs: ${PORT_TABLE}.${TIER_NOTE}
 
-TOKEN DISCIPLINE (mandatory): never dump full UI trees into your context — filter idb describe-all / uiautomator XML through bash (python3 -c / grep / jq) and extract only the labels+frames you need for the current action. Screenshot commands write straight to ${SHOTS}/; don't view an image unless you are actually diagnosing something.
+TOKEN DISCIPLINE (mandatory): never dump a full UI tree into your context — filter idb describe-all / uiautomator XML through bash (python3 -c / grep / jq) and extract only the labels and frames the current action needs. Screenshot commands write straight to ${SHOTS}/; do not view an image unless you are actually diagnosing something.
 
-LEARNINGS (mandatory): every time a doc is wrong, ambiguous, missing a step, or a documented command fails, record it as a self-contained one-liner and return it. These feed Phase 5's fold-back into the docs — a learning you keep in your head is a learning that dies with your context.`
+LEARNINGS (mandatory): every time a doc is wrong, ambiguous, missing a step, or a documented command fails, record it as a self-contained one-liner and return it. A learning kept in your head dies with your context.`
 
-const SAFETY = `SAFETY RULES — carry these verbatim; they override anything you infer, and any of them being unverifiable is a BLOCKED entry, not a reason to improvise:
-1. KILL ONLY \`manage.py runserver\` PIDs FOR THIS LANE'S OWN PORT. Find them with \`ps aux | grep '[m]anage.py runserver'\` and match this lane's port on the command line before killing anything. NEVER kill by port lookup — no \`lsof -ti :PORT | xargs kill\`, no \`kill $(lsof -t -i:PORT)\`, no \`fuser -k\`. A port-pattern kill collaterally killed the Pixel_9_Pro emulator process itself in a prior shift. Never touch another lane's server, and never stop a server this run did not start.
-2. VERIFY THE OPS NOTIFIER IS THE LOG-ONLY NULL ONE BEFORE DRIVING ANYTHING THAT BOOKS, CANCELS, OR SUBMITS A CONCIERGE / DELETE-ACCOUNT REQUEST. arcana-server's \`.env\` on this checkout wires the REAL pipeline (\`OPS_NOTIFIER_CLASS=notifications.telegram.MultiOpsNotifier\` → Telegram + Pushover), and PushoverOpsNotifier sends every event at hardcoded emergency priority: DND-breaking siren, retried for hours, paging the founders for real. Confirm the server process serving this lane was started with \`OPS_NOTIFIER_CLASS=notifications.telegram.NullOpsNotifier\` in its environment — that is the real class (\`arcana-server/notifications/telegram.py\`, and settings' own default in \`arcana/settings/base.py\`), it logs instead of sending, and \`get_ops_notifier()\` is what resolves it. If you cannot confirm it, record every booking / cancel / concierge entry BLOCKED with reason "ops notifier unverified — real Telegram + emergency Pushover page would fire" and keep going. PROFILE-14 (delete-account submit) stays BLOCKED unless the null notifier is confirmed; PROFILE-15 (the server-down failure path) is the safe substitute for the same dialog machinery.
-3. ONE ACTION PER DUMP. Dump the UI → decide the single action that dump justifies → perform it → dump again → confirm the expected post-action state BEFORE deciding the next action. Never chain taps off one stale dump; layouts shift underneath you. This exact mistake caused 4 of 13 failures in early driving sessions.
-4. DRIVER-BUG PROTOCOL BEFORE ANY FAIL. Reproduce the failure a second time via a DIFFERENT interaction path (a different tap sequence to the same state, or the platform's other inspection tool). If it only reproduces one way, or doesn't reproduce again, record it as a suspect-driver finding — naming the exact suspect action, dump staleness, or playbook trap — NOT as a FAIL. Roughly half the "app bugs" in early sessions were driver mistakes; a report full of false alarms is worse than a shorter, trustworthy one.
-5. THIS DEVICE'S ACCOUNT SET ONLY. Use \`accounts.<this device>.claim\` and \`accounts.<this device>.member\` from ${RUN}/manifest.json and nothing else. Never sign another device's account into this build — the three sets exist precisely so devices don't collide on account-level state.
-6. SCREENSHOT AT THE MOMENT OF EVERY FAIL AND EVERY SUSPECT-DRIVER FINDING, before navigating anywhere else, into ${SHOTS}/ named \`<device>-<ENTRY-ID>-fail.png\` / \`<device>-<ENTRY-ID>-suspect.png\`, and reference that filename from the entry's result line. A failure with no image is a failure the reader cannot adjudicate. Also take the runbook's three checkpoint screenshots (post-login home, post-claim success, booking confirmation) even when the entry PASSes.
-7. NEVER HALT. A failed check, a missing tool, a FAILed entry, a dead device — none of it stops the run. Record it, classify it, keep going. Write what you have before you stop for any reason.
-Also standing: nothing is staged, committed or pushed, ever. \`pm clear org.arcana.mobile\` wipes the Developer Settings base-URL override back to the prod default — re-set and re-verify the base URL immediately after any \`pm clear\`, or subsequent requests silently hit production. A relaunched AVD resumes a quick-boot snapshot, so \`am force-stop\` + relaunch, then re-check the signed-in account and the base URL, before trusting anything after a crash.`
-
-const DEFERRED_RULE = `DEFERRED ENTRIES — DO NOT DRIVE THESE INSIDE A LANE. Any entry whose repro requires an exclusive, environment-wide fault — taking the shared dev Postgres or the whole DB layer down (\`docker stop arcana_postgres\`-style injection, ERR-08's 5xx hunt), or a \`manage.py shell\` mutation of shared rows such as the late-cancel fulfilment step — is deferred. The DB is shared by every device and, in parallel mode, by all three servers at once; in sequential mode the reason is the same tail agent's single stop/restore cycle with one verified restore rather than several scattered through the pass. DEFERRED applies in BOTH modes and is NEVER a final status. When you reach such an entry, append a line \`<device>  <ENTRY-ID>  DEFERRED  <the exclusive fault it needs>\` to your results log, return the ID in \`deferred_ids\`, and move on. A single tail agent drives all of them after every lane has finished and APPENDS the real status as a new line (append-only log; Phase 4 takes the last line for a (device, entry) pair as authoritative), so no DEFERRED status reaches the report.`
+const SAFETY = `SAFETY RULES. The full set is the driver-playbook's "Safety" section plus the runbook's Phase 2.1 — READ BOTH; they are not reproduced here. These four are restated only because getting them wrong has already cost a run:
+1. LOCALHOST ONLY. Set this device's Developer Settings base-URL override BEFORE driving anything and PROVE it took (a real request landing in this run's own server log — the "CURRENTLY IN USE" label is not proof). A fresh or reset install defaults to https://api.arcana.fit, which is PRODUCTION. Re-verify after any app-data wipe, \`pm clear\`, simulator erase, or reviewer sign-in (see the playbook's reviewer-redirect trap). Test data is @example.com only.
+2. VERIFY THE OPS NOTIFIER AND EMAIL SENDER ARE INERT before driving anything that books, cancels, or submits a concierge/delete-account request, and again after EVERY server restart. Command and expected output are in the runbook's Phase 2.1. If it does not print exactly \`NullOpsNotifier [] notifications.email.ConsoleEmailSender\`, record those entries BLOCKED and say so loudly.
+3. NEVER KILL BY PORT. No \`lsof -ti :PORT\`, no \`fuser -k\`. It matches processes merely CONNECTED to the port — it killed the emulator once and manufactured ten phantom "iOS 26 crash" FAILs. Match the specific \`manage.py runserver\` PID.
+4. NEVER HALT, and NEVER COMMIT. Record FAIL/BLOCKED/SKIP and keep going. No \`git commit\`, \`git push\`, \`gh pr create\` or \`gh pr merge\` in any repo, for any reason, including docs.`
 
 const SHIFT_SCHEMA = {
   type: 'object',
@@ -324,11 +340,14 @@ Execute runbook Phase 0 (preflight — record-and-SKIP, never abort) and Phase 2
 4. SERVERS. ${serverPlan}
    Sanity-check each with the runbook's liveness check before moving on, and record port → PID → started_by_this_run → resolved notifier class.
 5. SEED EXACTLY ONCE, against the shared dev DB, before any device starts Phase 3: \`python manage.py seed_regression > ${RUN}/manifest.json\`. Confirm the file parses as JSON and contains \`accounts.{ios26,ios18,android}\` and the five \`classes.*\` ids. Re-running the seed later would purge every regression booking and burn every id — do not re-seed for any reason. If the seed errors, do NOT halt: record it, note which entries become SKIPs per the runbook's fixture table, and continue.
-6. BUILD + INSTALL every device in this run. iOS: build Debug once and install on each pinned UDID (the product is \`Arcana.app\`, not \`iosApp.app\` — resolve the real .app from the build's own Products dir; grep the build output for BUILD SUCCEEDED/FAILED rather than trusting \$? through a pipe). Android: \`:androidApp:assembleDebug\` then \`adb -s emulator-<port> install -r\` — pin the emulator serial explicitly, never the physical device's serial.
-7. BASE URL OVERRIDE per device, via the in-app Developer Settings screen (10 taps on the wordmark on the signed-out Auth screen; the field pre-fills and MUST be cleared before typing or you get concatenated-URL corruption). Set:
+6. BUILD THE WORK LISTS from the seeded inventory, so no shift ever reads inventory.md:
+   \`python3 ${REPO}/tools/regression/build_worklist.py --out ${RUN}${TIER ? ' --tier ' + TIER : ''}\`
+   It writes \`worklist-<device>.tsv\` per device plus \`worklist-summary.txt\`. Confirm each device's row count matches the applicable count you get by tallying inventory.md's \`Platforms:\` fields yourself, and put both numbers in your notes — a silent mismatch here silently shrinks the run. If the script fails, record it as a learning and say so loudly; shifts will have to fall back to reading inventory.md directly, which works but costs roughly ten times the tokens.
+7. BUILD + INSTALL every device in this run. iOS: build Debug once and install on each pinned UDID (the product is \`Arcana.app\`, not \`iosApp.app\` — resolve the real .app from the build's own Products dir; grep the build output for BUILD SUCCEEDED/FAILED rather than trusting \$? through a pipe). Android: \`:androidApp:assembleDebug\` then \`adb -s emulator-<port> install -r\` — pin the emulator serial explicitly, never the physical device's serial.
+8. BASE URL OVERRIDE per device, via the in-app Developer Settings screen (10 taps on the wordmark on the signed-out Auth screen; the field pre-fills and MUST be cleared before typing or you get concatenated-URL corruption). Set:
 ${overridePlan}
    A reused simulator/emulator is not behaviorally fresh: it may already be signed in and already carry an override. If a device boots to Home instead of Auth, sign out via Profile first. Then VERIFY each install actually reaches its OWN server (drive one authenticated or health request and confirm it lands on the expected port — in parallel mode a lane silently talking to another lane's port is a failure mode this step exists to catch).
-8. Append a '## Phase 0/2 — setup' section to ${RUN}/report-draft.md: the preflight table, the server/port/PID/notifier table, the manifest summary, and the per-device install + override state.
+9. Append a '## Phase 0/2 — setup' section to ${RUN}/report-draft.md: the preflight table, the server/port/PID/notifier table, the manifest summary, and the per-device install + override state.
 
 Record every deviation between what the docs say and what you actually had to do as a learning.`,
   { label: 'setup', phase: 'Setup', model: 'sonnet', effort: 'high', schema: SETUP_SCHEMA }
@@ -402,6 +421,8 @@ CONTEXT BUDGET: you cannot finish 200+ entries in one shift, and a shift that di
 
 async function runLane(d) {
   let shifts = 0
+  let productiveShifts = 0
+  let consecutiveDeaths = 0
   let complete = false
   let recorded = 0
   const tally = { pass: 0, fail: 0, blocked: 0, skip: 0 }
@@ -410,7 +431,13 @@ async function runLane(d) {
   const gapsFilled = []
   const learnings = []
 
-  while (!complete && shifts < SHIFT_CAP) {
+  // A shift that DIED (null result: API error, usage limit, crash) must not
+  // count against the productive cap. On 2026-08-27 a usage limit killed 12
+  // shifts per device in seconds, the cap was declared exhausted, and all three
+  // lanes were abandoned having recorded nothing. Only returning shifts count;
+  // consecutive deaths get their own much smaller cap so a real outage still
+  // terminates instead of spinning.
+  while (!complete && productiveShifts < SHIFT_CAP && consecutiveDeaths < DEATH_CAP) {
     shifts++
     const r = await agent(shiftPrompt(d, shifts), {
       label: d.key + ':shift' + shifts,
@@ -419,6 +446,12 @@ async function runLane(d) {
       effort: 'medium',
       schema: SHIFT_SCHEMA,
     })
+    if (r) {
+      productiveShifts++
+      consecutiveDeaths = 0
+    } else {
+      consecutiveDeaths++
+    }
     if (!r) {
       learnings.push('[' + d.key + '] shift ' + shifts + ' returned null (died mid-shift) — the next shift resumed from the results log via the ID diff')
       log(d.key + ' shift ' + shifts + ': DIED (null result) — resuming next shift')
@@ -480,26 +513,43 @@ const allFailIds = lanes.flatMap(l => (l.fail_ids || []).map(id => l.device + ':
 // Deferred — cross-lane DB/Postgres fault injection, after every lane is done
 // ---------------------------------------------------------------------------
 
+// The tail phase runs whenever any lane ran, even when `allDeferred` is empty.
+// `deferred_ids` is a shift's self-report and can be short: on 2026-08-27 the
+// ios18 lane wrote a DEFERRED line for CLASS-20 and never returned the id, so a
+// self-report-gated tail never swept it and the DEFERRED survived into the
+// finished report. The logs are the authority; the agent re-derives from them.
 let deferredResult = null
-if (allDeferred.length === 0) {
-  log('no DEFERRED entries collected — skipping the cross-lane fault-injection tail')
+if (lanes.length === 0) {
+  log('no lanes ran — skipping the cross-lane fault-injection tail')
 } else {
   phase('Deferred')
-  log('driving ' + allDeferred.length + ' deferred cross-lane entries: ' + allDeferred.map(x => x.device + ':' + x.id).join(', '))
+  log(
+    'deferred tail: ' +
+      (allDeferred.length
+        ? allDeferred.length + ' self-reported (' + allDeferred.map(x => x.device + ':' + x.id).join(', ') + ')'
+        : 'none self-reported') +
+      ' — the agent re-derives the real list from the results logs'
+  )
   deferredResult = await agent(
     `You are the DEFERRED tail agent for a real full-regression run (run date ${RUN_DATE}). Every device lane has FINISHED — you are the only thing driving now, which is exactly why these entries were saved for you.
 ${DOCS}
 
 ${SAFETY}
 
-These entries were deferred by the lanes because their repro takes down state shared by every device (the dev Postgres, the whole DB layer, or an entire server process), which no lane could safely do while another lane was mid-entry:
-${allDeferred.map(x => '  - ' + x.device + '  ' + x.id).join('\n')}
+FIRST, BUILD YOUR OWN WORK LIST — do not trust the one below. The authoritative list of deferred entries is what the append-only logs say, not what a shift reported:
+  grep -H DEFERRED ${RUN}/results-*.log
+Every (device, entry) that grep returns and which has NO later, non-DEFERRED line for the same pair is yours to drive. The lanes self-reported these, which is a hint and has been short before (2026-08-27: the ios18 lane wrote a DEFERRED line for CLASS-20 and never returned the id, so it was never swept and reached the finished report still DEFERRED):
+${allDeferred.length ? allDeferred.map(x => '  - ' + x.device + '  ' + x.id).join('\n') : '  (none self-reported — the grep is the only list)'}
+
+These entries were deferred because their repro takes down state shared by every device (the dev Postgres, the whole DB layer, an entire server process, or a \`manage.py shell\` mutation of a shared row), which no lane could safely do while another lane was mid-entry.
 
 Drive each one now, on the device it was deferred from, using that device's own account set and its own base URL (${PORT_TABLE}).
 - The documented lever for a clean, fast 5xx from authenticated endpoints is \`docker stop arcana_postgres\` → drive the entry → \`docker start arcana_postgres\` → wait for the server to reconnect before the next entry. The runbook's Known-BLOCKED table notes this is NOT yet confirmed to produce a 5xx on the LOGIN endpoint specifically (ERR-08) — try it, and if it only yields connection-refused, record BLOCKED with exactly what you observed rather than forcing a status.
 - ALWAYS restore Postgres (and any server you stopped) before finishing, and re-verify each affected device still reaches its own server afterwards.
 - Append each result to that device's own results log (${DEVICES.map(d => d.key + '→' + d.log).join(', ')}) in the same one-line format, REPLACING nothing — append a new line whose status is the real outcome; Phase 4 takes the last line for an ID as authoritative and you must say so in your notes.
 - Same rules as any shift: driver-bug protocol before any FAIL, screenshot every FAIL/suspect-driver into ${SHOTS}/, never halt.
+
+BEFORE YOU RETURN, re-run the grep above and confirm every DEFERRED line it prints now has a later non-DEFERRED line for the same (device, entry). Name any that don't and why — no DEFERRED status may reach Phase 4.
 
 Return: one line per entry with its final status, what lever you used, whether Postgres/servers were restored and verified, and your learnings.`,
     { label: 'deferred-tail', phase: 'Deferred', model: 'sonnet', effort: 'medium', schema: SHIFT_SCHEMA }
@@ -519,6 +569,7 @@ ${DOCS}
 
 Execute runbook Phase 4 EXACTLY as it reads right now — read that section before writing anything; it is the authority on structure and this brief only summarizes it. It calls for a HUMAN-FIRST report: the verdict and the digest come first and must be readable on their own, with the exhaustive per-item audit trail relegated to an appendix. Do not invert that.
 
+0. PRESERVE ANY EXISTING ADJUDICATION. If ${RUN}/report.md already exists and contains a '## Phase 5' heading, this run has already been through triage once (a resume, or a second invocation for the same run date) and writing over it would silently discard Phase 5's adjudicated §2/§4 — which happened on 2026-08-27. Copy it to ${RUN}/report-preadjudication-<HHMM>.md FIRST, say in your return that you did, and carry its adjudicated §2/§4 content forward into the new report rather than re-deriving those sections from the raw logs.
 1. MERGE THE LOGS (runbook Phase 4's merge step; it is the same in both modes). This run wrote one log per device (${DEVICES.map(d => d.log).join(', ')}). Concatenate them into ${RUN}/results.log in device order, each device's lines in inventory order, leaving the per-device files intact. Where an entry ID appears more than once for a device (the deferred tail appends a second line), the LAST line is authoritative — say so in the appendix header, and verify no DEFERRED status survived the merge.
 2. RECONCILE against the inventory before you count anything: recompute the applicable-entry count per device from ${REPO}/docs/regression/inventory.md's \`Platforms:\` fields rather than trusting any number in the runbook, and explicitly call out any applicable entry with NO line at all as a run gap (an unrecorded entry is NOT a SKIP — mislabeling it hides the hole).
 3. WRITE ${RUN}/report.md with the runbook's FIVE sections, in this order and no other:
@@ -526,10 +577,10 @@ Execute runbook Phase 4 EXACTLY as it reads right now — read that section befo
    §2 ISSUES DIGEST — the body of the report, in four subsections: Confirmed app bugs · Potential issues & UX observations · Suite & tooling gaps · Operational hazards. EVERY item in EVERY subsection carries the runbook's seven fields: Title (≤80 chars, prefixed \`<PRIMARY-ENTRY-ID> · \`) · Symptom · Root cause (or "not yet established") · User impact · Severity (Low/Medium/High) · Evidence (entry IDs, screenshot paths, results.log line refs) · Proposed disposition. Quote the entry's Steps/Expected from inventory.md against what was actually observed. §2 is a first cut here — Phase 5 rewrites it and Phase 6 adds card URLs.
    §3 Inventory-drift findings from Phase 1 — every uncovered-surface and stale-entry finding by file/entry ID. State the zero explicitly ("0 forward, 0 reverse") if there are none; a silent section reads like a skipped phase.
    §4 Suspect-driver findings — every entry the driver-bug protocol annotated, what was suspected, and (after Phase 5) how it was adjudicated.
-   §5 APPENDIX: full per-item results — every entry, every applicable device, in inventory order, ALWAYS LAST and wrapped in a collapsed \`<details><summary>Full per-item results (218 entries × 3 devices)</summary>\` block. Note in its header that the last line for a (device, entry) pair is authoritative.
+   §5 APPENDIX: full per-item results — every entry, every applicable device, in inventory order, ALWAYS LAST and wrapped in a collapsed \`<details><summary>Full per-item results (230 entries × 3 devices)</summary>\` block. Note in its header that the last line for a (device, entry) pair is authoritative.
 4. Fold in ${RUN}/report-draft.md's Phase 0/2 and Phase 1 sections, and append a '## Run learnings (doc feedback)' section listing these VERBATIM — Phase 5 consumes it:
 ${JSON.stringify(allLearnings).slice(0, 8000)}
-5. Orchestrator data — reconcile it against the logs and report any disagreement as a finding rather than trusting either blindly:
+5. Orchestrator data — KNOWN UNRELIABLE for the per-device tallies, never a source for a number in §1. They are summed from each shift's OWN self-reported counts, so a resumed shift re-counts the entries it re-walked and a died shift contributes nothing; on 2026-08-27 they disagreed with the logs on all three devices and were internally impossible on two. Recompute everything from the results logs (last line per (device, entry) wins) against the inventory's \`Platforms:\` fields, then report the disagreement itself as a §2 suite-gap finding:
    mode=${MODE}; devices=${JSON.stringify(lanes.map(l => ({ device: l.device, shifts: l.shifts, complete: l.complete, recorded: l.recorded, pass: l.pass, fail: l.fail, blocked: l.blocked, skip: l.skip })))}
    setup skips=${JSON.stringify((setup && setup.skips) || [])}; ops notifier null-confirmed=${opsNotifierNull}; servers=${JSON.stringify((setup && setup.servers) || [])}
    self-audit summary: ${String(audit).slice(0, 1500)}
@@ -550,7 +601,7 @@ const triage = await agent(
   `You are the TRIAGE + FOLD-BACK agent for a completed full-regression run (run date ${RUN_DATE}). Execute runbook Phase 5 exactly as written — read that section first; this brief summarizes it and the runbook governs.
 ${DOCS}
 
-INPUTS: ${RUN}/report.md, ${RUN}/results.log and the per-device logs, ${SHOTS}/, ${RUN}/manifest.json, and the run's learnings section. Orchestrator-side fail/suspect IDs: ${JSON.stringify(allFailIds).slice(0, 3000)}.
+INPUTS: ${RUN}/report.md, any ${RUN}/report-preadjudication-*.md left by a re-run of Phase 4, ${RUN}/results.log and the per-device logs, ${SHOTS}/, ${RUN}/manifest.json, and the run's learnings section. BEFORE YOU EDIT ANY DOC, run \`git -C ${REPO} status --porcelain\` and \`git -C ${REPO} diff\` — do NOT assume the tree is clean. A resumed run, or another session, may have already folded part of this run back; read what is there, build on it, and never rewrite a doc file wholesale (targeted edits only, so a concurrent writer is not clobbered). Orchestrator-side fail/suspect IDs: ${JSON.stringify(allFailIds).slice(0, 3000)}.
 
 PART 1 — ADJUDICATE. For every FAIL and every suspect-driver finding, decide which of the runbook 5.1 verdicts it actually is — use these four names exactly, they are the canonical vocabulary and the schema keys mirror them — and say what decided it:
   APP BUG (\`app_bugs\`) — read the actual source in ${REPO} to confirm the observed behavior contradicts the code's intent, not just the inventory's prose. Goes to §2 "Confirmed app bugs" and is filed in Phase 6.
