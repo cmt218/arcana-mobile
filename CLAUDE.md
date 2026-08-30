@@ -65,7 +65,14 @@ Google's `android` CLI is installed at `~/.local/bin/android` (v1.0.15985488). V
 
 **It is Android-only.** It does nothing for the iOS half of this app — no iOS build, no simulator, no Swift. For iOS use the Claude Code iOS Simulator MCP, or the idb fallback documented in `docs/perf/README.md`.
 
-Four skills are installed under `.claude/skills/`: `android-cli`, `perfetto-trace-analysis`, `perfetto-sql`, `r8-analyzer`. **That set is deliberate and minimal — read "Skills that must NOT be used" below before adding any others.** Install more with `android skills add --agent=claude-code --project=. <skill-name>`.
+Google skills installed under `.claude/skills/`: `android-cli`, `perfetto-trace-analysis`, `perfetto-sql`, `r8-analyzer`. **That set is deliberate and minimal — read "Skills that must NOT be used" below before adding any others.** Install more with `android skills add --agent=claude-code --project=. <skill-name>`.
+
+### chrisbanes/skills — Kotlin/Compose authoring skills (installed 2026-08-27)
+
+A curated subset of [chrisbanes/skills](https://github.com/chrisbanes/skills) (Apache-2.0) also lives in `.claude/skills/`, auto-routed on `.kt`/`.kts` work by `using-chrisbanes-skills`: `compose-state-and-effects`, `compose-performance`, `compose-component-design`, `kotlin-concurrency-and-flow`, `kotlin-api-design`, `kotlin-control-flow`. These operate at the Compose/Kotlin semantic level (state ownership, recomposition stability, coroutine/Flow lifecycle, expect/actual boundaries), which is shared between Jetpack and CMP — verified free of artifact/version advice at install time. Two rules:
+
+- **On any divergence, this file wins** — dependency pinning (CMP-changelog lockstep, material3 alpha channel), the `ui/` design-system primitives, and every process rule override anything a skill suggests.
+- The rest of the upstream catalogue (animations, focus-navigation, ui-testing-patterns, and the workflow skills gradle-run/to-plan/shepherd/run-github-project/implement-with-subagents) was deliberately not installed — the router's local "Arcana note" says why. When syncing newer upstream versions, re-apply that note and re-run the hazard grep for artifact coordinates before committing.
 
 ### When to reach for what
 
