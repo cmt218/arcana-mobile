@@ -9,6 +9,16 @@ sealed interface ArcanaDestination {
 
     @Serializable data object StudioSelection : ArcanaDestination
 
+    // Origin = the Book-tab search pill's bounds in root px, so the Search
+    // screen's container-transform reveal starts exactly where it was tapped.
+    // Negative values (the defaults) mean "unknown — use the fallback corner".
+    @Serializable data class Search(
+        val originLeft: Float = -1f,
+        val originTop: Float = -1f,
+        val originRight: Float = -1f,
+        val originBottom: Float = -1f,
+    ) : ArcanaDestination
+
     @Serializable data object MyBookings : ArcanaDestination
 
     @Serializable data object EditProfile : ArcanaDestination

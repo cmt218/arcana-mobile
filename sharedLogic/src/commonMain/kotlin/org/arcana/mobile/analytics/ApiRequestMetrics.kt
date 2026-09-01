@@ -33,6 +33,7 @@ fun normalizeEndpoint(method: String, encodedPath: String): String {
         "GET" to "classes" -> "schedule_window"
         "GET" to "classes/overview" -> "schedule_overview"
         "GET" to "classes/sessions" -> "schedule_page"
+        "GET" to "classes/search-entities" -> "search_entities"
         "GET" to "classes/{id}" -> "class_detail"
         "GET" to "memberships/me" -> "membership_me"
         "GET" to "bookings/me" -> "my_bookings"

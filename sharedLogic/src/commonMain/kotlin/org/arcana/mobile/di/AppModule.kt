@@ -26,6 +26,9 @@ import org.arcana.mobile.networking.FavoritesApi
 import org.arcana.mobile.networking.MembershipApi
 import org.arcana.mobile.networking.PasswordResetApi
 import org.arcana.mobile.networking.ScheduleApi
+import org.arcana.mobile.networking.SearchApi
+import org.arcana.mobile.search.RecentSearches
+import org.arcana.mobile.search.SearchViewModel
 import org.arcana.mobile.schedule.ClassDetailViewModel
 import org.arcana.mobile.schedule.ScheduleViewModel
 import org.arcana.mobile.session.AppSessionController
@@ -77,6 +80,7 @@ val appModule = module {
     single<MembershipApi> { get<ArcanaApiClient>() }
     single<FavoritesApi> { get<ArcanaApiClient>() }
     single<ScheduleApi> { get<ArcanaApiClient>() }
+    single<SearchApi> { get<ArcanaApiClient>() }
     single<ConciergeApi> { get<ArcanaApiClient>() }
     single<ProfileApi> { get<ArcanaApiClient>() }
     single<PasswordResetApi> { get<ArcanaApiClient>() }
@@ -107,6 +111,8 @@ val appModule = module {
     viewModel { MyBookingsViewModel(api = get()) }
     viewModel { ConciergeRequestViewModel(conciergeApi = get(), telemetry = get()) }
     viewModel { ScheduleViewModel(get(), get(), get(), get()) }
+    single { RecentSearches.backedBy(get()) }
+    viewModel { SearchViewModel(api = get(), recentSearches = get(), telemetry = get()) }
     viewModel { StudioSelectionViewModel(get(), get(), get()) }
     viewModel { DeveloperSettingsViewModel(get()) }
     viewModel { (sessionId: Int) -> ClassDetailViewModel(get(), sessionId, get()) }

@@ -1,8 +1,10 @@
 package org.arcana.mobile.shell
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -12,16 +14,18 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.ComposeUIViewController
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.window.ComposeUIViewController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -38,6 +42,8 @@ import org.arcana.mobile.profile.EditProfileScreen
 import org.arcana.mobile.profile.ProfileScreen
 import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
+import org.arcana.mobile.search.SearchScreen
+import org.arcana.mobile.search.searchHoldEnterTransition
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
 import org.arcana.mobile.theme.Stone
@@ -84,10 +90,47 @@ fun HomeTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
 fun ScheduleTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
     shellHostingController {
         TabRoot(ArcanaDestination.Schedule, onRootChanged) { nav ->
-            composable<ArcanaDestination.Schedule> {
+            composable<ArcanaDestination.Schedule>(
+                // Mirrors App.kt: stay visible beneath the Search overlay.
+                exitTransition = {
+                    if (targetState.destination.hasRoute<ArcanaDestination.Search>()) {
+                        ExitTransition.None
+                    } else null
+                },
+                popEnterTransition = {
+                    if (initialState.destination.hasRoute<ArcanaDestination.Search>()) {
+                        EnterTransition.None
+                    } else null
+                },
+            ) {
                 ScheduleScreen(
                     onOpenClassDetail = { id -> nav.navigate(ArcanaDestination.ClassDetail(id)) },
                     onManageFavorites = { nav.navigate(ArcanaDestination.StudioSelection) },
+                    onOpenSearch = { bounds ->
+                        nav.navigate(
+                            ArcanaDestination.Search(
+                                originLeft = bounds?.left ?: -1f,
+                                originTop = bounds?.top ?: -1f,
+                                originRight = bounds?.right ?: -1f,
+                                originBottom = bounds?.bottom ?: -1f,
+                            )
+                        )
+                    },
+                )
+            }
+            composable<ArcanaDestination.Search>(
+                // Near-invisible fade whose only job is to hold both screens
+                // mounted while SearchScreen's own reveal runs.
+                enterTransition = { searchHoldEnterTransition() },
+                popExitTransition = { ExitTransition.None },
+            ) { entry ->
+                val args = entry.toRoute<ArcanaDestination.Search>()
+                SearchScreen(
+                    originInRoot = args.takeIf { it.originLeft >= 0f }?.let {
+                        Rect(it.originLeft, it.originTop, it.originRight, it.originBottom)
+                    },
+                    onOpenClassDetail = { id -> nav.navigate(ArcanaDestination.ClassDetail(id)) },
+                    onClose = { nav.popBackStack() },
                 )
             }
             composable<ArcanaDestination.ClassDetail> { entry ->
