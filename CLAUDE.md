@@ -190,17 +190,17 @@ New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 
 **Key versions (see `gradle/libs.versions.toml`):**
 - Kotlin: 2.3.10
-- Compose Multiplatform: 1.11.1 (concurrent/parallel rendering is ON by default on iOS since 1.11.0)
+- Compose Multiplatform: 1.12.0 (concurrent/parallel rendering is ON by default on iOS since 1.11.0)
 - Koin: 4.2.0
 - Ktor: 3.1.2
 - kotlinx-datetime: 0.7.1
-- Navigation Compose: 2.9.2 (JetBrains CMP port — pinned to a version matched to the CMP release in the CMP CHANGELOG; do not bump independently of `composeMultiplatform`)
+- Navigation Compose: 2.10.0-alpha02 (JetBrains CMP port — pinned to a version matched to the CMP release in the CMP CHANGELOG; do not bump independently of `composeMultiplatform`)
 - Lifecycle (`org.jetbrains.androidx.lifecycle`): 2.11.0 — like nav-compose, bump in lockstep with the CMP release notes' listed version (prefer the stable if one exists at that minor).
-- Material3 (`org.jetbrains.compose.material3`): 1.11.0-alpha07 — the multiplatform material3 port publishes **alpha-only** since it decoupled from CMP releases (no stable exists past 1.8.x); always use the exact version listed in the CMP release notes. We have shipped alpha material3 from day one; this is normal, not a red flag.
+- Material3 (`org.jetbrains.compose.material3`): 1.12.0-alpha03 — the multiplatform material3 port publishes **alpha-only** since it decoupled from CMP releases (no stable exists past 1.8.x); always use the exact version listed in the CMP release notes. We have shipped alpha material3 from day one; this is normal, not a red flag.
 - Android min/target SDK: 24/36 (compileSdk 37 — required by lifecycle 2.11.0's Jetpack delegate; AGP 9.1 warns it was tested up to 36.1, warning-only)
 - Package: `org.arcana.mobile`
 
-**Planned upgrade — CMP 1.12.0 when stable (~Sept–Oct 2026):** it ships the iOS lazy-list prefetch scheduler (compose-multiplatform-core PR #3149), the expected fix for remaining schedule scroll hitches. Before/after measurement is repeatable via the runbook in `docs/perf/README.md` (scripted simulator scroll A/B; 1.10.0→1.11.1 already measured −40% dropped frames there).
+**CMP 1.12.0 — measured, no scroll win (2026-09-01).** Do not re-attempt this bump expecting one. 1.12.0 does ship the iOS lazy-list prefetch scheduler (compose-multiplatform-core PR #3149 — merged, and verified present in our linked binary as `PlatformPrefetchSchedulerImpl`, though the CMP changelog never mentions it), but the A/B in `docs/perf/README.md` found no difference: 1.93% → 1.90% dropped frames on flicks, 0.65% → 0.82% on slow drags, both well inside round-to-round spread (permutation p=0.90 / p=0.70). Severe stalls were unchanged (30 → 29), which points at the data layer rather than per-row render cost: `ScheduleViewModel` pagination appends deserialize on the Main dispatcher. Moving that parse to `Dispatchers.Default` is the open candidate.
 
 ## Regression inventory — keep it current
 
