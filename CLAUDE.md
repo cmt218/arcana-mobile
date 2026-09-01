@@ -394,7 +394,7 @@ Pad in **4dp increments** (`4 / 8 / 12 / 16 / 20 / 24 / 28 / 32 / 40 / 48`). Tex
 
 ## Navigation
 
-`App.kt` hosts a `NavHost` keyed off `navigation/ArcanaDestinations.kt` — a sealed `ArcanaDestination` with `@Serializable` data objects per destination (no string routes). The bottom bar's active tab is derived from `currentBackStackEntryAsState` via `hasRoute<T>()`; it hides on every non-tab destination (StudioSelection, MyBookings, EditProfile, ConciergeRequest, ClassDetail) so a stray tab tap mid-flow can't silently pop the in-progress entry off the stack.
+`App.kt` hosts a `NavHost` keyed off `navigation/ArcanaDestinations.kt` — a sealed `ArcanaDestination` with `@Serializable` data objects per destination (no string routes). The bottom bar's active tab is derived from `currentBackStackEntryAsState` via `hasRoute<T>()`; it hides on every non-tab destination (StudioSelection, MyBookings, EditProfile, ConciergeRequest, ClassDetail, Search) so a stray tab tap mid-flow can't silently pop the in-progress entry off the stack.
 
 Tab navigation uses the standard `popUpTo(start) { saveState = true }` / `launchSingleTop` / `restoreState` block so each tab keeps its own back stack + scroll position.
 

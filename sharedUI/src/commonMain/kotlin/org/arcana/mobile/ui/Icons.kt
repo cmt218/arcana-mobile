@@ -20,6 +20,7 @@ import arcana.sharedui.generated.resources.icon_chevron_down
 import arcana.sharedui.generated.resources.icon_chevron_right
 import arcana.sharedui.generated.resources.icon_clock
 import arcana.sharedui.generated.resources.icon_close
+import arcana.sharedui.generated.resources.icon_search
 import arcana.sharedui.generated.resources.icon_filter
 import arcana.sharedui.generated.resources.icon_home
 import arcana.sharedui.generated.resources.icon_logout
@@ -53,6 +54,7 @@ object ArcanaIcons {
     val ArrowUpRight: DrawableResource get() = Res.drawable.icon_arrow_up_right
     val Check: DrawableResource get() = Res.drawable.icon_check
     val Close: DrawableResource get() = Res.drawable.icon_close
+    val Search: DrawableResource get() = Res.drawable.icon_search
     val ChevronDown: DrawableResource get() = Res.drawable.icon_chevron_down
     val ChevronRight: DrawableResource get() = Res.drawable.icon_chevron_right
     val Filter: DrawableResource get() = Res.drawable.icon_filter

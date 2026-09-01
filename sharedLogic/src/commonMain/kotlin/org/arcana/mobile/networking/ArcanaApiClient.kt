@@ -51,6 +51,7 @@ import org.arcana.mobile.data.MyBookingsDto
 import org.arcana.mobile.data.PasswordResetRequest
 import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.data.SchedulePageDto
+import org.arcana.mobile.data.SearchEntitiesDto
 import org.arcana.mobile.data.UpdateProfileRequest
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.RefreshRequest
@@ -116,7 +117,7 @@ class ArcanaApiClient(
     // bodyOrThrow, the lot) against MockEngine. Production passes nothing and
     // Ktor picks the platform engine off the classpath.
     engine: HttpClientEngine? = null,
-) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, ConciergeApi, ProfileApi, PasswordResetApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, SearchApi, ConciergeApi, ProfileApi, PasswordResetApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -450,6 +451,31 @@ class ArcanaApiClient(
             startTimeGte?.let { parameter("start_time_gte", it) }
             startTimeLte?.let { parameter("start_time_lte", it) }
             if (availableOnly) parameter("available_only", "true")
+            cursor?.let { parameter("cursor", it) }
+        }.bodyOrThrow()
+    }
+
+    override suspend fun searchEntities(query: String): SearchEntitiesDto =
+        client.get(v1("classes/search-entities/")) {
+            parameter("q", query)
+        }.bodyOrThrow()
+
+    override suspend fun searchSessions(
+        from: LocalDate,
+        to: LocalDate,
+        query: String?,
+        instructor: String?,
+        studioSlug: String?,
+        locationId: Int?,
+        cursor: String?,
+    ): SchedulePageDto {
+        return client.get(v1("classes/sessions/")) {
+            parameter("from", from.toString())
+            parameter("to", to.toString())
+            query?.let { parameter("q", it) }
+            instructor?.let { parameter("instructor", it) }
+            studioSlug?.let { parameter("studio_slug", it) }
+            locationId?.let { parameter("location_id", it.toString()) }
             cursor?.let { parameter("cursor", it) }
         }.bodyOrThrow()
     }

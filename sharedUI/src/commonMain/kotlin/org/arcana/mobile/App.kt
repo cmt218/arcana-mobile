@@ -1,6 +1,8 @@
 package org.arcana.mobile
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -37,6 +40,8 @@ import org.arcana.mobile.auth.AuthScreen
 import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.auth.PasswordResetRequestScreen
 import org.arcana.mobile.auth.PasswordResetRequestViewModel
+import org.arcana.mobile.booking.MyBookingsScreen
+import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
 import org.arcana.mobile.profile.EditProfileScreen
@@ -45,9 +50,9 @@ import org.arcana.mobile.profile.ProfileUiState
 import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.schedule.ClassDetailScreen
 import org.arcana.mobile.schedule.ScheduleScreen
+import org.arcana.mobile.search.SearchScreen
+import org.arcana.mobile.search.searchHoldEnterTransition
 import org.arcana.mobile.session.AppSessionController
-import org.arcana.mobile.booking.MyBookingsScreen
-import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.signup.LeaveSignupDialog
 import org.arcana.mobile.signup.SignupCompletionScreen
 import org.arcana.mobile.signup.SignupCompletionViewModel
@@ -322,12 +327,52 @@ private fun MainScaffold() {
                     onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
                 )
             }
-            composable<ArcanaDestination.Schedule> {
+            composable<ArcanaDestination.Schedule>(
+                // Stay fully visible beneath the Search overlay's animation —
+                // fading here would break the lightweight-overlay read.
+                exitTransition = {
+                    if (targetState.destination.hasRoute<ArcanaDestination.Search>()) {
+                        ExitTransition.None
+                    } else null
+                },
+                popEnterTransition = {
+                    if (initialState.destination.hasRoute<ArcanaDestination.Search>()) {
+                        EnterTransition.None
+                    } else null
+                },
+            ) {
                 ScheduleScreen(
                     onOpenClassDetail = { id ->
                         navController.navigate(ArcanaDestination.ClassDetail(id))
                     },
                     onManageFavorites = { navController.navigate(ArcanaDestination.StudioSelection) },
+                    onOpenSearch = { bounds ->
+                        navController.navigate(
+                            ArcanaDestination.Search(
+                                originLeft = bounds?.left ?: -1f,
+                                originTop = bounds?.top ?: -1f,
+                                originRight = bounds?.right ?: -1f,
+                                originBottom = bounds?.bottom ?: -1f,
+                            )
+                        )
+                    },
+                )
+            }
+            composable<ArcanaDestination.Search>(
+                // Near-invisible fade whose only job is to hold both screens
+                // mounted while SearchScreen's own reveal runs.
+                enterTransition = { searchHoldEnterTransition() },
+                popExitTransition = { ExitTransition.None },
+            ) { entry ->
+                val args = entry.toRoute<ArcanaDestination.Search>()
+                SearchScreen(
+                    originInRoot = args.takeIf { it.originLeft >= 0f }?.let {
+                        Rect(it.originLeft, it.originTop, it.originRight, it.originBottom)
+                    },
+                    onOpenClassDetail = { id ->
+                        navController.navigate(ArcanaDestination.ClassDetail(id))
+                    },
+                    onClose = { navController.popBackStack() },
                 )
             }
             composable<ArcanaDestination.Profile> {
@@ -375,6 +420,7 @@ internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest.hasRoute<ArcanaDestination.ConciergeRequest>() -> Telemetry.Screens.CONCIERGE_REQUEST
     dest.hasRoute<ArcanaDestination.EditProfile>() -> Telemetry.Screens.EDIT_PROFILE
     dest.hasRoute<ArcanaDestination.ClassDetail>() -> Telemetry.Screens.CLASS_DETAIL
+    dest.hasRoute<ArcanaDestination.Search>() -> Telemetry.Screens.SEARCH
     else -> null
 }
 

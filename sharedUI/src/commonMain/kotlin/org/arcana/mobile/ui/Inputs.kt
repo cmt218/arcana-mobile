@@ -32,7 +32,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -73,6 +75,54 @@ fun ArcanaTextField(
     // When non-null, the label + underline turn Danger and the message renders
     // below the field. Used for server-driven field validation (e.g. password).
     error: String? = null,
+    // Optional control rendered on the input line (above the underline),
+    // vertically centred on the text — e.g. Search's clear affordance.
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    // Bridge to the TextFieldValue overload so a programmatic value change
+    // (a tapped recent search, a cleared field) lands the cursor at the END
+    // instead of the String API's reset-to-start.
+    var fieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    if (fieldValue.text != value) {
+        fieldValue = TextFieldValue(value, TextRange(value.length))
+    }
+    ArcanaTextField(
+        label = label,
+        value = fieldValue,
+        onValueChange = {
+            fieldValue = it
+            if (it.text != value) onValueChange(it.text)
+        },
+        modifier = modifier,
+        placeholder = placeholder,
+        secure = secure,
+        keyboardType = keyboardType,
+        imeAction = imeAction,
+        onImeAction = onImeAction,
+        capitalization = capitalization,
+        contentType = contentType,
+        visualTransformation = visualTransformation,
+        error = error,
+        trailing = trailing,
+    )
+}
+
+@Composable
+fun ArcanaTextField(
+    label: String,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    secure: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: ImeAction = ImeAction.Next,
+    onImeAction: () -> Unit = {},
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    contentType: ContentType? = null,
+    visualTransformation: VisualTransformation? = null,
+    error: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -125,11 +175,17 @@ fun ArcanaTextField(
             ),
             decorationBox = { inner ->
                 Column {
-                    Box(modifier = Modifier.padding(bottom = 12.dp)) {
-                        if (value.isEmpty() && placeholder.isNotEmpty()) {
-                            BodyTextPlaceholder(placeholder)
+                    Row(
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (value.text.isEmpty() && placeholder.isNotEmpty()) {
+                                BodyTextPlaceholder(placeholder)
+                            }
+                            inner()
                         }
-                        inner()
+                        trailing?.invoke()
                     }
                     Box(
                         Modifier

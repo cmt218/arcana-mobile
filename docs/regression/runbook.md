@@ -3,7 +3,7 @@
 Execution guide for the agent-run full regression suite: an orchestrated set
 of agent shifts that drive the real app — real network calls, real
 simulators/emulator, real taps — through every entry in
-`docs/regression/inventory.md` (230 entries at last count) on all three
+`docs/regression/inventory.md` (237 entries at last count) on all three
 target devices, then triage what they found, fold the lessons back into these
 docs, and file the surviving issues to a tracker. Invoked by the
 `/full-regression` skill; this doc is what that skill follows phase by phase.
@@ -193,7 +193,7 @@ run; change it there, in a PR, not in a run.
 
 | Want | Command |
 |---|---|
-| Full pre-release pass | no `--tier` (all 230) |
+| Full pre-release pass | no `--tier` (all 237) |
 | Smoke check after a dependency bump | `--tier 1`, and pass `tier: 1` to the workflow |
 
 A tier-filtered run is **not** a full regression and must say so in its report's
@@ -605,7 +605,7 @@ else is still a finding — read the entry before accepting the hit.
 
 ### Reverse — find inventory entries pointing at code that no longer exists
 
-For every **Source:** path listed across all 230 inventory entries, verify
+For every **Source:** path listed across all 237 inventory entries, verify
 the file exists in the current tree:
 ```
 test -f <path>
@@ -622,7 +622,7 @@ own (`ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`)`). So:
    backticks, and `test -f` each resulting repo-relative path.
 
 Sanity-check the extractor before trusting its output: on a clean tree it
-should yield **88 unique paths from 513 comma-split tokens across 230 Source
+should yield **94 unique paths from 534 comma-split tokens across 237 Source
 lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-08-11, 2026-08-15, 2026-08-16 (after
 `feature/error-states-completion` added ERR-21/ERR-22), and 2026-08-19 (after

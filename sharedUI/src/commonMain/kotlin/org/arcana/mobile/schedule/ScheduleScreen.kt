@@ -48,6 +48,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
@@ -203,6 +206,7 @@ fun ScheduleScreen(
     viewModel: ScheduleViewModel = koinViewModel(),
     onOpenClassDetail: (Int) -> Unit = {},
     onManageFavorites: () -> Unit = {},
+    onOpenSearch: (Rect?) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val refreshing by viewModel.isRefreshing.collectAsState()
@@ -244,6 +248,7 @@ fun ScheduleScreen(
                         viewModel = viewModel,
                         onOpenClassDetail = onOpenClassDetail,
                         onManageFavorites = onManageFavorites,
+                        onOpenSearch = onOpenSearch,
                     )
                 }
                 if (refreshFailed) {
@@ -303,10 +308,13 @@ private fun SuccessContent(
     viewModel: ScheduleViewModel,
     onOpenClassDetail: (Int) -> Unit,
     onManageFavorites: () -> Unit = {},
+    onOpenSearch: (Rect?) -> Unit = {},
 ) {
     // Day selection lives in the ViewModel: it survives navigation via the
     // session-scoped store, and the debounced refetch pipeline needs it.
     val selectedDate = state.selectedDate
+    // Live pill bounds (root px) — the Search reveal animates out of them.
+    var searchPillBounds by remember { mutableStateOf<Rect?>(null) }
     // Session-scoped dismissal of the "choose favorites" nudge — survives
     // navigation away and back, resets on process restart. Fine for a nudge.
     var nudgeDismissed by rememberSaveable { mutableStateOf(false) }
@@ -393,11 +401,27 @@ private fun SuccessContent(
         item("title") {
             // Track the *selected* day so the header flips when the user taps
             // a day in a different month (e.g. May 27 → June 1 on the rail).
-            Display(
-                text = "${titleCase(selectedDate.month.name)}.",
-                size = 56, color = Ink,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-            )
+            Row(
+                modifier = Modifier.padding(start = 24.dp, end = 16.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Display(
+                    text = "${titleCase(selectedDate.month.name)}.",
+                    size = 56, color = Ink,
+                )
+                SearchEntryPill(
+                    onClick = { onOpenSearch(searchPillBounds) },
+                    onBounds = { searchPillBounds = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp)
+                        // The month is all-caps display type: its ink centre
+                        // sits ~0.0914em above the layout centre (see
+                        // ui/OpticalCentering.kt), so a box centred on the
+                        // layout reads low beside it. 56sp × 0.0914 ≈ 5dp.
+                        .offset(y = (-5).dp),
+                )
+            }
         }
 
         item("day-rail") {
@@ -591,8 +615,8 @@ private fun SuccessContent(
                 // The full day is loaded — a quiet brand full-stop so the
                 // bottom of the list reads as "that's all", not "still loading".
                 item("end-of-day") {
-                    EndOfDayMarker(
-                        weekday = titleCase(selectedDate.dayOfWeek.name),
+                    EndOfListMarker(
+                        text = "That's everything for ${titleCase(selectedDate.dayOfWeek.name)}",
                         modifier = Modifier.alpha(listAlpha),
                     )
                 }
@@ -601,11 +625,48 @@ private fun SuccessContent(
     }
 }
 
-/** End-of-list footer for a fully-loaded day: three dots (center lit) over a
- *  caption. The dot is the brand's repeating gesture — a centered triad reads
- *  as a deliberate full-stop. */
+/** The Book header's search entry: a compact oval hugging its icon + label,
+ *  echoing the field it opens. The label hides when a long month name leaves
+ *  too little room; an icon-only oval is the floor. Reports its root bounds
+ *  so the Search screen's container-transform reveal starts exactly here. */
 @Composable
-private fun EndOfDayMarker(weekday: String, modifier: Modifier = Modifier) {
+private fun SearchEntryPill(
+    onClick: () -> Unit,
+    onBounds: (Rect) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.CenterEnd) {
+        val showLabel = maxWidth >= 120.dp
+        Row(
+            modifier = Modifier
+                .height(44.dp)
+                .clip(CircleShape)
+                .background(Paper)
+                .border(1.dp, Mist, CircleShape)
+                .clickable(onClick = onClick)
+                .onGloballyPositioned { onBounds(it.boundsInRoot()) }
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StrokeIcon(
+                icon = ArcanaIcons.Search,
+                size = 20.dp,
+                tint = Ink,
+                contentDescription = "Search",
+            )
+            if (showLabel) {
+                Spacer(Modifier.width(8.dp))
+                BodyText(text = "Search", size = 14, color = Ash)
+            }
+        }
+    }
+}
+
+/** End-of-list footer for a fully-loaded list: three dots (center lit) over a
+ *  caption. The dot is the brand's repeating gesture — a centered triad reads
+ *  as a deliberate full-stop. Shared with Search's end-of-results. */
+@Composable
+internal fun EndOfListMarker(text: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -623,7 +684,7 @@ private fun EndOfDayMarker(weekday: String, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Overline(text = "That's everything for $weekday", size = 10, color = Ash)
+        Overline(text = text, size = 10, color = Ash)
     }
 }
 
@@ -1266,13 +1327,14 @@ private fun FilterDoneButton(onClick: () -> Unit, modifier: Modifier = Modifier)
 // ── Class row -----------------------------------------------------------------
 
 @Composable
-private fun ClassRow(
+internal fun ClassRow(
     session: ScheduleSessionDto,
     onClick: () -> Unit = {},
     /** Live booking status for this session (requested/confirmed/…), or null
      *  when the member holds no booking on it. Non-null ⇒ a status pill on the
      *  title line. */
     bookedStatus: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     // Display the class's local wall-clock — the session's own location
     // timezone, not the device's (see [sessionTimeZone]).
@@ -1302,7 +1364,7 @@ private fun ClassRow(
     val instructorName = session.instructors.firstOrNull()?.name ?: ""
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp),

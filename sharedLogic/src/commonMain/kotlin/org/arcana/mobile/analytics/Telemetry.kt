@@ -126,6 +126,20 @@ class Telemetry(
             ),
         )
 
+    fun searchOpened() = track(Events.SEARCH_OPENED)
+
+    fun searchPerformed(query: String, resultCount: Int, scoped: Boolean) =
+        track(
+            Events.SEARCH_PERFORMED,
+            mapOf("query" to query, "result_count" to resultCount, "scoped" to scoped),
+        )
+
+    fun searchScoped(entityType: String) =
+        track(Events.SEARCH_SCOPED, mapOf("entity_type" to entityType))
+
+    fun searchResultTapped(position: Int, scoped: Boolean) =
+        track(Events.SEARCH_RESULT_TAPPED, mapOf("position" to position, "scoped" to scoped))
+
     // ---- Performance & latency -------------------------------------------
 
     /** One per HTTP call (via the ArcanaApiClient Ktor plugin). `serverMs` is
@@ -541,6 +555,10 @@ class Telemetry(
         const val SCHEDULE_DAY_CHANGED = "schedule_day_changed"
         const val SCHEDULE_LOAD_MORE = "schedule_load_more"
         const val SCHEDULE_FILTER_CHANGED = "schedule_filter_changed"
+        const val SEARCH_OPENED = "search_opened"
+        const val SEARCH_PERFORMED = "search_performed"
+        const val SEARCH_SCOPED = "search_scoped"
+        const val SEARCH_RESULT_TAPPED = "search_result_tapped"
 
         const val API_REQUEST = "api_request"
         const val APP_START_COMPLETED = "app_start_completed"
@@ -600,6 +618,7 @@ class Telemetry(
         const val CONCIERGE_REQUEST = "ConciergeRequest"
         const val EDIT_PROFILE = "EditProfile"
         const val CLASS_DETAIL = "ClassDetail"
+        const val SEARCH = "Search"
         const val AUTH = "Auth"
         const val PASSWORD_RESET_REQUEST = "PasswordResetRequest"
         const val SIGNUP = "SignupCompletion"

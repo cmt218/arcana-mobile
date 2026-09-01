@@ -11,6 +11,7 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import platform.CoreFoundation.CFDataCreate
+import platform.CoreFoundation.CFDataRef
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
 import platform.CoreFoundation.CFMutableDictionaryRef
@@ -57,28 +58,37 @@ actual class SecureStorage actual constructor() {
      */
     actual fun save(key: String, value: String) {
         val bytes = value.encodeToByteArray()
-        bytes.usePinned { pinned ->
-            val cfData = CFDataCreate(null, pinned.addressOf(0).reinterpret(), bytes.size.toLong())!!
-            val query = buildQuery(key, capacity = 3)
-            val attributes = CFDictionaryCreateMutable(null, 1, null, null)!!
-            CFDictionaryAddValue(attributes, kSecValueData, cfData)
-            var status = SecItemUpdate(query, attributes)
-            if (status == errSecItemNotFound) {
-                // First write for this key. Accessibility is fixed at add time,
-                // which is why it is set here and not on the update above.
-                val addQuery = buildQuery(key, capacity = 5)
-                CFDictionaryAddValue(addQuery, kSecValueData, cfData)
-                CFDictionaryAddValue(addQuery, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
-                status = SecItemAdd(addQuery, null)
-                CFRelease(addQuery)
-            }
-            if (status != errSecSuccess) {
-                SecureStorageDiagnostics.report(SecureStorageDiagnostics.Op.SAVE, key, status)
-            }
-            CFRelease(attributes)
-            CFRelease(query)
-            CFRelease(cfData)
+        // usePinned cannot address into a zero-length array (addressOf(0)
+        // is out of bounds) — an empty value gets an empty CFData directly.
+        if (bytes.isEmpty()) {
+            saveCfData(key, CFDataCreate(null, null, 0)!!)
+            return
         }
+        bytes.usePinned { pinned ->
+            saveCfData(key, CFDataCreate(null, pinned.addressOf(0).reinterpret(), bytes.size.toLong())!!)
+        }
+    }
+
+    private fun saveCfData(key: String, cfData: CFDataRef) {
+        val query = buildQuery(key, capacity = 3)
+        val attributes = CFDictionaryCreateMutable(null, 1, null, null)!!
+        CFDictionaryAddValue(attributes, kSecValueData, cfData)
+        var status = SecItemUpdate(query, attributes)
+        if (status == errSecItemNotFound) {
+            // First write for this key. Accessibility is fixed at add time,
+            // which is why it is set here and not on the update above.
+            val addQuery = buildQuery(key, capacity = 5)
+            CFDictionaryAddValue(addQuery, kSecValueData, cfData)
+            CFDictionaryAddValue(addQuery, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+            status = SecItemAdd(addQuery, null)
+            CFRelease(addQuery)
+        }
+        if (status != errSecSuccess) {
+            SecureStorageDiagnostics.report(SecureStorageDiagnostics.Op.SAVE, key, status)
+        }
+        CFRelease(attributes)
+        CFRelease(query)
+        CFRelease(cfData)
     }
 
     @OptIn(BetaInteropApi::class)
