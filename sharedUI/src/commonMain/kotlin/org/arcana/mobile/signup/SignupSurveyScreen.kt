@@ -85,7 +85,7 @@ fun SignupSurveyScreen(
             .imePadding(),
     ) {
         Spacer(Modifier.height(8.dp))
-        WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+        WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
 
         Spacer(Modifier.height(44.dp))
         Overline(text = "Step 01 · Your training profile", color = Moss, maxLines = Int.MAX_VALUE)

@@ -1,37 +1,47 @@
 package org.arcana.mobile.theme
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.layout.ContentScale
-import arcana.sharedui.generated.resources.Res
-import arcana.sharedui.generated.resources.wordmark
-import org.jetbrains.compose.resources.painterResource
-
-/** Native aspect ratio of `wordmark.png` (5421 × 1110, cropped tight to the text). */
-private const val WORDMARK_ASPECT = 4.88f
+import androidx.compose.ui.graphics.PointMode
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 /**
- * Renders the arcana dot-matrix wordmark from `wordmark.png`. The PNG is
- * cropped tight to the text bbox, so the rendered image is flush left/right
- * without surrounding padding — drop it straight into any layout.
+ * The arcana dot-matrix wordmark, drawn from [wordmarkGrid] so it stays sharp
+ * at any size.
  *
- * Pass [tint] to recolor every dot a single hue (Moss on Stone surfaces);
- * leave null to keep the asset's native stone + lime dots (used on the splash).
+ * Constrain the height; the width follows from the grid's aspect. Dots are one
+ * cell across, so the composable's box is exactly the mark's ink bounds — it
+ * sits flush in a layout with no padding of its own.
  */
 @Composable
 fun WordmarkLogo(
     modifier: Modifier = Modifier,
-    tint: Color? = null,
+    color: Color = Moss,
 ) {
-    Image(
-        painter = painterResource(Res.drawable.wordmark),
-        contentDescription = "Arcana",
-        contentScale = ContentScale.Fit,
-        colorFilter = tint?.let { ColorFilter.tint(it) },
-        modifier = modifier.aspectRatio(WORDMARK_ASPECT),
-    )
+    val grid = wordmarkGrid
+    Canvas(
+        modifier = modifier
+            .aspectRatio(grid.cols.toFloat() / grid.rows.toFloat())
+            .semantics { contentDescription = "Arcana" },
+    ) {
+        val cell = size.height / grid.rows
+        val half = cell / 2f
+        // Round caps of strokeWidth = cell give dots one cell across, tangent
+        // to their neighbours — the same dot size the splash dance settles to.
+        drawPoints(
+            points = grid.lit.map { (col, row) ->
+                Offset(col * cell + half, row * cell + half)
+            },
+            pointMode = PointMode.Points,
+            color = color,
+            strokeWidth = cell,
+            cap = StrokeCap.Round,
+        )
+    }
 }

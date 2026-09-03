@@ -74,7 +74,7 @@ fun PasswordResetRequestScreen(
                 verticalArrangement = Arrangement.spacedBy(36.dp),
             ) {
                 Spacer(Modifier.height(8.dp))
-                WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+                WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Overline(text = "Password reset", color = Moss)
