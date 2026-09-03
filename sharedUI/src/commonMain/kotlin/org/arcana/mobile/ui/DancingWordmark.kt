@@ -21,9 +21,9 @@ import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sin
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import org.arcana.mobile.theme.Stone
+import org.arcana.mobile.theme.WordmarkGrid
+import org.arcana.mobile.theme.wordmarkGrid
 
 /** Per-cell dance→settle duration in ms — design-handoff canonical value. */
 const val DANCE_DURATION_MS: Int = 2400
@@ -69,9 +69,6 @@ fun DancingWordmark(
      */
     wordmarkWidthFraction: Float = 0.88f,
 ) {
-    // Grid data is embedded in WordmarkGridData.kt and parsed lazily once
-    // per process — synchronous and zero-I/O, so the splash dance starts on
-    // the first frame instead of after a coroutine-scheduled file read.
     val g = wordmarkGrid
 
     BoxWithConstraints(modifier = modifier) {
@@ -293,21 +290,4 @@ private fun buildRenderBuffers(state: DanceState): RenderBuffers {
     val bucketCapacity = max(64, n / 4)
     val buckets = Array(ALPHA_BUCKETS) { ArrayList<Offset>(bucketCapacity) }
     return RenderBuffers(centers, buckets)
-}
-
-// ---------- JSON loading ----------
-
-@Serializable
-private data class WordmarkGrid(
-    val cols: Int,
-    val rows: Int,
-    val lit: List<List<Int>>,
-)
-
-private val gridJson = Json { ignoreUnknownKeys = true }
-
-/** Lazily parsed once per process from the embedded JSON constant in
- * [WORDMARK_GRID_JSON]. Synchronous; no I/O. */
-private val wordmarkGrid: WordmarkGrid by lazy(LazyThreadSafetyMode.PUBLICATION) {
-    gridJson.decodeFromString(WordmarkGrid.serializer(), WORDMARK_GRID_JSON)
 }

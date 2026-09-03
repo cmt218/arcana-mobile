@@ -395,8 +395,8 @@ private fun TopBar() {
     WordmarkLogo(
         modifier = Modifier
             .padding(horizontal = 24.dp)
-            .height(24.dp),
-        tint = Moss,
+            .height(20.dp),
+        color = Moss,
     )
 }
 

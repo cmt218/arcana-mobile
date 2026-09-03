@@ -177,7 +177,7 @@ private fun EditingForm(
                 Spacer(Modifier.height(8.dp))
                 // Wordmark only — the step stamp was removed now that signup
                 // completion is a single screen (no multi-step flow to count).
-                WordmarkLogo(modifier = Modifier.height(24.dp), tint = Moss)
+                WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
 
                 Spacer(Modifier.height(44.dp))
                 // Header.

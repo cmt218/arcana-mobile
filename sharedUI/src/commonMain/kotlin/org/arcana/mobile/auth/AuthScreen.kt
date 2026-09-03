@@ -117,7 +117,7 @@ fun AuthScreen(
                 // indication = null keeps it invisible (no ripple) to users.
                 WordmarkLogo(
                     modifier = Modifier
-                        .height(24.dp)
+                        .height(20.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -128,7 +128,7 @@ fun AuthScreen(
                                 showDeveloperSettings = true
                             }
                         },
-                    tint = Moss,
+                    color = Moss,
                 )
                 HeaderBlock()
                 val errorState = uiState as? AuthUiState.Error
