@@ -1,5 +1,6 @@
 package org.arcana.mobile.schedule
 
+import kotlin.concurrent.Volatile
 import kotlinx.datetime.IllegalTimeZoneException
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -35,7 +36,17 @@ fun dayAfterSwipe(
  * on an unknown id — fall back to the schedule's anchor timezone rather than
  * crash the screen on a bad row.
  */
-fun sessionTimeZone(id: String): TimeZone = try {
+fun sessionTimeZone(id: String): TimeZone =
+    zoneCache[id] ?: resolveZone(id).also { zoneCache = zoneCache + (id to it) }
+
+// Measured: TimeZone.of costs ~0.16ms on Kotlin/Native and the Schedule bucketed
+// every accumulated row on every page append, so it grew to a 55ms stall at 350
+// rows. The id set is tiny (one per location timezone). Snapshot-swapped rather
+// than mutated, so a racing caller can only redo work, never see a torn map.
+@Volatile
+private var zoneCache: Map<String, TimeZone> = emptyMap()
+
+private fun resolveZone(id: String): TimeZone = try {
     TimeZone.of(id)
 } catch (_: IllegalTimeZoneException) {
     ScheduleViewModel.ScheduleTimeZone
