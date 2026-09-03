@@ -47,10 +47,40 @@ carries `PlatformPrefetchSchedulerImpl` / `PriorityPrefetchScheduler`, where 1.1
 only the `rememberDefaultPrefetchScheduler` stub — so this is a real null result, not a
 dependency that failed to take effect.
 
-Residual, unchanged across all three CMP versions: ~100ms severe stalls (30 → 29 on
-1.12.0) consistent with pagination page-appends deserializing on the Main dispatcher
-(ScheduleViewModel loads run in viewModelScope with no `withContext(Dispatchers.Default)`).
-Prefetch did not absorb them. Moving parse off Main is the open candidate fix.
+**2026-09-01 — the page-boundary stalls, fixed.** The residual severe stalls above were
+NOT deserialization, which the CMP-1.12.0 write-up had assumed. Probing a Release build
+measured, per 50-row page: JSON parse 0-3ms, row mapping 0ms, `publish()` 0-1ms — 8ms
+total across every page load in a run, against 352ms of stall time at those same
+boundaries. 8 of 9 stalls landed within 250ms of a page append, so the boundary was
+implicated but nothing in the ViewModel was the cost.
+
+It was `sessionTimeZone` in `ScheduleScreen`'s `byBand` bucketing. `TimeZone.of` costs
+~0.16ms on Kotlin/Native and was called once per row, and `remember(sessionsForSelected)`
+re-keys on every append, so each new page re-bucketed every accumulated row:
+
+| rows | bucketing cost |
+|---|---|
+| 50 | 7-10ms |
+| 150 | 27ms |
+| 250 | 46ms |
+| 350 | 55ms |
+
+Every call resolved the same id (`zones=1` — the beta is NYC-only). Memoizing the
+resolution in `ScheduleDisplayLogic` removed it:
+
+| Metric | before | after |
+|---|---|---|
+| Dropped frame slots (flick) | 1.82% | **0.00%** |
+| Dropped frame slots (slow) | 0.79% | **0.00%** |
+| Hitch events | 44 | **0** |
+| Severe events | 35 | **0** |
+| Worst frame | 124.5ms | **16.7ms** |
+
+Three cold-launch rounds per arm, ~6,200 flick + ~4,000 slow frames each; not one frame
+exceeded a single vsync interval afterwards. Pagination was confirmed still running
+(107 cursor fetches server-side). The lesson worth keeping: a per-row call into
+kotlinx-datetime is not free on Kotlin/Native, and a `remember` keyed on a growing list
+turns per-row cost into O(total) work on every append.
 
 ## Prerequisites
 

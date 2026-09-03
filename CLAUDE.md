@@ -200,7 +200,7 @@ New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 - Android min/target SDK: 24/36 (compileSdk 37 — required by lifecycle 2.11.0's Jetpack delegate; AGP 9.1 warns it was tested up to 36.1, warning-only)
 - Package: `org.arcana.mobile`
 
-**CMP 1.12.0 — measured, no scroll win (2026-09-01).** Do not re-attempt this bump expecting one. 1.12.0 does ship the iOS lazy-list prefetch scheduler (compose-multiplatform-core PR #3149 — merged, and verified present in our linked binary as `PlatformPrefetchSchedulerImpl`, though the CMP changelog never mentions it), but the A/B in `docs/perf/README.md` found no difference: 1.93% → 1.90% dropped frames on flicks, 0.65% → 0.82% on slow drags, both well inside round-to-round spread (permutation p=0.90 / p=0.70). Severe stalls were unchanged (30 → 29), which points at the data layer rather than per-row render cost: `ScheduleViewModel` pagination appends deserialize on the Main dispatcher. Moving that parse to `Dispatchers.Default` is the open candidate.
+**CMP 1.12.0 — measured, no scroll win (2026-09-01).** Do not re-attempt this bump expecting one. 1.12.0 does ship the iOS lazy-list prefetch scheduler (compose-multiplatform-core PR #3149 — merged, and verified present in our linked binary as `PlatformPrefetchSchedulerImpl`, though the CMP changelog never mentions it), but the A/B in `docs/perf/README.md` found no difference: 1.93% → 1.90% dropped frames on flicks, 0.65% → 0.82% on slow drags, both well inside round-to-round spread (permutation p=0.90 / p=0.70). Severe stalls were unchanged (30 → 29). The cause turned out to be neither the renderer nor deserialization but `TimeZone.of` (see "Schedule + Detail screens"), fixed separately.
 
 ## Regression inventory — keep it current
 
