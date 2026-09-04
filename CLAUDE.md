@@ -133,13 +133,19 @@ Still open: tab-bar items have no `Role.Tab` / selected-state semantics (the vis
 - The accessibility-description field in `layout` output is **`content-desc`** (hyphenated), not `contentDesc` as that same reference file claims — filtering on the wrong key silently reports zero labels
 - `android screen capture --help` errors; use `android screen capture` with no args to print usage
 
-### R8 / minification — Android-only, and currently OFF
+### R8 / minification — Android-only, and ON since 2026-09-04
 
-`androidApp/build.gradle.kts` sets `isMinifyEnabled = false` with no proguard rules file anywhere in the repo. **Release AABs ship unshrunk and unobfuscated.** The `r8-analyzer` skill's first finding will be "there is no R8 configuration."
+`androidApp/build.gradle.kts` sets `isMinifyEnabled = true` + `isShrinkResources = true` on `release`, with keep rules in `androidApp/proguard-rules.pro` (PR #67). Release AAB went 19.73 MB → 9.50 MB; DEX 56 MB → 4.8 MB; 37,331 classes → 5,792; four dex files → one.
 
 **R8 affects Android only** — it is a JVM-bytecode→DEX shrinker and has no iOS equivalent. iOS binary size is governed by Kotlin/Native release-mode DCE plus Xcode linker stripping; note that `export(project(":sharedLogic"))` in `sharedUI/build.gradle.kts` makes every exported public declaration a DCE **root**, so the Swift-visible surface is deliberately retained (correct tradeoff, not a leak). The only size cost genuinely shared by both platforms is the `composeResources` payload (8 TTFs, wordmark PNG, 22 vector drawables).
 
-Enabling minification here is **real work, not a switch flip**: kotlinx-serialization, Koin, Ktor, PostHog and Sentry are all reflection- or annotation-sensitive and are the usual breakages. If attempting it, do it on a branch, keep `isMinifyEnabled` behind a full regression pass on a real device, and verify telemetry still initializes and events still land in PostHog before shipping.
+**Two keep rules are load-bearing; do not delete them to "tidy up".** `ArcanaApiClient` builds `HttpClient` with no explicit engine, so Ktor resolves the Android engine through `ServiceLoader` — `AndroidEngineContainer` is referenced by nothing static, and without its keep R8 strips it and **every network call dies at startup**. Tink (`androidx.security-crypto`) references Error Prone's compile-only annotations and fails the R8 step outright without its `-dontwarn`. Everything else rides on library consumer rules plus the canonical kotlinx-serialization block, which works because the app's own Kotlin uses no reflection — keep it that way, or add a keep rule in the same PR.
+
+**The Sentry mapping upload is not optional.** `io.sentry.android.gradle` uploads the R8 mapping on release builds and injects the ProGuard UUID into `assets/sentry-debug-meta.properties`; without it every Android stack trace arrives as one-letter frames and issue grouping breaks. Release-only, with `autoInstallation` and tracing instrumentation OFF so the plugin cannot change which SDK ships. The auth token is resolved from `SENTRY_AUTH_TOKEN`, then `~/.sentryclirc`, then the gitignored `iosApp/.sentryclirc` (`org:ci` is all an upload needs); **no token means no upload, not a failed build**. Note `sentry-cli` only reads `.sentryclirc` from the *current* directory — run it from `iosApp/` or it reports Unauthorized despite the token existing.
+
+**The `qa` build type** is `initWith(release)`: minified, obfuscated and non-debuggable exactly like release, plus a qa-only manifest permitting cleartext to `10.0.2.2`. It exists so the regression suite can drive an R8-identical build against a local server. Never published, and `release` is unaffected by it.
+
+**Before any Android release, run the regression suite once with `androidVariant: 'qa'`** (`docs/regression/runbook.md`; restated in the `arcana-mobile-release` skill's pre-flight, which is where it fires). A `debug` pass proves nothing about the build that ships, because R8 never ran on it. Expect ~24 telemetry entries to come back BLOCKED — `Telemetry.kt` gates its logcat echo on `isDebugBuild`, so a non-debuggable build has none. That is why `debug` stays the default for routine runs, and is not a reason to skip the qa pass.
 
 ### Skills that must NOT be used — READ THIS BEFORE INSTALLING ANY SKILL
 
@@ -165,7 +171,7 @@ This is a **Kotlin Compose Multiplatform** project targeting Android and iOS, sp
 
 New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 
-**Known follow-up (AGP 10 horizon):** KGP deprecates `kotlinMultiplatform` + `com.android.library` on AGP 9 (warning-only today) in favor of the single-variant `com.android.kotlin.multiplatform.library` plugin. Migrating will require redesigning two build-type-dependent pieces: the `sharedUI/src/debug/` networkSecurityConfig manifest overlay and the library BuildConfig analytics fields (candidates: move to `:androidApp`, or runtime FLAG_DEBUGGABLE checks). Do this deliberately when AGP forces it, not before.
+**Known follow-up (AGP 10 horizon):** KGP deprecates `kotlinMultiplatform` + `com.android.library` on AGP 9 (warning-only today) in favor of the single-variant `com.android.kotlin.multiplatform.library` plugin. Migrating will require redesigning three build-type-dependent pieces: the `sharedUI/src/debug/` and `androidApp/src/qa/` networkSecurityConfig manifest overlays and the library BuildConfig analytics fields (candidates: move to `:androidApp`, or runtime FLAG_DEBUGGABLE checks). Do this deliberately when AGP forces it, not before.
 
 **Platform abstraction pattern:** `Platform.kt` (:sharedLogic commonMain) declares a plain `interface Platform` plus top-level `expect` declarations (`getPlatform()`, `defaultBaseUrl()`, `logWarning()`, `logDebug()`, `isDebugBuild`, `appVersionName()`); the actuals live in :sharedLogic's `androidMain`/`iosMain` (`Platform.android.kt` / `Platform.ios.kt`). Follow this pattern for any platform-divergent behavior. `defaultBaseUrl()` is an existing example — it currently returns `https://api.arcana.fit` on **both** platforms (the prod cutover is already done; it is NOT a localhost default). To run against a local server, override the base URL in Developer Settings (see "Temporary debug treatment").
 
@@ -182,7 +188,7 @@ New feature code: logic + ViewModel in `:sharedLogic`, screen in `:sharedUI`.
 
 **Date/time:** `kotlinx-datetime` in commonMain. Use `Clock.System.todayIn(TimeZone.currentSystemDefault())` for today, `Clock.System.now().toLocalDateTime(tz)` for current local time. `DayOfWeek` and `Month` are enums with `.name` returning uppercase strings (take(3) for the design's three-letter abbreviations).
 
-**Android dev networking:** The debug source set (`sharedUI/src/debug/`) contains a `network_security_config.xml` that permits cleartext to `localhost` and `10.0.2.2`. This is debug-only and cannot ship in release builds.
+**Android dev networking:** The debug source set (`sharedUI/src/debug/`) contains a `network_security_config.xml` that permits cleartext to `localhost` and `10.0.2.2`, and `androidApp/src/qa/` carries an equivalent for the `qa` build type. Neither reaches `release`, which permits no cleartext at all.
 
 **Android release fields** (`versionCode`/`versionName`, signing) live in `androidApp/build.gradle.kts`. Release bundle: `./gradlew :androidApp:bundleRelease` → `androidApp/build/outputs/bundle/release/androidApp-release.aab`. `keystore.properties` is honored from `androidApp/` (canonical) or `sharedUI/` (pre-split location); `analytics.properties` stays at `sharedUI/analytics.properties`.
 
