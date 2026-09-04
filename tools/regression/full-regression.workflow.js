@@ -101,6 +101,13 @@ const DEVICE_KEYS = A.devices === undefined || A.devices === null ? ALL_KEYS : A
 if (!Array.isArray(DEVICE_KEYS) || DEVICE_KEYS.length === 0) {
   throw new Error('full-regression: args.devices, when given, must be a non-empty array — a subset of ' + JSON.stringify(ALL_KEYS))
 }
+const FILE_TO_TRACKER = A.fileToTracker === undefined ? true : A.fileToTracker === true
+const ANDROID_VARIANT = typeof A.androidVariant === 'string' ? A.androidVariant : 'debug'
+if (!/^[a-z][A-Za-z0-9]*$/.test(ANDROID_VARIANT)) {
+  throw new Error('full-regression: args.androidVariant must be a build-type name like "debug" or "qa". Got: ' + JSON.stringify(A.androidVariant))
+}
+const VARIANT_CAP = ANDROID_VARIANT.charAt(0).toUpperCase() + ANDROID_VARIANT.slice(1)
+
 for (const k of DEVICE_KEYS) {
   if (!ALL_KEYS.includes(k)) {
     throw new Error('full-regression: unknown device ' + JSON.stringify(k) + '. Valid: ' + JSON.stringify(ALL_KEYS))
@@ -204,7 +211,9 @@ RUN FOLDER: ${RUN}
   ${RUN}/report-draft.md        running phase notes
 NOTHING is written inside either git checkout by Phases 0-4. Statuses are PASS / FAIL / BLOCKED / SKIP, plus the DEFERRED convention and the suspect-driver annotation — all four defined in the runbook's "Status vocabulary", which you have read.
 
-MODE: ${MODE}. Devices in this run: ${DEVICES.map(d => d.key).join(', ')}. Base URLs: ${PORT_TABLE}.${TIER_NOTE}
+MODE: ${MODE}. Devices in this run: ${DEVICES.map(d => d.key).join(', ')}. Base URLs: ${PORT_TABLE}.${TIER_NOTE}${ANDROID_VARIANT === 'debug' ? '' : `
+
+ANDROID BUILD TYPE FOR THIS RUN: \`${ANDROID_VARIANT}\` — an R8-MINIFIED, RESOURCE-SHRUNK, OBFUSCATED, NON-DEBUGGABLE build. This run exists to prove minification did not break the app, so treat every failure as potentially caused by R8 until shown otherwise. R8 damage does not look like a normal bug: it looks like a screen that renders but stays empty, a list that never populates, a request that returns 200 but produces no data, a setting that silently fails to persist, or an outright crash naming a one- or two-letter class. On ANY crash, empty-where-data-was-expected, or parse/serialization symptom, capture logcat around it into ${SHOTS}/../logcat-<ENTRY-ID>.txt with \`adb -s emulator-<port> logcat -d -t 2000\` BEFORE moving on, and say so in the result line's note — that log is the only evidence that can distinguish an R8 keep-rule gap from an app bug, and it cannot be recovered later. Do not attempt to fix build config yourself; record and continue.`}
 
 TOKEN DISCIPLINE (mandatory): never dump a full UI tree into your context — filter idb describe-all / uiautomator XML through bash (python3 -c / grep / jq) and extract only the labels and frames the current action needs. Screenshot commands write straight to ${SHOTS}/; do not view an image unless you are actually diagnosing something.
 
@@ -215,6 +224,12 @@ const SAFETY = `SAFETY RULES. The full set is the driver-playbook's "Safety" sec
 2. VERIFY THE OPS NOTIFIER AND EMAIL SENDER ARE INERT before driving anything that books, cancels, or submits a concierge/delete-account request, and again after EVERY server restart. Command and expected output are in the runbook's Phase 2.1. If it does not print exactly \`NullOpsNotifier [] notifications.email.ConsoleEmailSender\`, record those entries BLOCKED and say so loudly.
 3. NEVER KILL BY PORT. No \`lsof -ti :PORT\`, no \`fuser -k\`. It matches processes merely CONNECTED to the port — it killed the emulator once and manufactured ten phantom "iOS 26 crash" FAILs. Match the specific \`manage.py runserver\` PID.
 4. NEVER HALT, and NEVER COMMIT. Record FAIL/BLOCKED/SKIP and keep going. No \`git commit\`, \`git push\`, \`gh pr create\` or \`gh pr merge\` in any repo, for any reason, including docs.`
+
+const DEFERRED_RULE = `DEFERRED (the exclusive-fault convention). The runbook's "Status vocabulary" governs; this is the operational summary. An entry needing an EXCLUSIVE, ENVIRONMENT-WIDE fault — stopping the shared dev Postgres, a DB-layer outage, or a \`manage.py shell\` mutation of shared rows — is NOT driven by you. Record DEFERRED on that entry's line WITH THE REASON, move on, and return its ID in your notes so the serialized tail phase can sweep it.
+
+DEFERRED is not a general "come back to this later" marker, and it is not a synonym for BLOCKED. It means one of those exclusive-fault classes and nothing else: a missing fixture, a consumed one-shot token, or a technique you could not work out is BLOCKED with that reason, or driven with the documented spare. A DEFERRED costs the tail agent a whole exclusive window, and spending one on something you could have driven yourself is how the tail runs out of time (the 2026-08-27 iOS 26 lane mislabelled SIGNUP-10 this way).
+
+The log is append-only: never rewrite a line. The tail appends a fresh line for the same (device, entry), and the LAST line for that pair is authoritative.`
 
 const SHIFT_SCHEMA = {
   type: 'object',
@@ -343,7 +358,7 @@ Execute runbook Phase 0 (preflight — record-and-SKIP, never abort) and Phase 2
 6. BUILD THE WORK LISTS from the seeded inventory, so no shift ever reads inventory.md:
    \`python3 ${REPO}/tools/regression/build_worklist.py --out ${RUN}${TIER ? ' --tier ' + TIER : ''}\`
    It writes \`worklist-<device>.tsv\` per device plus \`worklist-summary.txt\`. Confirm each device's row count matches the applicable count you get by tallying inventory.md's \`Platforms:\` fields yourself, and put both numbers in your notes — a silent mismatch here silently shrinks the run. If the script fails, record it as a learning and say so loudly; shifts will have to fall back to reading inventory.md directly, which works but costs roughly ten times the tokens.
-7. BUILD + INSTALL every device in this run. iOS: build Debug once and install on each pinned UDID (the product is \`Arcana.app\`, not \`iosApp.app\` — resolve the real .app from the build's own Products dir; grep the build output for BUILD SUCCEEDED/FAILED rather than trusting \$? through a pipe). Android: \`:androidApp:assembleDebug\` then \`adb -s emulator-<port> install -r\` — pin the emulator serial explicitly, never the physical device's serial.
+7. BUILD + INSTALL every device in this run. iOS: build Debug once and install on each pinned UDID (the product is \`Arcana.app\`, not \`iosApp.app\` — resolve the real .app from the build's own Products dir; grep the build output for BUILD SUCCEEDED/FAILED rather than trusting \$? through a pipe). Android: \`:androidApp:assemble${VARIANT_CAP}\` then \`adb -s emulator-<port> install -r androidApp/build/outputs/apk/${ANDROID_VARIANT}/androidApp-${ANDROID_VARIANT}.apk\` — pin the emulator serial explicitly, never the physical device's serial. The Android build type for THIS run is \`${ANDROID_VARIANT}\`; never substitute another one. If that APK is already installed and the emulator already carries the correct base-URL override, skip the reinstall rather than replacing it — reinstalling a different build type silently invalidates the entire run.
 8. BASE URL OVERRIDE per device, via the in-app Developer Settings screen (10 taps on the wordmark on the signed-out Auth screen; the field pre-fills and MUST be cleared before typing or you get concatenated-URL corruption). Set:
 ${overridePlan}
    A reused simulator/emulator is not behaviorally fresh: it may already be signed in and already carry an override. If a device boots to Home instead of Auth, sign out via Profile first. Then VERIFY each install actually reaches its OWN server (drive one authenticated or health request and confirm it lands on the expected port — in parallel mode a lane silently talking to another lane's port is a failure mode this step exists to catch).
@@ -652,7 +667,9 @@ log(
 // ---------------------------------------------------------------------------
 
 let trello = null
-if (digest.length === 0) {
+if (FILE_TO_TRACKER === false) {
+  log('Phase 6 skipped: args.fileToTracker=false — findings stay in report.md for human review')
+} else if (digest.length === 0) {
   log('Phase 6 skipped: triage produced an empty §2 digest, so there is nothing to file')
 } else {
   phase('Trello')
