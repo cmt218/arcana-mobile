@@ -39,6 +39,12 @@ else. In brief, so you know the shape of the run: **never halt** on a failure,
 runbook is authoritative on all three; this file used to restate them in full
 and the copies drifted.
 
+The device rule has exactly one sanctioned narrowing, and the runbook defines
+it: a scope chosen deliberately before the run for a platform reason, the
+worked example being an Android-only R8/minification pass (R8 has no iOS
+equivalent). Like a tier filter, such a run is **not** a full regression and
+its report has to say so.
+
 ## How to run it
 
 Follow `docs/regression/runbook.md` phase by phase — Phase 0 (Preflight),
@@ -70,8 +76,11 @@ idb and adb) — the runbook assumes it and does not re-explain it.
 
 **The initiating session orchestrates; it does not drive.** Run the suite
 through the **Workflow tool**, using the checked-in reference script
-`tools/regression/full-regression.workflow.js` (args
-`{ runDate, mode: 'sequential' | 'parallel' }`). **This skill instruction is
+`tools/regression/full-regression.workflow.js` (args `{ runDate, mode:
+'sequential' | 'parallel', tier, devices, androidVariant, fileToTracker }` —
+`devices` and `androidVariant` are the scoped-run knobs above, and a
+non-`debug` `androidVariant` changes what Phase 3 can observe on Android, so
+read the runbook's Phase 2.4 before using it). **This skill instruction is
 the opt-in to use Workflow for this task** — no further confirmation is
 needed. The script dispatches the phase agents; the runbook remains the
 contract it implements.

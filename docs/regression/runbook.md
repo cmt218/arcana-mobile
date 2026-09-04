@@ -62,6 +62,26 @@ the dispatch order of two phases that cannot affect each other.
    excludes) — never a subset "for time," never skip a device because an
    earlier one had problems.
 
+   **The one sanctioned narrowing is a device scope chosen deliberately
+   *before* the run, for a reason that is about the platform rather than about
+   time.** The orchestration script takes it as `args.devices`; an
+   R8/minification validation pass is the worked example, since R8 is
+   Android-only and has no iOS equivalent (repo CLAUDE.md, "R8 /
+   minification"). Such a run is **not** a full regression, and its report's §1
+   verdict line must say so and name the absent devices as *not in scope*
+   rather than SKIP — exactly the rule a tier-filtered run already follows.
+   Nothing else may narrow the device list: not a flaky simulator, not a lane
+   that ran long, not "iOS looked fine last week."
+
+   **The corollary is an obligation, not just a permission: no Android release
+   may be cut without one `androidVariant: 'qa'` pass.** A `debug` pass proves
+   nothing about the build that ships, because R8 never ran on it — and R8
+   damage is quiet (a screen that renders empty, a list that never populates, a
+   200 that yields no data). Routine runs stay on `debug` so the ~24
+   telemetry-echo entries stay drivable; the pre-release `qa` pass accepts them
+   as BLOCKED. The gate is restated in the `arcana-mobile-release` skill's
+   pre-flight, which is where it actually fires.
+
 ---
 
 ## Status vocabulary
@@ -483,23 +503,37 @@ lsof -i :8000
 ```
 **Verified (2026-08-11): port 8000 was already occupied** — by
 `.venv/bin/python manage.py runserver 0.0.0.0:8000`, i.e. arcana-server's
-own dev server, already running from an earlier session. **This is the
-good case, not a conflict**: if `lsof -i :8000` shows a `manage.py
-runserver` process, Phase 2 can skip starting a new one and just verify it
-answers (`curl -sf http://localhost:8000/api/v1/health/` or equivalent — see
-Phase 2).
+own dev server, already running from an earlier session. **A `manage.py
+runserver` already on 8000 is neither a conflict nor an invitation: leave it
+alone and take your own port from an isolated worktree, per Phase 2.1.** That
+is the whole of the decision — this step exists only to tell you *whether* 8000
+is busy and *what* holds it, never to authorize reusing or replacing what it
+finds. An earlier edition of this section described reuse as the good case and
+Phase 2.1 forbids it; the 2026-09-04 run read both, correctly followed 2.1,
+and then drifted back onto 8000 mid-shift anyway, killing the very process it
+had recorded as untouched.
 
-**With one hard caveat: a pre-existing server inherited this checkout's
-`.env`, which wires the REAL ops notifier** (see Phase 2.1). Reusing it means
-every booking, cancel and concierge submit in Phase 3 pages the founders for
-real. So reuse it only after confirming its resolved `OPS_NOTIFIER_CLASS` is
-`notifications.telegram.NullOpsNotifier`; if it is not, stop **only that
-specific `manage.py` PID** (never a port-based kill) and start this run's own
-process on that port with the null notifier in its environment, recording the
-decision. If `lsof -i :8000` shows some *other* process (not arcana-server's
-runserver), record a Phase 0 SKIP for Phase 2's server-start step with
-reason "port 8000 held by <command>, not arcana-server" — do not kill an
-unrelated process automatically.
+**Why reuse is banned rather than merely discouraged:** a pre-existing server
+inherited this checkout's `.env`, which wires the REAL ops notifier (see Phase
+2.1), so every booking, cancel and concierge submit in Phase 3 would page the
+founders for real; and its code is whatever the shared checkout happens to hold
+this minute, which another session can autoreload out from under a driving
+shift. Neither is yours to audit or to fix. **Never stop a `manage.py` process
+this run did not start, on any port, for any reason** — including "its notifier
+looked wrong" and "it looked like an orphan from an earlier run." Record what
+holds 8000 and move on to your own port. If `lsof -i :8000` shows some *other*
+process (not arcana-server's runserver), record it the same way — do not kill
+an unrelated process automatically.
+
+**Whatever port you take, carry it everywhere and re-verify it mid-run.** The
+override lives on the device and survives a `pm clear`-and-restore, a
+`RESET TO DEFAULT` in the DEVSET block, and a reviewer sign-in — each of which
+can leave the device pointed at a *different* port (or at production) while the
+shift keeps driving. On 2026-09-04 the run provisioned 8010 and drove most of
+Phase 3 against 8000, killing the pre-existing process there to do it, and the
+contradiction only surfaced at cleanup. After any DEVSET entry, any app-data
+wipe and any reviewer sign-in, re-prove the override with a real request in
+**this run's own** server log, not with the "CURRENTLY IN USE" label.
 
 **Better than reusing another session's server: take your own port.** On
 2026-08-27 port 8000 was held by a live session's runserver on the shared
@@ -627,8 +661,12 @@ lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-08-11, 2026-08-15, 2026-08-16 (after
 `feature/error-states-completion` added ERR-21/ERR-22), and 2026-08-19 (after
 `fix/NAV-13-pre-auth-system-back` added NAV-13). `self_audit.sh`
-encodes this as a **50–90 unique-path band** and prints a SANITY WARNING
-outside it; keep the two in step if either moves. A run that reports findings
+encodes this as a unique-path band and prints a SANITY WARNING outside it; keep
+the two in step if either moves. **They had drifted apart and the script warned
+on every clean tree** — its band said 50–90 around a "67 verified 2026-08-11"
+comment while this section has said 94 since that same date, so the 2026-09-04
+run's §3 shipped an unresolved caveat on a 0-finding audit. The band is now
+70–120 around 94; a warning again means the extractor, not the inventory. A run that reports findings
 in the hundreds is an extractor bug, not inventory drift — fix the extractor
 and re-run rather than filing the output.
 
@@ -953,7 +991,17 @@ seed/server/app change rather than a driving workaround:
 | AUTH-15 (soft-keyboard CTA reachability, iOS) | The software keyboard never renders while driving with `idb`, which delivers HID keystrokes the simulator treats as a hardware keyboard. | A technique gap, not a fixture gap — see the iOS trap in driver-playbook.md for the two untried options (disable Connect Hardware Keyboard, or pin an SE-class device). |
 | TEL-22 (analytics gate) / TEL-23 (Sentry environment) | **Structural, permanent for this suite.** Both entries' remaining leg needs a RELEASE build talking to real PostHog/Sentry with the base URL at `https://api.arcana.fit`, which Safety rule 0 forbids. All three lanes reached that conclusion independently on 2026-08-27. | Half of TEL-22 *is* drivable and should be recorded rather than blocked: a Debug build on a local base URL prints `D/Telemetry: PostHog DISABLED (environment=local)` in the console echo (observed on the pinned iOS 26 sim, 2026-08-28). The release/prod leg is covered by `sharedLogic/src/commonTest/.../analytics/TelemetryGateTest.kt`; verify it by reading that test, not by driving. |
 | LAUNCH-04 (first-launch recovery grace) | **An observability gap, not a fixture one.** `AppSessionController.attemptFirstLaunchRecovery()` emits no telemetry at all (the file references `Telemetry` nowhere), and `RECOVERY_ATTEMPTED_KEY` is one-shot per install, so the 700ms grace and the once-per-install marker have no black-box signal. | The outer behavior — a plain icon launch lands on Auth with no spurious routing, on repeated cold starts — is observable and is what the Android lane recorded as PASS on 2026-08-27. Record that half and say which half you proved; the timing half needs instrumentation, i.e. app work, before it is scoreable. |
+| SCHED-09 (curated modality filter narrows results) | **Not an app or server bug — a seed fixture that cannot demonstrate narrowing.** `seed_regression._build_studio` assigns the *first active* `ModalityCategory` (`yoga`, `display_order=1` in `integrations/modality_seed.py`) as a studio-level override to all three `regression-*` studios, while every seeded template carries `modality='Strength'`. `classes/filters.py`'s category clause matches a session whose **studio** holds the category, so `category=yoga` legitimately returns all 26 regression sessions. In Favorites scope, where the only locations are those studios', the filter can therefore never visibly narrow. | The chip/toggle/DONE mechanics ARE drivable and are most of the entry — record those, and say the narrowing half was unobservable on the seeded set rather than recording a FAIL. Verified 2026-09-04: `category=cycle` with the same `location_id` list returns 0, so the filter itself works. The fix is a `seed_regression` change — assign the category that matches the seeded modality (`strength`), or assign none and let the `Modality` mapping do the work. |
+| SIGNUP-17 (locked email row carried from checkout) | No checkout-purchase fixture exists anywhere in the regression manifest; the only signup entry vector is a welcome-token deep link, which does not carry an email forward into the form. | Structural, confirmed 2026-09-04. Needs a `seed_regression` (or server) fixture that produces a post-checkout signup entry, not a driving-technique fix. |
+| The whole TEL block, plus LAUNCH-03 / LAUNCH-06 / SIGNUP-23 / NAV-11 / DEVSET-11 / AUTH-12(c) — **on a non-debuggable Android build only** | `Telemetry.kt` gates its entire logcat echo on `isDebugBuild`, and `adb shell run-as` refuses a non-debuggable package. A minified `qa`/`release` build therefore has **no** telemetry evidence and **no** app-private-file access at all. | Build-type-scoped, not permanent: on the normal Debug Android build every one of these is drivable and blocking them is a driver artifact (see the iOS-console note below, which is the same mistake on the other platform). Confirmed 2026-09-04 on the `qa` build — 24 entries blocked on this one cause, with a full cold-launch `adb logcat -d` carrying zero `Telemetry`-tagged lines. Say **which build type** you were on in the result line, or the next run cannot tell your BLOCKED from a real gap. |
 | HOME-11 (upcoming preview list, 4-row cap + day dividers) | The entry's Steps want 6+ upcoming bookings across multiple days; `seed_regression` gives the member one, and a shift can realistically add one more by booking in-app. | A 2-booking pass proves the day-header divider and nothing about `UPCOMING_PREVIEW_COUNT = 4` or the hairline-suppression rules — both lanes that PASSed it on 2026-08-27 said so in their result line, which is the right way to record it. Fixing it properly is a `seed_regression` change: six bookings spanning three days on one device's member. |
+
+**A build-type-scoped block must name the build type.** The rows above are
+written for the Debug Android build and the two pinned simulators. A run driving
+a minified/non-debuggable Android build (`qa`, `release`) inherits a whole extra
+BLOCKED cluster that says nothing about the product — record those with the
+build type in the reason, and do not let them migrate into this table as
+unconditional rows the way the seven deleted 2026-08-27 rows did.
 
 **Two more that are never to be added to this list.** **PLAT-11** — the
 optical-centring measurement — is not blocked by a missing Pillow; it is
@@ -1033,6 +1081,28 @@ shows the emulator as the sole attached target.
 If the Android build or install fails, this **never halts the run**: record
 Android's entire Phase 3 pass as SKIP with the build/install error as reason
 in the Phase 4 summary, and continue with the remaining devices.
+
+**The Android build type is a run parameter, and a non-Debug one changes what
+Phase 3 can observe.** `debug` is the default and everything else in these docs
+assumes it. A minified, non-debuggable type (`qa` — R8 + resource shrinking +
+obfuscation, debug-signed, cleartext to `10.0.2.2`; or `release`) is chosen
+deliberately to prove minification did not break the app, and the script takes
+it as `args.androidVariant`. Three consequences to carry into the run:
+
+- **Record the build type in the run's notes and in the report's §1 verdict
+  line.** A `qa` pass and a `debug` pass are not interchangeable evidence.
+- **Two whole verification techniques stop existing**: `Telemetry.kt` gates its
+  logcat echo on `isDebugBuild`, and `adb shell run-as` refuses a
+  non-debuggable package. See the Known-BLOCKED row for the entries that
+  inherits, and record the build type as part of each such BLOCKED's reason.
+- **R8 damage does not look like a normal bug.** It looks like a screen that
+  renders but stays empty, a list that never populates, a 200 that produces no
+  data, a setting that silently fails to persist, or a crash naming a one- or
+  two-letter class. On any crash, empty-where-data-was-expected, or
+  parse/serialization symptom, capture `adb -s emulator-<port> logcat -d -t
+  2000` into the run folder BEFORE moving on and cite it in the result line —
+  it is the only evidence that separates a missing keep rule from an app bug,
+  and it cannot be recovered afterwards. Never edit the build config mid-run.
 
 ### 2.5 — Point every install at the local dev server
 
@@ -1296,6 +1366,21 @@ ios26  SCHED-15  FAIL   overline read "AVAILABLE"; screenshots/ios26-SCHED-15-fa
 ios26  PROFILE-12 PASS  see AUTH-11
 android CLASS-18 PASS   applied Phase 3 fulfilment step first; credit forfeited
 ```
+**The columns are whitespace-delimited, not tab-delimited** — device, entry ID,
+status, then a free-text note that runs to end of line. The example above pads
+with spaces and real logs mix both (46 of the 2026-09-04 run's 249 lines used
+spaces), so every consumer must split on runs of whitespace: `awk '{print $2}'`
+is right, `cut -f2` silently misreads a fifth of the file.
+
+**A multi-leg entry gets ONE line, with the per-leg statuses in parentheses on
+that line** — `AUTH-12  PASS(a,b) BLOCKED(c)  …` — never one line per leg under
+the same ID. This is the same rule as "write the entry ID exactly as the
+inventory spells it," moved one column right: because the last line for a
+(device, entry) pair is authoritative, five `PROFILE-08` lines carrying
+`PASS(c)`, `PASS(e)`, `PASS(d)`, `PASS(b)`, `BLOCKED(a)` reduce mechanically to
+a single BLOCKED and throw away four passes (2026-09-04; the report recovered it
+only by reading every line by hand).
+
 Write it **before** starting the next entry, not at the end of an area, not at
 the end of a device. Phase 4's report is assembled *from* these logs, so they
 are the primary artifact and `report.md` is the derived one. **A device writes

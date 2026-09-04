@@ -187,9 +187,25 @@ has stale text" from "field is empty, that's just the placeholder."
   data` equivalents) — a clean, lower-risk way to force a network failure
   than killing the local server: no risk of collaterally killing another
   process on the host (see the CRITICAL SAFETY note below), and it recovers
-  instantly on re-enable + RETRY.
-- `adb shell run-as org.arcana.mobile <cmd>` — reads a debug-installed app's
-  private files with no root needed, e.g.
+  instantly on re-enable + RETRY. **It does NOT cut the emulator's route to
+  `10.0.2.2`, which is the base URL every Android lane actually uses.**
+  Host-loopback traffic on the `Pixel_9_Pro` AVD is not gated by the simulated
+  wifi state: on 2026-09-04 a survey submit driven "offline" returned a real
+  200 that landed in the server log, which both failed ERR-19's CONNECTION leg
+  and burned the device-local `signup_survey_done:<token>` state it was
+  supposed to preserve, chaining five further entries into BLOCKED. Use it only
+  against a tunnel or a real host, and **verify the outage before trusting it**
+  (`adb shell curl`-equivalent, or just watch the server log stay silent).
+  For a `10.0.2.2` lane, force the CONNECTION leg by restarting the run's own
+  server instead — the recipe under "Killing and restarting your own server"
+  below.
+- `adb shell run-as org.arcana.mobile <cmd>` — **debuggable builds only.** On a
+  minified `qa`/`release` install it fails outright with `package not
+  debuggable` and there is no substitute short of a rooted image, so every
+  technique built on it (LAUNCH-06's staged keyset restore, AUTH-12 leg (c),
+  any secure-prefs inspection) is unavailable on such a run; record BLOCKED
+  naming the build type rather than hunting for an alternative. On a debug
+  build it reads the app's private files with no root needed, e.g.
   `adb shell run-as org.arcana.mobile rm shared_prefs/arcana_secure_prefs.xml`
   to simulate an externally-cleared secure store. **This also wipes the
   Developer Settings base-URL override**, since `BaseUrlProvider` persists
@@ -214,6 +230,13 @@ has stale text" from "field is empty, that's just the placeholder."
 **Telemetry.** `adb logcat -s Telemetry:D` is the primary technique for the
 whole TEL block — reliable, cheap, and precise (exact event name + full
 property map), far better evidence than inferring correctness from UI state.
+**It assumes a Debug build and produces literally nothing on any other.**
+`Telemetry.kt` gates the whole echo on `isDebugBuild`, so on a `qa`/`release`
+install the filtered logcat is empty and so is the unfiltered ring buffer —
+verified 2026-09-04 across a full cold launch. An empty capture on a
+non-debuggable build is not a broken technique and not a missing event: record
+the affected entries BLOCKED **with the build type in the reason**, and never
+infer from silence that an event did not fire.
 Start it once at the top of the TEL/NAV block:
 `adb -s emulator-5554 logcat -s Telemetry:D -v brief > telemetry.log &`, then
 grep the tail after each action. A backgrounded `> file &` pipe can
@@ -447,6 +470,13 @@ is no Profile → Sign out path to clear it, and the next non-reviewer sign-in
 fires `clear()` → `reset()` to the prod default *before* sending its request.
 **That would put real regression-member credentials on the wire to production.**
 
+**This recurred on 2026-09-04 despite being written down here**, because the
+entry's own numbered Steps put recovery at "sign out" — which is a no-op after
+a login that failed. AUTH-16's Steps have been corrected; drive the recovery
+below the moment the reviewer login returns anything other than a session, and
+do not treat "I re-set the override and CURRENTLY IN USE reads the local URL"
+as recovery. The marker outlives that save and fires on the next sign-in.
+
 Recovery, used successfully on all three devices on 2026-08-28: wipe the
 persisted store, which clears the marker with zero network calls, then re-set
 and verify the override before any further sign-in.
@@ -623,6 +653,51 @@ than rebuilding.
   text-only dump — screenshot to confirm before concluding a tap "did
   nothing."
 
+- **After an IME open/close, tap the MIDPOINT between a field's label and the
+  next field's label, from a fresh `uiautomator dump`.** The IME-relayout trap
+  above says coordinates go stale; on the claim form specifically the error is
+  systematic rather than random — across ~6 occurrences on 2026-09-04 a tap
+  computed from a capture even one action old landed one field **earlier** than
+  intended, never later (typing into Street Address when City was the target,
+  First Name when Last Name was). A fixed pixel offset below a label is what
+  fails. The recipe that worked every time: `keyevent 4` to dismiss the IME,
+  fresh `uiautomator dump` (a dump, not a screenshot), then tap the vertical
+  midpoint between that field's own label bounds and the next label's bounds.
+
+- **A sticky-bottom CTA on a Compose form needs a settle AND a fresh dump, not
+  a remembered coordinate.** Tapping CREATE ACCOUNT / CONTINUE / SAVE at a
+  coordinate read off a screenshot taken moments earlier landed on the STATE
+  field twice on 2026-09-04, corrupting it with typed keyboard-shortcut text
+  (`NY BY`) — the kind of damage that then reads as a form-validation bug.
+  Reliable sequence: `keyevent 4` → swipe to the bottom → wait ~2s → fresh
+  `uiautomator dump` → tap.
+
+- **`clickable` in a `uiautomator dump` is not a reliable enabled/disabled
+  signal, in either direction.** It read `false` for a visibly enabled,
+  Moss-filled CREATE ACCOUNT on at least two occasions on 2026-09-04, and
+  Developer Settings' SAVE reports `clickable="false"` on the TextView
+  permanently — its real tap target is the enclosing `android.view.View` a few
+  nodes up, found by filtering the dump for `clickable="true"` and
+  coordinate-matching. Same shape as the Auth screen's 10-tap gesture target,
+  on a different screen. Screenshot to decide enabled-vs-disabled; use the dump
+  only to locate the container to tap.
+
+- **A dump parser that only matches self-closed `<node .../>` tags misses every
+  clickable ANCESTOR.** Container nodes are written `<node ...>…</node>`, and
+  on the Auth screen the SIGN IN CTA *is* such a container (it wraps the
+  email/password/button group). Match `<node[^>]*>` generally, or you will
+  conclude a working control does not exist.
+
+- **A one-off visual anomaly is not adjudicable unless the frame is saved into
+  the run folder.** PLAT-04 on 2026-09-04 produced one capture of a blank
+  avatar chip, taken ~0.5–1s after a tab tap, that three later captures
+  contradicted; the anomalous frames were written to `/tmp` and were gone by
+  triage, so the only possible verdict was "driver artifact." When a capture
+  disagrees with the ones around it, immediately re-capture after a full settle
+  AND write both frames to the run's `screenshots/` directory with the entry ID
+  in the filename. Tab-switch and other 150ms transitions are exactly where
+  a too-fast screenshot manufactures an empty-looking control.
+
 - **LAUNCH-06's keyset-restore recipe may not fault at all on the AVD.** Run
   verbatim on `Pixel_9_Pro` (2026-08-27) it produced no crash, no
   `token_storage_failure {op=discard}` telemetry, and a clean landing on
@@ -721,6 +796,23 @@ untouched, so only the access half shortens.
   bound near that port — this collaterally killed the `Pixel_9_Pro`
   emulator process itself in one shift. Always capture and kill the
   specific `manage.py runserver` PID(s) from `ps aux | grep manage.py`.
+- **Killing and restarting your own server is the reliable CONNECTION-fault
+  lever, and it is safe when done by PID.** Capture the run's own `manage.py`
+  PID from `ps aux | grep manage.py`, `kill <that PID>`, drive the entry, then
+  relaunch with the two safety overrides in the environment and re-prove them:
+  ```
+  OPS_NOTIFIER_CLASS=notifications.telegram.NullOpsNotifier \
+  EMAIL_SENDER_CLASS=notifications.email.ConsoleEmailSender \
+  python manage.py runserver 0.0.0.0:<this run's port> --noreload &
+  ps eww <new PID> | grep -E 'OPS_NOTIFIER|EMAIL_SENDER'
+  ```
+  Under five seconds end to end, repeatable, and it produces the exact
+  NETWORK_MESSAGE state the ERR-0x entries want (2026-09-04). Two hard
+  boundaries: **never by port** (the rule above), and **never a server this run
+  did not start** — a shift that drifts onto a pre-existing server's port and
+  then kills it to inject a fault has broken runbook Phase 2.1 and destroyed
+  another session's work, which is exactly what happened on 2026-09-04 while
+  the run's own dedicated server sat idle on a different port.
 - **Relaunching the AVD after any crash/kill resumes a quick-boot snapshot,
   not a clean boot.** It can carry a stale, non-regression signed-in
   account (observed: an unrelated "Android QA" account) and a suspended app

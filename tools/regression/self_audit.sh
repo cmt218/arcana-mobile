@@ -233,13 +233,14 @@ done <<< "${REVERSE_OUT}"
 SOURCE_LINE_COUNT="$(wc -l < "${SOURCE_LINES_FILE}" | tr -d ' ')"
 echo "Reverse pass counts: ${SOURCE_LINE_COUNT} Source: lines, ${TOKENS} comma-split tokens, ${UNIQUE} unique paths (${MISSING_COUNT} missing)."
 
-# Sanity band: a clean tree has historically yielded ~65 unique paths
-# (verified 67 on the 2026-08-11 run). A count wildly outside this band
-# means the extractor itself is broken (e.g. paren-stripping regressed),
-# not that the tree suddenly grew/shrank that much — per the runbook, fix
-# the extractor rather than filing the output as a wall of findings.
-if [ "${UNIQUE}" -lt 50 ] || [ "${UNIQUE}" -gt 90 ]; then
-  echo "SANITY WARNING: ${UNIQUE} unique Source paths is outside the expected ~50-90 band (67 verified 2026-08-11) — suspect the extractor, not inventory drift, before trusting the findings above."
+# Sanity band: a clean tree yields ~94 unique paths (verified 2026-09-04; the
+# runbook's Phase 1 has said 94 since 2026-08-11 and this band said 67, so it
+# warned on every clean tree until corrected). A count wildly outside the band
+# means the extractor itself is broken (e.g. paren-stripping regressed), not
+# that the tree suddenly grew/shrank that much — per the runbook, fix the
+# extractor rather than filing the output as a wall of findings.
+if [ "${UNIQUE}" -lt 70 ] || [ "${UNIQUE}" -gt 120 ]; then
+  echo "SANITY WARNING: ${UNIQUE} unique Source paths is outside the expected ~70-120 band (94 verified 2026-09-04) — suspect the extractor, not inventory drift, before trusting the findings above."
 fi
 
 rm -f "${SOURCE_LINES_FILE}"
