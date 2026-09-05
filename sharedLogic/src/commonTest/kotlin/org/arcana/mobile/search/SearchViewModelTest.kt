@@ -366,6 +366,24 @@ class SearchViewModelTest {
         assertEquals("c1", api.sessionsCalls.last().cursor)
     }
 
+    @Test fun `loadMore drops a row the next page repeats`() = runTest {
+        // A keyset cursor that overlaps by one row would otherwise put a duplicate
+        // id into a keyed LazyColumn, which crashes the screen.
+        val api = FakeSearchApi()
+        api.sessionsResult = { call ->
+            if (call.cursor == null) pageOf(1, 2, nextCursor = "c1") else pageOf(2, 3)
+        }
+        val vm = vm(api)
+
+        vm.onQueryChanged("yoga")
+        advanceTimeBy(SearchViewModel.SEARCH_DEBOUNCE_MS + 1)
+        advanceUntilIdle()
+        vm.loadMore()
+        advanceUntilIdle()
+
+        assertEquals(listOf(1, 2, 3), results(vm).sessions.map { it.id })
+    }
+
     @Test fun `loadMore without a cursor is a no-op`() = runTest {
         val api = FakeSearchApi()
         api.sessionsResult = { pageOf(1) }

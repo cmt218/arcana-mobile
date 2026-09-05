@@ -190,7 +190,9 @@ class SearchViewModel(
                 val latest = _uiState.value
                 if (epoch != searchEpoch || latest !is SearchUiState.Results) return@launch
                 _uiState.value = latest.copy(
-                    sessions = latest.sessions + page.toSessions(),
+                    // The list is keyed on session id and LazyColumn crashes on a
+                    // duplicate, so a cursor-overlapping page must not reach it.
+                    sessions = (latest.sessions + page.toSessions()).distinctBy { it.id },
                     nextCursor = page.nextCursor,
                     loadingMore = false,
                 )
