@@ -1,19 +1,26 @@
 package org.arcana.mobile.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,19 +29,26 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Moss
+import org.arcana.mobile.theme.Springs
 import org.arcana.mobile.theme.Stone
 import org.jetbrains.compose.resources.DrawableResource
 
 /** Brings a bare trailing slot up to the label's 24dp inset (Row adds 8dp). */
 private val TRAILING_SLOT_END_INSET = 16.dp
+
+private val CTA_LABEL_SIZE = 14.sp
+private const val CTA_LABEL_TRACKING_EM = 0.14f
 
 /** Shared by [TextLink]'s style and its optical nudge, which is derived from the
  *  type size: separate literals would drift and silently un-centre the label. */
@@ -55,12 +69,31 @@ fun PrimaryCta(
     accentColor: Color = Lime,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(source)
+    val fill by animateColorAsState(
+        targetValue = when {
+            !enabled -> Ash2
+            pressed -> containerColor.pressedShade()
+            else -> containerColor
+        },
+        animationSpec = tween(Dur.Quick),
+        label = "ctaFill",
+    )
+    val kick by animateDpAsState(
+        targetValue = if (pressed && enabled) 2.dp else 0.dp,
+        animationSpec = Springs.kick(),
+        label = "ctaKick",
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(CircleShape)
-            .background(if (enabled) containerColor else Ash2)
-            .clickable(enabled = enabled, onClick = onClick)
+            .pressable(source, enabled)
+            .then(if (enabled) Modifier.controlShadow(ArcanaShapes.Pill) else Modifier)
+            .clip(ArcanaShapes.Pill)
+            .background(fill)
+            .then(if (enabled) Modifier.innerHighlight(ArcanaShapes.Pill) else Modifier)
+            .clickable(enabled = enabled, interactionSource = source, indication = null, onClick = onClick)
             .padding(start = 24.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -68,14 +101,14 @@ fun PrimaryCta(
         Text(
             text = label.uppercase(),
             modifier = Modifier.opticallyCentredCaps(
-                fontSize = 14.sp,
-                letterSpacingEm = 0.14f,
+                fontSize = CTA_LABEL_SIZE,
+                letterSpacingEm = CTA_LABEL_TRACKING_EM,
             ),
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                letterSpacing = 0.14.em,
+                fontSize = CTA_LABEL_SIZE,
+                letterSpacing = CTA_LABEL_TRACKING_EM.em,
                 color = Stone,
             ),
         )
@@ -88,6 +121,7 @@ fun PrimaryCta(
         } else {
             Box(
                 modifier = Modifier
+                    .offset { IntOffset(kick.roundToPx(), 0) }
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(if (enabled) accentColor else Stone.copy(alpha = 0.25f)),

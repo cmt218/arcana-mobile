@@ -1,5 +1,6 @@
 package org.arcana.mobile
 
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -25,6 +26,7 @@ import androidx.compose.ui.backhandler.BackHandler
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -61,6 +63,7 @@ import org.arcana.mobile.signup.SignupSurveyScreen
 import org.arcana.mobile.signup.SignupSurveyViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
+import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.ui.ArcanaTab
 import org.arcana.mobile.ui.ArcanaTabBar
@@ -319,14 +322,13 @@ private fun MainScaffold() {
             navController = navController,
             startDestination = ArcanaDestination.Home,
             modifier = Modifier.padding(innerPadding),
-            // Cross-platform-consistent fade. Tabs are siblings (no left/right
-            // semantics), and iOS's default slide reads wrong when navigating
-            // "backwards" between tabs. Override per-composable if a particular
-            // destination needs a different transition (e.g. a modal flow).
-            enterTransition = { fadeIn(tween(150)) },
-            exitTransition = { fadeOut(tween(150)) },
-            popEnterTransition = { fadeIn(tween(150)) },
-            popExitTransition = { fadeOut(tween(150)) },
+            // Fades exist because iOS's default slide reads wrong navigating
+            // backwards between sibling destinations; tab-to-tab swaps skip it
+            // (see isTabToTab) since the bar's dot and icon bounce carry that motion.
+            enterTransition = { if (isTabToTab()) EnterTransition.None else fadeIn(tween(Dur.Quick)) },
+            exitTransition = { if (isTabToTab()) ExitTransition.None else fadeOut(tween(Dur.Quick)) },
+            popEnterTransition = { if (isTabToTab()) EnterTransition.None else fadeIn(tween(Dur.Quick)) },
+            popExitTransition = { if (isTabToTab()) ExitTransition.None else fadeOut(tween(Dur.Quick)) },
         ) {
             composable<ArcanaDestination.Home> {
                 HomeScreen(
@@ -430,6 +432,15 @@ internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest.hasRoute<ArcanaDestination.Search>() -> Telemetry.Screens.SEARCH
     else -> null
 }
+
+/** True when both ends of a transition are tab roots: tabs swap instantly, the bar's dot carries the motion. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabToTab(): Boolean =
+    isTabRoot(initialState.destination) && isTabRoot(targetState.destination)
+
+private fun isTabRoot(dest: NavDestination): Boolean =
+    dest.hasRoute<ArcanaDestination.Home>() ||
+        dest.hasRoute<ArcanaDestination.Schedule>() ||
+        dest.hasRoute<ArcanaDestination.Profile>()
 
 private fun NavController.navigateToTab(tab: ArcanaTab) {
     val dest: ArcanaDestination = when (tab) {
