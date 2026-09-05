@@ -2,6 +2,7 @@
 package org.arcana.mobile.profile
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.*
 import org.arcana.mobile.data.*
 import org.arcana.mobile.favorites.FavoritesRepository
@@ -121,6 +122,32 @@ class ProfileViewModelTest {
         assertEquals(2, s.weekStreak)
         assertEquals("All Out", s.tierName)
         assertEquals(23, s.creditsRemaining)
+    }
+
+    /** The session warm-load and the Profile screen both call load(), so two can
+     *  overlap. Whichever STARTED last must win, not whichever finishes last. */
+    private class OutOfOrderApi(private val stale: MembershipMeDto, private val fresh: MembershipMeDto) :
+        MembershipApi {
+        var calls = 0
+        override suspend fun membershipMe(): MembershipMeDto {
+            calls++
+            // First call is the slow one, so without single-flight it lands last.
+            return if (calls == 1) { delay(100); stale } else { delay(10); fresh }
+        }
+    }
+
+    @Test fun `a superseded load cannot land after a newer one`() = runTest {
+        val stale = meDto.copy(currentPeriod = meDto.currentPeriod!!.copy(creditsRemaining = 1))
+        val fresh = meDto.copy(currentPeriod = meDto.currentPeriod!!.copy(creditsRemaining = 99))
+        val vm = vm(OutOfOrderApi(stale, fresh))
+
+        vm.load()
+        vm.load()
+        advanceUntilIdle()
+
+        val s = vm.uiState.value
+        assertTrue(s is ProfileUiState.Success)
+        assertEquals(99, (s as ProfileUiState.Success).creditsRemaining)
     }
 
     @Test fun `starts in Loading state`() = runTest {

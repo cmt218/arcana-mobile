@@ -3,6 +3,7 @@ package org.arcana.mobile.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -85,8 +86,24 @@ class ProfileViewModel(
         }
     }
 
+    private var fetchJob: Job? = null
+
     fun load() {
-        viewModelScope.launch { fetch() }
+        launchFetch()
+    }
+
+    /** One fetch in flight at a time, as in [org.arcana.mobile.home.HomeViewModel]:
+     *  a later call cancels its predecessor so the newest response is the one
+     *  that lands. Both the session warm-load and the screen fire this. */
+    private fun launchFetch(onSettled: () -> Unit = {}) {
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch {
+            try {
+                fetch()
+            } finally {
+                onSettled()
+            }
+        }
     }
 
     /** Retry from the full-screen error. Never resets to Loading: the error
@@ -94,13 +111,7 @@ class ProfileViewModel(
     fun retry() {
         if (_retrying.value) return
         _retrying.value = true
-        viewModelScope.launch {
-            try {
-                fetch()
-            } finally {
-                _retrying.value = false
-            }
-        }
+        launchFetch { _retrying.value = false }
     }
 
     fun dismissRefreshFailed() {
@@ -119,14 +130,8 @@ class ProfileViewModel(
     /** Pull-to-refresh: re-fetch without flashing the shimmer, keeping the
      *  current content visible (and untouched on a transient failure). */
     fun refresh() {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            try {
-                fetch()
-            } finally {
-                _isRefreshing.value = false
-            }
-        }
+        _isRefreshing.value = true
+        launchFetch { _isRefreshing.value = false }
     }
 
     private suspend fun fetch() {
