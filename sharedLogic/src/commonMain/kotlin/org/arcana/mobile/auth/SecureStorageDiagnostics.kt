@@ -1,5 +1,7 @@
 package org.arcana.mobile.auth
 
+import kotlin.concurrent.Volatile
+
 /**
  * Observability seam for the platform secure store (iOS Keychain / Android
  * EncryptedSharedPreferences).
@@ -63,6 +65,7 @@ object SecureStorageDiagnostics {
      * constructed (see AppModule). Failures raised before that are still
      * recorded — they just aren't emitted as their own event.
      */
+    @Volatile
     var listener: ((Failure) -> Unit)? = null
 
     /**
@@ -75,7 +78,8 @@ object SecureStorageDiagnostics {
      * `base_url_override` miss to a forced logout, which is worse than reporting
      * nothing at all.
      */
-    private val lastFailureByKey = mutableMapOf<String, Failure>()
+    @Volatile
+    private var lastFailureByKey: Map<String, Failure> = emptyMap()
 
     /**
      * What the store last did for [key] — the field that answers "was it locked,
@@ -95,13 +99,16 @@ object SecureStorageDiagnostics {
      */
     fun report(op: String, key: String, status: Int, notable: Boolean = true) {
         val failure = Failure(op, key, status)
-        lastFailureByKey[key] = failure
+        // Reached from the HTTP engine's thread (token refresh) and from main at
+        // the same time. Snapshot-swapped rather than mutated: a racing report
+        // can lose a record, never tear the map.
+        lastFailureByKey = lastFailureByKey + (key to failure)
         if (notable) listener?.invoke(failure)
     }
 
     /** Test hook — clears state between tests. */
     fun resetForTest() {
-        lastFailureByKey.clear()
+        lastFailureByKey = emptyMap()
         listener = null
     }
 }
