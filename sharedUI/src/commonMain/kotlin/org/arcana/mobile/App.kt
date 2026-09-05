@@ -123,6 +123,12 @@ fun App(
             session.attemptFirstLaunchRecovery()
         }
 
+        // LaunchedEffect always runs once on first composition, so without this
+        // a signed-out cold start would tear down a session that never began —
+        // which wipes ReviewerRedirect's marker, the one thing it persists so a
+        // process death mid-review stays on staging. IosShellBridge guards the
+        // same way.
+        var wasAuthenticated by remember { mutableStateOf(isAuthenticated) }
         LaunchedEffect(isAuthenticated) {
             if (isAuthenticated) {
                 // completeSignup (or a normal login) flipped auth on — the
@@ -130,13 +136,14 @@ fun App(
                 // re-surface the signup screen; only notify the platform when
                 // a token was actually pending.
                 if (session.onAuthenticated()) onWelcomeTokenConsumed()
-            } else {
+            } else if (wasAuthenticated) {
                 authVm.resetState()
                 sessionStore.clear()
                 // Session-scoped singletons that outlive the ViewModelStore
                 // (FavoritesRepository) are wiped by the controller.
                 session.onSessionEnded()
             }
+            wasAuthenticated = isAuthenticated
         }
 
         LaunchedEffect(Unit) {
