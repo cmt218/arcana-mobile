@@ -89,12 +89,14 @@ val appModule = module {
         val storage = get<SecureStorage>()
         val favorites = get<FavoritesRepository>()
         val reviewerRedirect = get<ReviewerRedirect>()
+        val recentSearches = get<RecentSearches>()
         AppSessionController(
             isAuthenticated = get<ArcanaApiClient>().isAuthenticated,
             loadKey = storage::load,
             saveKey = storage::save,
             onSessionCleared = {
                 favorites.clear()
+                recentSearches.clear()
                 reviewerRedirect.onSessionEnded()
             },
             pendingTokenProvider = { PendingTokenSource().consumePendingToken() },
