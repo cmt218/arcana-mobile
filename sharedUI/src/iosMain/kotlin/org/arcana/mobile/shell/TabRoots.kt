@@ -46,6 +46,7 @@ import org.arcana.mobile.search.SearchScreen
 import org.arcana.mobile.search.searchHoldEnterTransition
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
+import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.koin.compose.koinInject
@@ -231,12 +232,12 @@ private fun TabRoot(
             NavHost(
                 navController = navController,
                 startDestination = start,
-                // Cross-platform-consistent 150ms fades — same values as
-                // MainScaffold; tab-sibling slides read wrong on iOS.
-                enterTransition = { fadeIn(tween(150)) },
-                exitTransition = { fadeOut(tween(150)) },
-                popEnterTransition = { fadeIn(tween(150)) },
-                popExitTransition = { fadeOut(tween(150)) },
+                // Shared with MainScaffold via the Dur.Quick motion token —
+                // tab-sibling slides read wrong on iOS.
+                enterTransition = { fadeIn(tween(Dur.Quick)) },
+                exitTransition = { fadeOut(tween(Dur.Quick)) },
+                popEnterTransition = { fadeIn(tween(Dur.Quick)) },
+                popExitTransition = { fadeOut(tween(Dur.Quick)) },
             ) {
                 builder(navController)
             }

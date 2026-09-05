@@ -17,6 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -35,6 +38,7 @@ import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.safeContentPadding
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -57,6 +61,14 @@ fun DeveloperSettingsScreen(
     val draft by viewModel.draft.collectAsState()
     val current by viewModel.currentUrl.collectAsState()
     val status by viewModel.status.collectAsState()
+
+    // Composition swap rather than a nav destination, so App.kt and the iOS
+    // AuthFlowRoot stay untouched and the page reaches both platforms.
+    var showDesignSystem by rememberSaveable { mutableStateOf(false) }
+    if (showDesignSystem) {
+        DesignSystemScreen(onBack = { showDesignSystem = false })
+        return
+    }
 
     Column(
         modifier = modifier
@@ -185,6 +197,17 @@ fun DeveloperSettingsScreen(
                 Overline(text = s.message.uppercase(), size = 12, color = Danger)
             }
         }
+
+        SectionRule(
+            label = "Reference",
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 16.dp),
+        )
+
+        TextLink(
+            label = "Design system",
+            onClick = { showDesignSystem = true },
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
 
         Spacer(Modifier.height(32.dp))
     }
