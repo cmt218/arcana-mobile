@@ -3,6 +3,7 @@
 package org.arcana.mobile.booking
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -254,6 +255,33 @@ class BookingViewModelTest {
     }
 
     // ── loaded flag (Item 2) --------------------------------------------------
+
+    /** The screen effect, pull-to-refresh and the failure snackbar's retry all
+     *  call load(), and the retry fires exactly when the network is worst. */
+    private class OutOfOrderApi(private val stale: MembershipMeDto, private val fresh: MembershipMeDto) :
+        BookingApi, MembershipApi {
+        var calls = 0
+        override suspend fun membershipMe(): MembershipMeDto {
+            calls++
+            // First call is the slow one, so without single-flight it lands last.
+            return if (calls == 1) { delay(100); stale } else { delay(10); fresh }
+        }
+        override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?): BookingDto =
+            throw IllegalStateException()
+        override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+    }
+
+    @Test fun `a superseded load cannot revert the credits a newer one showed`() = runTest {
+        val api = OutOfOrderApi(stale = me(remaining = 1), fresh = me(remaining = 9))
+        val vm = BookingViewModel(482, 5, false, api, api)
+
+        vm.load()
+        vm.load()
+        advanceUntilIdle()
+
+        assertEquals(9, vm.creditsRemaining.value)
+    }
 
     @Test fun `loaded is false before load and true after`() = runTest {
         val api = FakeApi(me())

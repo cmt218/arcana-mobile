@@ -3,6 +3,7 @@ package org.arcana.mobile.booking
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -159,8 +160,13 @@ class BookingViewModel(
         _membershipLoadFailed.value = false
     }
 
+    private var loadJob: Job? = null
+
+    /** Retry, pull-to-refresh and the screen's own effect all call this, so a
+     *  slower earlier run must not land after a newer one and revert the CTA. */
     fun load() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val meResult = runCatching { membershipApi.membershipMe() }
             // A failed fetch is not the same fact as "no membership", and
             // `getOrNull()` collapses the two. Keep the last known CTA rather
