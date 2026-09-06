@@ -1,15 +1,12 @@
 package org.arcana.mobile.theme
 
 import android.content.Context
-import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
-
-actual fun meshGradientSupported(): Boolean = Build.VERSION.SDK_INT >= 29
 
 @Composable
 actual fun systemAllowsAmbientMotion(): Boolean {

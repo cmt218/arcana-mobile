@@ -10,8 +10,6 @@ import platform.Foundation.NSProcessInfo
 import platform.Foundation.lowPowerModeEnabled
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 
-actual fun meshGradientSupported(): Boolean = true
-
 @Composable
 actual fun systemAllowsAmbientMotion(): Boolean =
     !UIAccessibilityIsReduceMotionEnabled() && !NSProcessInfo.processInfo.lowPowerModeEnabled

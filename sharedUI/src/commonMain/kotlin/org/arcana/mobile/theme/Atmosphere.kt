@@ -30,16 +30,15 @@ private const val ADVANCE_INTERVAL_MS = 29L
 /**
  * The living surface every Stone screen sits on. Fills its parent — place it as
  * the first child of a `Box` so screen content draws over it. Draws the spec's
- * 4×4 mesh in its own layer, advancing at most 30 times a second, drifts only
- * while resumed and while the system allows ambient motion, and falls back to a
- * still brush where the mesh is unproven. Deliberately no `preferredFrameRate`:
- * that vote reaches the whole scene's display link and would cap scrolling too.
+ * 4×4 mesh in its own layer, advancing at most 30 times a second, and drifts only
+ * while resumed and while the system allows ambient motion. Deliberately no
+ * `preferredFrameRate`: that vote reaches the whole scene's display link and would
+ * cap scrolling too.
  */
 @Composable
 fun Atmosphere(modifier: Modifier = Modifier) {
     val seeds = remember { atmosphereSeeds(Random.Default) }
     val motionAllowed = systemAllowsAmbientMotion()
-    val meshSupported = meshGradientSupported()
     var resumed by remember { mutableStateOf(true) }
     LifecycleResumeEffect(Unit) {
         resumed = true
@@ -47,11 +46,11 @@ fun Atmosphere(modifier: Modifier = Modifier) {
     }
 
     var time by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(motionAllowed, resumed, meshSupported) {
-        // Disallowed motion resets to base positions; a pause or the mesh-unsupported
-        // fallback just stops advancing, so withFrameNanos never schedules for either.
+    LaunchedEffect(motionAllowed, resumed) {
+        // Disallowed motion resets to base positions; a pause just stops advancing,
+        // so withFrameNanos never schedules for either.
         if (!motionAllowed) { time = 0f; return@LaunchedEffect }
-        if (!resumed || !meshSupported) return@LaunchedEffect
+        if (!resumed) return@LaunchedEffect
         var lastNanos = withFrameNanos { it }
         while (true) {
             delay(ADVANCE_INTERVAL_MS)
@@ -60,19 +59,6 @@ fun Atmosphere(modifier: Modifier = Modifier) {
                 lastNanos = now
             }
         }
-    }
-
-    if (!meshSupported) {
-        Box(
-            modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Stone, ATMOSPHERE_FALLBACK_MID, Stone)))
-                .drawWithCache {
-                    val vignette = vignetteBrush(size)
-                    onDrawBehind { if (vignette != null) drawRect(vignette) }
-                },
-        )
-        return
     }
 
     val mesh = remember { AtmosphereMesh(ATMOSPHERE_COLORS) }

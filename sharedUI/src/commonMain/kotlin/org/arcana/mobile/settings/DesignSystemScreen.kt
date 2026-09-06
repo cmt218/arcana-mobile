@@ -77,7 +77,6 @@ import org.arcana.mobile.theme.StoneAlpha72
 import org.arcana.mobile.theme.Success
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.theme.Wood
-import org.arcana.mobile.theme.meshGradientSupported
 import org.arcana.mobile.theme.systemAllowsAmbientMotion
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
@@ -426,11 +425,9 @@ private fun AtmosphereSample() {
             color = Ash,
             maxLines = 4,
         )
-        val mesh = meshGradientSupported()
         val motion = systemAllowsAmbientMotion()
         Caption(
             text = when {
-                !mesh -> "Still fallback · mesh unsupported on this OS version"
                 !motion -> "Still · Reduce Motion, Low Power Mode or animations off"
                 else -> "Live mesh · drifting"
             },
