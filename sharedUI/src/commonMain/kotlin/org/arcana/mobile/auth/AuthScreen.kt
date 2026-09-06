@@ -42,11 +42,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.ArcanaTextField
 import org.arcana.mobile.ui.BodyText
@@ -95,58 +95,60 @@ fun AuthScreen(
     // (the viewport pre-IME) so the weight-spacer keeps the footer at the
     // bottom with the keyboard down, and just below the fold (scroll-reachable)
     // with the keyboard up.
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Stone)
-            .safeContentPadding()
-            .padding(horizontal = 28.dp),
-    ) {
-        val viewportMinHeight = maxHeight
-        Column(
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
+        BoxWithConstraints(
             modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .imePadding(),
+                .fillMaxSize()
+                .safeContentPadding()
+                .padding(horizontal = 28.dp),
         ) {
+            val viewportMinHeight = maxHeight
             Column(
-                modifier = Modifier.heightIn(min = viewportMinHeight),
-                verticalArrangement = Arrangement.spacedBy(40.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
             ) {
-                Spacer(Modifier.height(8.dp))
-                // Hidden entry to Developer Settings: 10 taps on the wordmark.
-                // indication = null keeps it invisible (no ripple) to users.
-                WordmarkLogo(
-                    modifier = Modifier
-                        .height(20.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) {
-                            devTapCount++
-                            if (devTapCount >= 10) {
-                                devTapCount = 0
-                                showDeveloperSettings = true
-                            }
-                        },
-                    color = Moss,
-                )
-                HeaderBlock()
-                val errorState = uiState as? AuthUiState.Error
-                FormBlock(
-                    email = email, onEmailChange = { email = it },
-                    password = password, onPasswordChange = { password = it },
-                    errorMessage = errorState?.message,
-                    isCredentialError = errorState?.isCredentialError == true,
-                    onSubmit = onSubmit,
-                    onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
-                )
-                CtaBlock(
-                    loading = loading,
-                    onSubmit = onSubmit,
-                    onForgotPassword = { onForgotPassword(email.trim()) },
-                )
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(24.dp))
+                Column(
+                    modifier = Modifier.heightIn(min = viewportMinHeight),
+                    verticalArrangement = Arrangement.spacedBy(40.dp),
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    // Hidden entry to Developer Settings: 10 taps on the wordmark.
+                    // indication = null keeps it invisible (no ripple) to users.
+                    WordmarkLogo(
+                        modifier = Modifier
+                            .height(20.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                devTapCount++
+                                if (devTapCount >= 10) {
+                                    devTapCount = 0
+                                    showDeveloperSettings = true
+                                }
+                            },
+                        color = Moss,
+                    )
+                    HeaderBlock()
+                    val errorState = uiState as? AuthUiState.Error
+                    FormBlock(
+                        email = email, onEmailChange = { email = it },
+                        password = password, onPasswordChange = { password = it },
+                        errorMessage = errorState?.message,
+                        isCredentialError = errorState?.isCredentialError == true,
+                        onSubmit = onSubmit,
+                        onEmailNext = { focusManager.moveFocus(FocusDirection.Down) },
+                    )
+                    CtaBlock(
+                        loading = loading,
+                        onSubmit = onSubmit,
+                        onForgotPassword = { onForgotPassword(email.trim()) },
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(24.dp))
+                }
             }
         }
     }

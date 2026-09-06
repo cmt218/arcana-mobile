@@ -86,6 +86,7 @@ import org.arcana.mobile.data.isNotOpenYet
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
@@ -229,9 +230,9 @@ fun ScheduleScreen(
         isRefreshing = refreshing,
         onRefresh = viewModel::refresh,
         modifier = modifier
-            .fillMaxSize()
-            .background(Stone),
+            .fillMaxSize(),
     ) {
+        Atmosphere()
         when (val s = state) {
             is ScheduleUiState.Loading -> Box(Modifier.fillMaxSize().safeContentPadding()) {
                 LoadingPlaceholder()

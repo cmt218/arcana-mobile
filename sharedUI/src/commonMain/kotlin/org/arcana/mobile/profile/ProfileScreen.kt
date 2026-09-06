@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +53,7 @@ import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
@@ -147,6 +148,7 @@ fun ProfileScreen(
         // only place it lives, so a full replacement strands a member whose
         // server is unreachable.
         Box(modifier = modifier.fillMaxSize()) {
+            Atmosphere()
             FullScreenError(
                 type = err.type,
                 onRetry = vm::retry,
@@ -186,18 +188,10 @@ fun ProfileScreen(
         AccountItem(ArcanaIcons.Support, "Concierge", "", Moss, onClick = onOpenConcierge),
     )
 
-    // The body Stone fills everything; an Ink strip sits behind the top of
-    // the screen so the full-bleed hero AND any iOS overscroll above it both
-    // read as ink. The LazyColumn itself has a transparent background, so
-    // wherever items don't reach (empty trailing space, or below the last
-    // item) the Stone box bleeds through cleanly.
-    Box(modifier = modifier.fillMaxSize().background(Stone)) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.55f)
-                .background(Ink),
-        )
+    // The LazyColumn is transparent, so the atmosphere shows wherever items don't
+    // reach; the hero paints its own Ink upward so iOS top-overscroll reads as ink too.
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
         ArcanaPullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = vm::refresh,
@@ -404,12 +398,7 @@ fun ProfileScreen(
     }
 }
 
-/**
- * Wraps a LazyColumn item in a Stone-backed Box that also respects horizontal
- * display cutouts. Keeps the page's body content reading as Stone while the
- * full-bleed hero (and any iOS top-overscroll) reads as Ink, courtesy of the
- * Ink strip painted behind the LazyColumn in [ProfileScreen].
- */
+/** Wraps a LazyColumn item so it respects horizontal display cutouts; the body stays transparent over the atmosphere. */
 private fun androidx.compose.foundation.lazy.LazyListScope.stoneItem(
     content: @Composable BoxScope.() -> Unit,
 ) = item {
@@ -421,7 +410,6 @@ private fun StoneWrap(content: @Composable BoxScope.() -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Stone)
             .safeHorizontalPadding(),
         content = content,
     )
@@ -440,7 +428,8 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Ink),
+            // Ink extends two hero-heights upward (clipped by the list) so iOS top-overscroll stays ink.
+            .drawBehind { drawRect(Ink, topLeft = Offset(0f, -2f * size.height), size = Size(size.width, 3f * size.height)) },
     ) {
         Column(
             modifier = Modifier

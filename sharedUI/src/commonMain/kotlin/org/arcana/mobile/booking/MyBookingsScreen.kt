@@ -35,10 +35,11 @@ fun MyBookingsScreen(onClose: () -> Unit, onOpenClass: (Int) -> Unit) {
     val retrying by vm.retrying.collectAsState()
     var confirmCancel by remember { mutableStateOf<BookingDto?>(null) }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+    Atmosphere()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Stone)
             .safeContentPadding()
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
@@ -94,6 +95,7 @@ fun MyBookingsScreen(onClose: () -> Unit, onOpenClass: (Int) -> Unit) {
                 }
             }
         }
+    }
     }
 
     confirmCancel?.let { b ->

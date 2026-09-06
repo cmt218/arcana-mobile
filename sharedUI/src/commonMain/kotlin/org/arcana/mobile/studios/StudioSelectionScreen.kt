@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
@@ -73,7 +74,8 @@ fun StudioSelectionScreen(
     val saved = (state as? StudioSelectionUiState.Ready)?.saved == true
     LaunchedEffect(saved) { if (saved) onClose() }
 
-    Box(modifier = modifier.fillMaxSize().background(Stone)) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
         Column(
             modifier = Modifier.fillMaxSize().safeContentPadding(),
         ) {

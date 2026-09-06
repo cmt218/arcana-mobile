@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
@@ -138,10 +139,11 @@ private fun EditingForm(
     val focusManager = LocalFocusManager.current
     val f = editing.fields
 
+    Box(modifier = modifier.fillMaxSize()) {
+    Atmosphere()
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(Stone)
             .safeContentPadding()
             .padding(horizontal = 28.dp)
             // imePadding on the OUTER column (which holds both the pinned header
@@ -294,6 +296,7 @@ private fun EditingForm(
             Spacer(Modifier.height(40.dp))
         }
     }
+    }
 }
 
 /**
@@ -374,9 +377,10 @@ private val DateMaskVisualTransformation = object : VisualTransformation {
 @Composable
 private fun CenteredLoader(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.fillMaxSize().background(Stone),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        Atmosphere()
         Box(
             modifier = Modifier.size(56.dp).clip(CircleShape).background(Moss),
             contentAlignment = Alignment.Center,
@@ -408,6 +412,7 @@ private fun LoadErrorState(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
         FullScreenError(
             type = type,
             onRetry = onRetry,

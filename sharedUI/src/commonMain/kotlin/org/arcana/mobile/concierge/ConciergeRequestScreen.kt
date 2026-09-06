@@ -25,13 +25,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.networking.transportErrorCopy
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Paper
-import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaMultilineTextField
@@ -66,10 +66,11 @@ fun ConciergeRequestScreen(
         return
     }
 
+    Box(modifier = modifier.fillMaxSize()) {
+    Atmosphere()
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(Stone)
             .safeContentPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .verticalScroll(rememberScrollState())
@@ -130,15 +131,17 @@ fun ConciergeRequestScreen(
             )
         }
     }
+    }
 }
 
 /** Fire-and-forget success state. No history — the founders follow up directly. */
 @Composable
 private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+    Atmosphere()
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(Stone)
             .safeContentPadding()
             // Lift the Done button clear of the home indicator / bottom inset.
             .safeBottomBarPadding()
@@ -183,6 +186,7 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
         }
         Spacer(Modifier.weight(1f))
         PrimaryCta(label = "Done", onClick = onClose)
+    }
     }
 }
 

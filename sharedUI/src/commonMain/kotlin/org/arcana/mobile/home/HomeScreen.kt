@@ -44,6 +44,7 @@ import org.arcana.mobile.schedule.wallClock
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
@@ -118,6 +119,7 @@ fun HomeScreen(
         onRefresh = vm::refresh,
         modifier = Modifier.fillMaxSize(),
     ) {
+    Atmosphere()
     val s = state
     if (s is HomeUiState.Error) {
         // Replaces the list entirely rather than living inside it; still
@@ -132,7 +134,6 @@ fun HomeScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Stone)
             .safeContentPadding(),
         contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp + LocalFloatingBarInset.current),
     ) {

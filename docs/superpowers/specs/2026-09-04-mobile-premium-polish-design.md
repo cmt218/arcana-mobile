@@ -59,11 +59,13 @@ Tx = 6.0 s · s1,   Ty = 7.5 s · s2,   s1, s2 uniform in [0.8, 1.4],   φ unifo
 
 No colour flow: each point keeps its colour. The green lives in the middle and breathes there, which is the "centred, random but symmetric" movement Felicia chose from C.
 
-**Colour interpolation:** must not overshoot (overshoot draws visible ridges; that was D's "abrupt edges"). The prototype used a cubic B-spline. In Compose, start with `hasBicubicColor = false` (bilinear); if creases appear where points approach each other, switch to `true` and lower the centre contrast until the prototype screenshot is matched.
+**Colour interpolation:** must not overshoot (overshoot draws visible ridges; that was D's "abrupt edges"). The prototype used a cubic B-spline in sRGB, and so does the app: `theme/AtmosphereMesh.kt` is a port of the prototype's renderer (Catmull-Rom positions, B-spline colours, 14 segments per patch, 43×43 vertices) drawn through each platform's native `drawVertices`. Colours and indices are built once; only positions are rebuilt per frame.
 
-**Vignette:** a radial brush over the mesh, transparent inside 30% of the long side, `#C6CA91` at 6% alpha at the corners.
+**Why not `MeshGradientPainter` (decided 2026-09-06):** CMP 1.12.0's painter re-tessellates on the UI thread every draw at 8 px per segment and runs a colour-space conversion per vertex per frame (nine Oklab round trips for bilinear). Measured idle on the sign-in screen: 124 ms of UI-thread draw per frame on the Android emulator and 99% CPU on the iOS simulator; tessellating at 1/8 size still cost 6 ms per frame. The port costs 0.6 ms per frame on Android and about 2% of a core on iOS.
 
-**Frame rate and gates:** `Modifier.preferredFrameRate(30f)` on the atmosphere layer (common API in CMP 1.12, wired to CADisplayLink on iOS). Drive positions from `rememberInfiniteTransition`, which honours Reduce Motion on iOS through `MotionDurationScale`. Pause when the screen is not resumed (`LifecycleResumeEffect`). Render the still composition (same colours, base positions) under Reduce Motion and Low Power Mode (iOS `ProcessInfo.isLowPowerModeEnabled`; Android `PowerManager.isPowerSaveMode`).
+**Vignette:** the prototype's shader, as a radial brush over the mesh: `smoothstep(0.30, 0.95, d)` with `d` the distance from the centre in screen widths, `#C6CA91` at 6% alpha where it saturates (from 0.95 widths out, so every corner of a phone).
+
+**Frame rate and gates:** positions advance at most every 1/30 s from a `withFrameNanos` loop, in the atmosphere's own `graphicsLayer`, so nothing else redraws for it. No `Modifier.preferredFrameRate(30f)`: CMP 1.12 routes that vote into the scene's display link on iOS (and the window's frame-rate vote on ARR Android), which would hold every screen the surface sits on at 30 Hz, scrolling included. Pause when the screen is not resumed (`LifecycleResumeEffect`). Render the still composition (same colours, base positions) under Reduce Motion and Low Power Mode (iOS `ProcessInfo.isLowPowerModeEnabled`; Android `PowerManager.isPowerSaveMode`).
 
 **Android below API 29:** `drawVertices` is only documented as hardware accelerated from 29. Until an API 26 emulator run proves the mesh, those devices get a static vertical brush (`#F5F2ED` → `#EBEBD4` → `#F5F2ED`) plus the vignette.
 
