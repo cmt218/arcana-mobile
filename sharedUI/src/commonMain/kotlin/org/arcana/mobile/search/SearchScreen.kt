@@ -64,6 +64,7 @@ import org.arcana.mobile.schedule.ClassRow
 import org.arcana.mobile.schedule.EndOfListMarker
 import org.arcana.mobile.schedule.sessionTimeZone
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
@@ -166,6 +167,7 @@ fun SearchScreen(
                 // oval read as the pill itself growing, settling to Stone.
                 .background(lerp(Paper, Stone, progress)),
         ) {
+            Atmosphere(Modifier.matchParentSize().graphicsLayer { alpha = progress })
             Column(
                 Modifier
                     .fillMaxSize()

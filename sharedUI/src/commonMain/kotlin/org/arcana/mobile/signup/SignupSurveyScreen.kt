@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
@@ -75,10 +76,11 @@ fun SignupSurveyScreen(
         if (completed) onDone()
     }
 
+    Box(modifier = modifier.fillMaxSize()) {
+    Atmosphere()
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(Stone)
             .safeContentPadding()
             .padding(horizontal = 28.dp)
             .verticalScroll(rememberScrollState())
@@ -160,6 +162,7 @@ fun SignupSurveyScreen(
             TextLink(label = "Log in", onClick = onNavigateToLogin)
         }
         Spacer(Modifier.height(40.dp))
+    }
     }
 }
 

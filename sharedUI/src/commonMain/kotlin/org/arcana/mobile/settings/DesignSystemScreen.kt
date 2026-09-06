@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Clay
@@ -76,6 +77,8 @@ import org.arcana.mobile.theme.StoneAlpha72
 import org.arcana.mobile.theme.Success
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.theme.Wood
+import org.arcana.mobile.theme.meshGradientSupported
+import org.arcana.mobile.theme.systemAllowsAmbientMotion
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaTab
@@ -113,67 +116,72 @@ fun DesignSystemScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     BackHandler { onBack() }
     var demoTab by remember { mutableStateOf(ArcanaTab.Home) }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Stone)
-            .safeContentPadding(),
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 48.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item { Header(onBack) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Atmosphere()
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .safeContentPadding(),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 48.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item { Header(onBack) }
 
-        item { Section("Colours") }
-        COLOUR_GROUPS.forEach { group ->
-            item { GroupLabel(group.name) }
-            items(group.tokens) { token -> ColourRow(token.first, token.second) }
+            item { Section("Colours") }
+            COLOUR_GROUPS.forEach { group ->
+                item { GroupLabel(group.name) }
+                items(group.tokens) { token -> ColourRow(token.first, token.second) }
+            }
+
+            item { Section("Type") }
+            item { TypeSample("Display · 44sp") { Display("Display") } }
+            item { TypeSample("Heading2 · 28sp") { Heading2("Heading two") } }
+            item { TypeSample("Heading3 · 22sp") { Heading3("Heading three") } }
+            item { TypeSample("Overline · 11sp") { Overline("Overline") } }
+            item { TypeSample("BodyText · 15sp") { BodyText("The quick brown fox jumps over the lazy dog.") } }
+            item { TypeSample("AccentText · 20sp") { AccentText("Momentum, not stillness.") } }
+            item { TypeSample("Caption · 12sp") { Caption("Caption") } }
+
+            item { Section("Shapes") }
+            item { ShapesRow() }
+
+            item { Section("Depth") }
+            item { DepthGrid() }
+
+            item { Section("Atmosphere") }
+            item { AtmosphereSample() }
+
+            item { Section("Controls") }
+            item { ControlsBlock() }
+
+            item { Section("Motion") }
+            item { MotionTrack("Springs.Snappy", "damping 0.85 · stiffness medium", Springs.Snappy) }
+            item { MotionTrack("Springs.Settle", "damping 0.90 · stiffness medium low", Springs.Settle) }
+            item { MotionTrack("Springs.Kick", "damping 0.65 · stiffness medium", Springs.Kick) }
+            item {
+                MotionTrack(
+                    name = "tween(Dur.Medium, Ease.Emphasized)",
+                    values = "340ms · cubic 0.2 0 0 1",
+                    spec = tween(Dur.Medium, easing = Ease.Emphasized),
+                )
+            }
+            item {
+                MotionTrack(
+                    name = "tween(Dur.Short, Ease.Exit)",
+                    values = "200ms · cubic 0.3 0 0.8 0.15",
+                    spec = tween(Dur.Short, easing = Ease.Exit),
+                )
+            }
+
+            item { Section("Tab bar") }
+            item { TabBarSample(active = demoTab, onSelect = { demoTab = it }) }
+
+            item { Section("Haptics") }
+            item { HapticsGrid() }
+
+            item { Section("Loaders") }
+            item { LoadersRow() }
         }
-
-        item { Section("Type") }
-        item { TypeSample("Display · 44sp") { Display("Display") } }
-        item { TypeSample("Heading2 · 28sp") { Heading2("Heading two") } }
-        item { TypeSample("Heading3 · 22sp") { Heading3("Heading three") } }
-        item { TypeSample("Overline · 11sp") { Overline("Overline") } }
-        item { TypeSample("BodyText · 15sp") { BodyText("The quick brown fox jumps over the lazy dog.") } }
-        item { TypeSample("AccentText · 20sp") { AccentText("Momentum, not stillness.") } }
-        item { TypeSample("Caption · 12sp") { Caption("Caption") } }
-
-        item { Section("Shapes") }
-        item { ShapesRow() }
-
-        item { Section("Depth") }
-        item { DepthGrid() }
-
-        item { Section("Controls") }
-        item { ControlsBlock() }
-
-        item { Section("Motion") }
-        item { MotionTrack("Springs.Snappy", "damping 0.85 · stiffness medium", Springs.Snappy) }
-        item { MotionTrack("Springs.Settle", "damping 0.90 · stiffness medium low", Springs.Settle) }
-        item { MotionTrack("Springs.Kick", "damping 0.65 · stiffness medium", Springs.Kick) }
-        item {
-            MotionTrack(
-                name = "tween(Dur.Medium, Ease.Emphasized)",
-                values = "340ms · cubic 0.2 0 0 1",
-                spec = tween(Dur.Medium, easing = Ease.Emphasized),
-            )
-        }
-        item {
-            MotionTrack(
-                name = "tween(Dur.Short, Ease.Exit)",
-                values = "200ms · cubic 0.3 0 0.8 0.15",
-                spec = tween(Dur.Short, easing = Ease.Exit),
-            )
-        }
-
-        item { Section("Tab bar") }
-        item { TabBarSample(active = demoTab, onSelect = { demoTab = it }) }
-
-        item { Section("Haptics") }
-        item { HapticsGrid() }
-
-        item { Section("Loaders") }
-        item { LoadersRow() }
     }
 }
 
@@ -394,6 +402,42 @@ private fun DepthTile(
         )
         Caption(text = name, color = Ink)
         Caption(text = values, size = 10, color = Ash2)
+    }
+}
+
+// ---- Atmosphere ----
+
+@Composable
+private fun AtmosphereSample() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .clip(ArcanaShapes.Card)
+                .border(1.dp, Mist, ArcanaShapes.Card),
+        ) {
+            Atmosphere()
+        }
+        Caption(
+            text = "16-point mesh · #EEEDDC #EBEBD4 #D3D5AB #C5CCA6 · amplitude 0.15 · " +
+                "periods 6.0s and 7.5s scaled 0.8-1.4 · vignette 6%",
+            size = 12,
+            color = Ash,
+            maxLines = 4,
+        )
+        val mesh = meshGradientSupported()
+        val motion = systemAllowsAmbientMotion()
+        Caption(
+            text = when {
+                !mesh -> "Still fallback · mesh unsupported on this OS version"
+                !motion -> "Still · Reduce Motion, Low Power Mode or animations off"
+                else -> "Live mesh · drifting"
+            },
+            size = 12,
+            color = Ash2,
+            maxLines = 2,
+        )
     }
 }
 

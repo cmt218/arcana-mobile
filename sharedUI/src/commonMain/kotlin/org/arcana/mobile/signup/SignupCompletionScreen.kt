@@ -47,12 +47,12 @@ import org.arcana.mobile.ui.ArcanaDropdownField
 import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaTextField
@@ -145,191 +145,193 @@ private fun EditingForm(
     // height so the inner column's heightIn(min = …) keeps the weight-pushed
     // footer at the fold; imePadding shrinks the scroll viewport so fields stay
     // reachable above the keyboard. Copied from AuthScreen.
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Stone)
-            .safeContentPadding()
-            .padding(horizontal = 28.dp),
-    ) {
-        val viewportMinHeight = maxHeight
-        Column(
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
+        BoxWithConstraints(
             modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .imePadding()
-                // Own the hardware Tab key so it advances exactly one field. On the
-                // iOS simulator the platform ALSO traverses focus on Tab, which —
-                // combined with each field's onNext moveFocus — advanced two fields
-                // per press. Consuming the event here makes us the single mover; the
-                // soft-keyboard "Next" path (onImeAction) is untouched for phones.
-                .onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.Tab) {
-                        focusManager.moveFocus(
-                            if (event.isShiftPressed) FocusDirection.Up else FocusDirection.Down
-                        )
-                        true
-                    } else {
-                        false
-                    }
-                },
+                .fillMaxSize()
+                .safeContentPadding()
+                .padding(horizontal = 28.dp),
         ) {
-            Column(modifier = Modifier.heightIn(min = viewportMinHeight)) {
-                Spacer(Modifier.height(8.dp))
-                // Wordmark only — the step stamp was removed now that signup
-                // completion is a single screen (no multi-step flow to count).
-                WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
+            val viewportMinHeight = maxHeight
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    // Own the hardware Tab key so it advances exactly one field. On the
+                    // iOS simulator the platform ALSO traverses focus on Tab, which —
+                    // combined with each field's onNext moveFocus — advanced two fields
+                    // per press. Consuming the event here makes us the single mover; the
+                    // soft-keyboard "Next" path (onImeAction) is untouched for phones.
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.Tab) {
+                            focusManager.moveFocus(
+                                if (event.isShiftPressed) FocusDirection.Up else FocusDirection.Down
+                            )
+                            true
+                        } else {
+                            false
+                        }
+                    },
+            ) {
+                Column(modifier = Modifier.heightIn(min = viewportMinHeight)) {
+                    Spacer(Modifier.height(8.dp))
+                    // Wordmark only — the step stamp was removed now that signup
+                    // completion is a single screen (no multi-step flow to count).
+                    WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
 
-                Spacer(Modifier.height(44.dp))
-                // Header.
-                Overline(text = "Create your login", color = Moss)
-                Spacer(Modifier.height(14.dp))
-                Display(text = "Claim\nyour\nname.", size = 52, color = Ink)
+                    Spacer(Modifier.height(44.dp))
+                    // Header.
+                    Overline(text = "Create your login", color = Moss)
+                    Spacer(Modifier.height(14.dp))
+                    Display(text = "Claim\nyour\nname.", size = 52, color = Ink)
 
-                // Non-field failures (network / server / unrecognized) surface
-                // here so the member keeps everything they typed.
-                val formError = editing.formError
-                if (formError != null) {
-                    Spacer(Modifier.height(20.dp))
-                    FormErrorBanner(message = formError)
-                }
-
-                Spacer(Modifier.height(32.dp))
-                // Fields (and the locked email row when present), gap ~26.
-                Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                    if (lockedEmail != null) {
-                        LockedEmailRow(email = lockedEmail)
+                    // Non-field failures (network / server / unrecognized) surface
+                    // here so the member keeps everything they typed.
+                    val formError = editing.formError
+                    if (formError != null) {
+                        Spacer(Modifier.height(20.dp))
+                        FormErrorBanner(message = formError)
                     }
-                    ArcanaTextField(
-                        label = "First name",
-                        value = editing.firstName,
-                        onValueChange = onFirstNameChange,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        capitalization = KeyboardCapitalization.Words,
-                        contentType = ContentType.PersonFirstName,
-                    )
-                    ArcanaTextField(
-                        label = "Last name",
-                        value = editing.lastName,
-                        onValueChange = onLastNameChange,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        capitalization = KeyboardCapitalization.Words,
-                        contentType = ContentType.PersonLastName,
-                    )
-                    ArcanaTextField(
-                        label = "Phone number",
-                        value = editing.phoneNumber,
-                        onValueChange = onPhoneNumberChange,
-                        keyboardType = KeyboardType.Phone,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.PhoneNumber,
-                        error = editing.phoneError,
-                    )
-                    ArcanaDropdownField(
-                        label = "Gender",
-                        selectedValue = editing.gender,
-                        options = GENDER_OPTIONS,
-                        onSelect = onGenderChange,
-                    )
-                    ArcanaTextField(
-                        label = "Birthday",
-                        value = editing.birthday,
-                        onValueChange = onBirthdayChange,
-                        placeholder = "MM/DD/YYYY",
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        visualTransformation = DateMaskVisualTransformation,
-                        error = editing.birthdayError,
-                    )
-                    ArcanaTextField(
-                        label = "Street address",
-                        value = editing.addressLine1,
-                        onValueChange = onAddressLine1Change,
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.AddressStreet,
-                    )
-                    ArcanaTextField(
-                        label = "Apt / unit (optional)",
-                        value = editing.addressLine2,
-                        onValueChange = onAddressLine2Change,
-                        capitalization = KeyboardCapitalization.Characters,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.AddressAuxiliaryDetails,
-                    )
-                    ArcanaTextField(
-                        label = "City",
-                        value = editing.city,
-                        onValueChange = onCityChange,
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.AddressLocality,
-                    )
-                    ArcanaTextField(
-                        label = "State",
-                        value = editing.state,
-                        onValueChange = onStateChange,
-                        capitalization = KeyboardCapitalization.Characters,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.AddressRegion,
-                    )
-                    ArcanaTextField(
-                        label = "ZIP code",
-                        value = editing.postalCode,
-                        onValueChange = onPostalCodeChange,
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.PostalCode,
-                    )
-                    ArcanaTextField(
-                        label = "Password",
-                        value = editing.password,
-                        onValueChange = onPasswordChange,
-                        placeholder = "At least 8 characters",
-                        secure = true,
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Next,
-                        onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        contentType = ContentType.NewPassword,
-                        error = editing.passwordError,
-                    )
-                    ArcanaTextField(
-                        label = "Confirm password",
-                        value = editing.confirmPassword,
-                        onValueChange = onConfirmPasswordChange,
-                        placeholder = "Re-enter your password",
-                        secure = true,
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                        onImeAction = onSubmit,
-                        contentType = ContentType.NewPassword,
-                    )
-                }
 
-                Spacer(Modifier.height(30.dp))
-                // CTA — loading treatment mirrors AuthScreen's CtaBlock.
-                if (editing.isSubmitting) {
-                    LoadingPill()
-                } else {
-                    PrimaryCta(
-                        label = "Create account",
-                        onClick = onSubmit,
-                        enabled = canSubmit,
-                    )
-                }
+                    Spacer(Modifier.height(32.dp))
+                    // Fields (and the locked email row when present), gap ~26.
+                    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                        if (lockedEmail != null) {
+                            LockedEmailRow(email = lockedEmail)
+                        }
+                        ArcanaTextField(
+                            label = "First name",
+                            value = editing.firstName,
+                            onValueChange = onFirstNameChange,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            capitalization = KeyboardCapitalization.Words,
+                            contentType = ContentType.PersonFirstName,
+                        )
+                        ArcanaTextField(
+                            label = "Last name",
+                            value = editing.lastName,
+                            onValueChange = onLastNameChange,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            capitalization = KeyboardCapitalization.Words,
+                            contentType = ContentType.PersonLastName,
+                        )
+                        ArcanaTextField(
+                            label = "Phone number",
+                            value = editing.phoneNumber,
+                            onValueChange = onPhoneNumberChange,
+                            keyboardType = KeyboardType.Phone,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.PhoneNumber,
+                            error = editing.phoneError,
+                        )
+                        ArcanaDropdownField(
+                            label = "Gender",
+                            selectedValue = editing.gender,
+                            options = GENDER_OPTIONS,
+                            onSelect = onGenderChange,
+                        )
+                        ArcanaTextField(
+                            label = "Birthday",
+                            value = editing.birthday,
+                            onValueChange = onBirthdayChange,
+                            placeholder = "MM/DD/YYYY",
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            visualTransformation = DateMaskVisualTransformation,
+                            error = editing.birthdayError,
+                        )
+                        ArcanaTextField(
+                            label = "Street address",
+                            value = editing.addressLine1,
+                            onValueChange = onAddressLine1Change,
+                            capitalization = KeyboardCapitalization.Words,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.AddressStreet,
+                        )
+                        ArcanaTextField(
+                            label = "Apt / unit (optional)",
+                            value = editing.addressLine2,
+                            onValueChange = onAddressLine2Change,
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.AddressAuxiliaryDetails,
+                        )
+                        ArcanaTextField(
+                            label = "City",
+                            value = editing.city,
+                            onValueChange = onCityChange,
+                            capitalization = KeyboardCapitalization.Words,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.AddressLocality,
+                        )
+                        ArcanaTextField(
+                            label = "State",
+                            value = editing.state,
+                            onValueChange = onStateChange,
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.AddressRegion,
+                        )
+                        ArcanaTextField(
+                            label = "ZIP code",
+                            value = editing.postalCode,
+                            onValueChange = onPostalCodeChange,
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.PostalCode,
+                        )
+                        ArcanaTextField(
+                            label = "Password",
+                            value = editing.password,
+                            onValueChange = onPasswordChange,
+                            placeholder = "At least 8 characters",
+                            secure = true,
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                            contentType = ContentType.NewPassword,
+                            error = editing.passwordError,
+                        )
+                        ArcanaTextField(
+                            label = "Confirm password",
+                            value = editing.confirmPassword,
+                            onValueChange = onConfirmPasswordChange,
+                            placeholder = "Re-enter your password",
+                            secure = true,
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                            onImeAction = onSubmit,
+                            contentType = ContentType.NewPassword,
+                        )
+                    }
 
-                Spacer(Modifier.weight(1f))
-                // Guaranteed breathing room below the CTA so it never sits glued to
-                // the bottom edge / gesture bar once the form is tall enough to scroll.
-                Spacer(Modifier.height(40.dp))
+                    Spacer(Modifier.height(30.dp))
+                    // CTA — loading treatment mirrors AuthScreen's CtaBlock.
+                    if (editing.isSubmitting) {
+                        LoadingPill()
+                    } else {
+                        PrimaryCta(
+                            label = "Create account",
+                            onClick = onSubmit,
+                            enabled = canSubmit,
+                        )
+                    }
+
+                    Spacer(Modifier.weight(1f))
+                    // Guaranteed breathing room below the CTA so it never sits glued to
+                    // the bottom edge / gesture bar once the form is tall enough to scroll.
+                    Spacer(Modifier.height(40.dp))
+                }
             }
         }
     }
@@ -441,10 +443,10 @@ private fun LoadingPill() {
 private fun SuccessLoader(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .fillMaxSize()
-            .background(Stone),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        Atmosphere()
         Box(
             modifier = Modifier
                 .size(56.dp)
@@ -494,25 +496,27 @@ private fun ErrorState(
         SignupErrorKind.TokenExpired -> "Looks like this link's already been used."
         SignupErrorKind.AlreadyHasAccount -> "You already have an account with this email."
     }
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Stone)
-            .safeContentPadding()
-            .padding(horizontal = 28.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.Start,
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeContentPadding()
+                .padding(horizontal = 28.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Overline(text = "Already signed up", color = Moss)
-            Spacer(Modifier.height(14.dp))
-            Display(text = "Log in\ninstead.", size = 44, color = Ink)
-            Spacer(Modifier.height(18.dp))
-            BodyText(text = body, size = 15, color = Ash)
-            Spacer(Modifier.height(32.dp))
-            PrimaryCta(label = "Log in", onClick = onNavigateToLogin)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                Overline(text = "Already signed up", color = Moss)
+                Spacer(Modifier.height(14.dp))
+                Display(text = "Log in\ninstead.", size = 44, color = Ink)
+                Spacer(Modifier.height(18.dp))
+                BodyText(text = body, size = 15, color = Ash)
+                Spacer(Modifier.height(32.dp))
+                PrimaryCta(label = "Log in", onClick = onNavigateToLogin)
+            }
         }
     }
 }

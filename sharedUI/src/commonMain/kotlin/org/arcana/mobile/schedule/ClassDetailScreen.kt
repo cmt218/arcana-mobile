@@ -63,6 +63,7 @@ import org.arcana.mobile.booking.outsideWindowCopy
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -224,7 +225,8 @@ fun ClassDetailScreen(
     // Outer Box on Stone — children handle their own safe-area padding so the
     // sticky CTA can sit flush with the bottom safe inset while the list scrolls
     // edge-to-edge underneath it.
-    Box(modifier = modifier.fillMaxSize().background(Stone)) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
         when (val s = state) {
             ClassDetailUiState.Loading -> LoadingBlock(onClose)
             is ClassDetailUiState.Error -> ErrorBlock(
@@ -1105,14 +1107,14 @@ private fun StickyReserveCta(
                 .height(40.dp)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Stone),
+                        colors = listOf(Color.Transparent, Stone.copy(alpha = 0.92f)),
                     ),
                 ),
         )
         Box(
             Modifier
                 .fillMaxWidth()
-                .background(Stone)
+                .background(Stone.copy(alpha = 0.92f))
                 .padding(horizontal = 24.dp, vertical = 8.dp),
         ) {
             if (loading) {
@@ -1181,7 +1183,7 @@ private fun StickyReserveCta(
         }
         // Home-indicator inset — paint Stone beneath so the system gesture
         // bar reads as part of the CTA surface, not a glitch.
-        Box(Modifier.fillMaxWidth().background(Stone).safeBottomBarPadding())
+        Box(Modifier.fillMaxWidth().background(Stone.copy(alpha = 0.92f)).safeBottomBarPadding())
     }
 }
 

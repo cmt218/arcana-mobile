@@ -32,11 +32,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.ArcanaTextField
 import org.arcana.mobile.ui.BodyText
@@ -56,68 +56,70 @@ fun PasswordResetRequestScreen(
     val submit by viewModel.submitState.collectAsState()
     val focusManager = LocalFocusManager.current
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Stone)
-            .safeContentPadding()
-            .padding(horizontal = 28.dp),
-    ) {
-        val viewportMinHeight = maxHeight
-        Column(
+    Box(modifier = modifier.fillMaxSize()) {
+        Atmosphere()
+        BoxWithConstraints(
             modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .imePadding(),
+                .fillMaxSize()
+                .safeContentPadding()
+                .padding(horizontal = 28.dp),
         ) {
+            val viewportMinHeight = maxHeight
             Column(
-                modifier = Modifier.heightIn(min = viewportMinHeight),
-                verticalArrangement = Arrangement.spacedBy(36.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
             ) {
-                Spacer(Modifier.height(8.dp))
-                WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
+                Column(
+                    modifier = Modifier.heightIn(min = viewportMinHeight),
+                    verticalArrangement = Arrangement.spacedBy(36.dp),
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    WordmarkLogo(modifier = Modifier.height(20.dp), color = Moss)
 
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Overline(text = "Password reset", color = Moss)
-                    Display(text = "Regain\naccess.", size = 52, color = Ink)
-                }
-
-                if (submit is PasswordResetSubmit.Sent) {
-                    SentBlock(onBackToLogin = onBackToLogin)
-                } else {
-                    ArcanaTextField(
-                        label = "Email",
-                        value = email,
-                        onValueChange = viewModel::updateEmail,
-                        placeholder = "you@domain.co",
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Done,
-                        onImeAction = {
-                            focusManager.moveFocus(FocusDirection.Down)
-                            viewModel.submit()
-                        },
-                        contentType = ContentType.EmailAddress,
-                    )
-                    if (submit is PasswordResetSubmit.Failed) {
-                        BodyText(
-                            text = "Couldn't reach the server. Check your connection and try again.",
-                            size = 14,
-                            color = Danger,
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Overline(text = "Password reset", color = Moss)
+                        Display(text = "Regain\naccess.", size = 52, color = Ink)
                     }
-                    if (submit is PasswordResetSubmit.Submitting) {
-                        LoadingPill()
+
+                    if (submit is PasswordResetSubmit.Sent) {
+                        SentBlock(onBackToLogin = onBackToLogin)
                     } else {
-                        PrimaryCta(
-                            label = "Send reset email",
-                            onClick = viewModel::submit,
-                            enabled = viewModel.canSubmit,
+                        ArcanaTextField(
+                            label = "Email",
+                            value = email,
+                            onValueChange = viewModel::updateEmail,
+                            placeholder = "you@domain.co",
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Done,
+                            onImeAction = {
+                                focusManager.moveFocus(FocusDirection.Down)
+                                viewModel.submit()
+                            },
+                            contentType = ContentType.EmailAddress,
                         )
+                        if (submit is PasswordResetSubmit.Failed) {
+                            BodyText(
+                                text = "Couldn't reach the server. Check your connection and try again.",
+                                size = 14,
+                                color = Danger,
+                            )
+                        }
+                        if (submit is PasswordResetSubmit.Submitting) {
+                            LoadingPill()
+                        } else {
+                            PrimaryCta(
+                                label = "Send reset email",
+                                onClick = viewModel::submit,
+                                enabled = viewModel.canSubmit,
+                            )
+                        }
+                        BackLink(onBackToLogin = onBackToLogin)
                     }
-                    BackLink(onBackToLogin = onBackToLogin)
-                }
 
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(24.dp))
+                }
             }
         }
     }

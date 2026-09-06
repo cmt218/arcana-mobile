@@ -216,13 +216,13 @@ fun FullScreenError(
     // heightIn(min) + Arrangement.Center rather than weight(1f) spacers: weights
     // cannot go negative, so a short viewport (landscape) clipped the retry
     // button. Centres while there is room, scrolls once there isn't.
-    BoxWithConstraints(modifier = modifier.fillMaxSize().background(Stone)) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val viewport = maxHeight
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                // Between background and padding so Stone still bleeds to the edge
+                // Before the padding so the surface behind still bleeds to the edge
                 // while no glyph lands under a landscape cutout. Consumes, so it is
                 // a no-op where a caller already applied it.
                 .safeHorizontalPadding()
