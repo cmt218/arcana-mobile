@@ -3,9 +3,6 @@ package org.arcana.mobile.theme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Canvas
 
-/** False where the mesh path is unproven (Android below 10 draws vertices in software). */
-expect fun meshGradientSupported(): Boolean
-
 /**
  * False under Reduce Motion, Low Power Mode, or animations turned off. Read on every
  * recomposition and not observed, so the caller must recompose to see a change; do not

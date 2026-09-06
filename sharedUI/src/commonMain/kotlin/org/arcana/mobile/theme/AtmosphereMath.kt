@@ -32,9 +32,6 @@ val ATMOSPHERE_COLORS: List<Color> = listOf(
     LimeWhisper, LimeTint, LimeTint, LimeWhisper,
 )
 
-/** The fallback brush's middle stop; must stay equal to the mesh's own tint. */
-val ATMOSPHERE_FALLBACK_MID: Color = LimeTint
-
 val ATMOSPHERE_VIGNETTE = Color(0xFFC6CA91)   // Stone + LimeDeep 50%
 const val ATMOSPHERE_VIGNETTE_ALPHA = 0.06f
 

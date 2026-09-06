@@ -67,7 +67,7 @@ No colour flow: each point keeps its colour. The green lives in the middle and b
 
 **Frame rate and gates:** positions advance at most every 1/30 s from a `withFrameNanos` loop, in the atmosphere's own `graphicsLayer`, so nothing else redraws for it. No `Modifier.preferredFrameRate(30f)`: CMP 1.12 routes that vote into the scene's display link on iOS (and the window's frame-rate vote on ARR Android), which would hold every screen the surface sits on at 30 Hz, scrolling included. Pause when the screen is not resumed (`LifecycleResumeEffect`). Render the still composition (same colours, base positions) under Reduce Motion and Low Power Mode (iOS `ProcessInfo.isLowPowerModeEnabled`; Android `PowerManager.isPowerSaveMode`).
 
-**Android below API 29:** `drawVertices` is only documented as hardware accelerated from 29. Until an API 26 emulator run proves the mesh, those devices get a static vertical brush (`#F5F2ED` → `#EBEBD4` → `#F5F2ED`) plus the vignette.
+**Android floor:** `drawVertices` is only hardware accelerated from API 29, so minSdk is 29 (raised from 24 on 2026-09-06; PostHog showed no member below Android 11 in 90 days). There is no still-brush fallback.
 
 **Where it goes:** every Stone root. Home, Book, the You body below the Ink hero, Search, Class detail, My bookings, Studio selection, Edit profile, Concierge, and the signed-out screens (Auth, password reset, survey, claim). Developer settings stays plain. Sheets sit on top as Paper surfaces. On iOS it lives inside each tab's Compose root, under the native glass bar. Screens opt in by replacing `.background(Stone)` with the composable.
 
@@ -134,7 +134,7 @@ Dark atmosphere; grain; any tab-content motion; any full-screen celebration; sha
 ## Verification
 
 - Compile both targets after every `commonMain` change; run both simulators for every visual change (`feedback_verify_on_both_platforms`).
-- Atmosphere ships behind the `docs/perf` scroll protocol: flick and slow-drag recordings with it on and off on the iPhone 17 Pro simulator and on the oldest physical iPhone available; no measurable change in dropped frames is the bar. Plus an API 26 emulator run for the fallback branch.
+- Atmosphere ships behind the `docs/perf` scroll protocol: flick and slow-drag recordings with it on and off on the iPhone 17 Pro simulator and on the oldest physical iPhone available; no measurable change in dropped frames is the bar.
 - Every new all-caps label in a filled control uses `opticallyCentredCaps` and is checked with `tools/regression/measure_centering.py` (under 0.5 pt).
 - `docs/regression/inventory.md` is updated in every phase; `tools/regression/self_audit.sh` prints `FINDINGS: 0`.
 - Each phase ends with screenshots from both platforms in its report, and the tree left uncommitted until Cole says go.

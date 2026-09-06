@@ -31,11 +31,6 @@ class AtmosphereMathTest {
     }
 
     @Test
-    fun fallback_mid_color_matches_the_mesh_tint() {
-        assertEquals(Color(0xFFEBEBD4), ATMOSPHERE_FALLBACK_MID)
-    }
-
-    @Test
     fun corners_never_move() {
         for (t in listOf(0f, 1.7f, 33f)) {
             assertEquals(Offset(0f, 0f), atmosphereControlPoint(0, 0, t, seeds[0]))
