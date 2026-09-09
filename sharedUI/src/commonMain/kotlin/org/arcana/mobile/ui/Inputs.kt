@@ -129,7 +129,7 @@ fun ArcanaTextField(
     val accent = when {
         error != null -> Danger
         focused -> Moss
-        else -> Mist
+        else -> Ash
     }
     val labelColor = when {
         error != null -> Danger
@@ -222,7 +222,7 @@ fun ArcanaMultilineTextField(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val accent = if (focused) Moss else Mist
+    val accent = if (focused) Moss else Ash
 
     Column(modifier = modifier) {
         Overline(text = label, color = if (focused) Moss else Ash)
@@ -297,7 +297,7 @@ fun ArcanaDropdownField(
     val accent = when {
         error != null -> Danger
         expanded -> Moss
-        else -> Mist
+        else -> Ash
     }
     val labelColor = when {
         error != null -> Danger
@@ -371,7 +371,9 @@ private fun BodyTextPlaceholder(text: String) {
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Normal,
             fontSize = 18.sp,
-            color = Ash2,
+            // Ash, not Ash2: over the atmosphere the lighter muted tone was
+            // barely legible. Still clearly a placeholder against the Ink input.
+            color = Ash,
         ),
     )
 }

@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
  * Padding for screen-level content above the bottom tab bar. Honours the status
  * bar AND any display cutout (camera punch-out) on the horizontal edges, so
  * landscape orientations don't end up drawing under the cutout. The bottom
- * inset is left to [androidx.compose.material3.Scaffold] / the tab bar.
+ * inset is left to the floating tab bar (see `LocalFloatingBarInset`).
  */
 @Composable
 fun Modifier.safeContentPadding(): Modifier = this.windowInsetsPadding(

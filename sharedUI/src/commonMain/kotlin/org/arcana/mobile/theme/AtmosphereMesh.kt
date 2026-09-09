@@ -4,9 +4,10 @@ import androidx.compose.ui.graphics.Color
 import kotlin.math.roundToInt
 
 /*
- * A port of the prototype renderer the treatment was chosen on: Catmull-Rom positions and
- * B-spline colours (which cannot overshoot) over the 4×4 grid, 14 segments per patch.
- * Colours and indices never change, so only positions are rebuilt per frame.
+ * A port of the prototype renderer the treatment was chosen on: Catmull-Rom positions (smooth
+ * drift) and bilinear colours (which pass through the control colours and cannot overshoot) over
+ * the 4×4 grid, 14 segments per patch. Colours and indices never change, so only positions are
+ * rebuilt per frame.
  */
 internal const val MESH_SEGMENTS_PER_PATCH = 14
 internal const val MESH_SIDE = (ATMOSPHERE_GRID - 1) * MESH_SEGMENTS_PER_PATCH + 1
@@ -106,10 +107,14 @@ private class SampleBasis {
             positionWeight[s * 4 + 1] = 0.5f * (3f * t3 - 5f * t2 + 2f)
             positionWeight[s * 4 + 2] = 0.5f * (-3f * t3 + 4f * t2 + t)
             positionWeight[s * 4 + 3] = 0.5f * (t3 - t2)
-            colorWeight[s * 4] = u * u * u / 6f
-            colorWeight[s * 4 + 1] = (3f * t3 - 6f * t2 + 4f) / 6f
-            colorWeight[s * 4 + 2] = (-3f * t3 + 3f * t2 + 3f * t + 1f) / 6f
-            colorWeight[s * 4 + 3] = t3 / 6f
+            // Bilinear colours (O's spec): linear blend between the two control
+            // points the sample sits between, so the grid colours render at full
+            // value at the control points instead of the B-spline's washed-out
+            // approximation. Linear can't overshoot, so no colour ridges either.
+            colorWeight[s * 4] = 0f
+            colorWeight[s * 4 + 1] = u
+            colorWeight[s * 4 + 2] = t
+            colorWeight[s * 4 + 3] = 0f
         }
     }
 }

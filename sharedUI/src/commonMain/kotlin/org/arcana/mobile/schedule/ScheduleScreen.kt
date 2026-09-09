@@ -1,35 +1,45 @@
 package org.arcana.mobile.schedule
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,7 +62,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
@@ -60,9 +69,14 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -73,6 +87,7 @@ import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.datetime.IllegalTimeZoneException
 import kotlinx.datetime.LocalDate
@@ -84,18 +99,22 @@ import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.isNotOpenYet
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
+import org.arcana.mobile.theme.Dur
+import org.arcana.mobile.theme.Ease
+import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.MossLight
-import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Surface
+import org.arcana.mobile.theme.Springs
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
@@ -110,15 +129,22 @@ import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.FilterChip
 import org.arcana.mobile.ui.FlowChipRow
 import org.arcana.mobile.ui.FullScreenError
-import org.arcana.mobile.ui.InlineError
 import org.arcana.mobile.ui.Overline
-import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioAccordionCard
 import org.arcana.mobile.ui.StudioLocationRow
+import org.arcana.mobile.ui.TransientSurface
+import org.arcana.mobile.ui.cardShadow
+import org.arcana.mobile.ui.controlShadow
+import org.arcana.mobile.ui.opticallyCentredCaps
+import org.arcana.mobile.ui.pressable
+import org.arcana.mobile.ui.pressedShade
+import org.arcana.mobile.ui.rememberHaptics
+import org.arcana.mobile.ui.rememberPressed
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
+import org.arcana.mobile.ui.softShadow
 import org.koin.compose.viewmodel.koinViewModel
 
 // ── Constants -----------------------------------------------------------------
@@ -131,27 +157,27 @@ private const val SCARCE_THRESHOLD = 2
 /** Fetch the next page once the user scrolls within this many items of the
  *  bottom — early enough that pages usually land before the footer loader
  *  is even visible. */
-private const val LOAD_MORE_LOOKAHEAD = 10
-
-/** Minimum horizontal drag distance to flip days via a swipe. */
-private val DAY_SWIPE_THRESHOLD = 56.dp
+internal const val LOAD_MORE_LOOKAHEAD = 10
 
 /** Fixed width of the Schedule row's left (time) column. Holds the HH:MM time
  *  and the width-filling booking-status pill, so every row's content starts at
  *  the same x whether or not it carries a REQUESTED / CONFIRMED pill. */
-private val SCHEDULE_TIME_COL_WIDTH = 64.dp
+internal val SCHEDULE_TIME_COL_WIDTH = 64.dp
 
-/** Class-list fade on day change: start alpha + duration. */
-private const val DAY_FADE_FROM = 0.4f
-private const val DAY_FADE_MS = 200
+/** Absolute ceiling for the filter popover card, regardless of device. */
+private val FILTER_PANEL_MAX = 340.dp
+
+/** Slice of the schedule kept visible below the popover, so it reads as an
+ *  overlay and clears Android's floating tab bar. */
+private val PAGER_MIN_VISIBLE = 120.dp
 
 
 // ── Display helpers -----------------------------------------------------------
 
-private fun titleCase(name: String): String =
+internal fun titleCase(name: String): String =
     name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
-private fun LocalDate.weekdayAbbr(): String = dayOfWeek.name.take(3)
+internal fun LocalDate.weekdayAbbr(): String = dayOfWeek.name.take(3)
 
 /** "06:15" from a LocalTime — commonMain-safe (no String.format dependency). */
 private fun LocalTime.hhmm(): String =
@@ -188,11 +214,11 @@ private fun ScheduleSessionDto.capacityTier(notOpen: Boolean = false): CapacityT
 
 // ── Time-of-day grouping ------------------------------------------------------
 
-private enum class TimeBand(val label: String) {
+internal enum class TimeBand(val label: String) {
     MORNING("MORNING"), AFTERNOON("AFTERNOON"), EVENING("EVENING")
 }
 
-private fun LocalTime.timeBand(): TimeBand = when {
+internal fun LocalTime.timeBand(): TimeBand = when {
     hour < 12 -> TimeBand.MORNING
     hour < 17 -> TimeBand.AFTERNOON
     else -> TimeBand.EVENING
@@ -252,7 +278,13 @@ fun ScheduleScreen(
                         onOpenSearch = onOpenSearch,
                     )
                 }
-                if (refreshFailed) {
+                TransientSurface(
+                    visible = refreshFailed,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .safeHorizontalPadding()
+                        .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+                ) {
                     ErrorSnackbar(
                         text = ErrorCopy.REFRESH_FAILED,
                         onRetry = {
@@ -260,10 +292,6 @@ fun ScheduleScreen(
                             viewModel.refresh()
                         },
                         onDismiss = viewModel::dismissRefreshFailed,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .safeHorizontalPadding()
-                            .padding(bottom = 16.dp + LocalFloatingBarInset.current),
                     )
                 }
             }
@@ -293,16 +321,9 @@ private fun LoadingPlaceholder() {
     }
 }
 
-/**
- * Success-state render: single LazyColumn so off-screen rows aren't composed
- * (only the visible window pays compose cost; rows recycle on scroll).
- * Class rows are keyed on `session.id` so that switching the selected day
- * doesn't churn nodes when sessions overlap between days (rare but cheap).
- *
- * Horizontal scrollers (day rail, filter chips) live inside `item {}` blocks
- * — that's idiomatic Compose and avoids the nested-scroll conflict you'd hit
- * with a `LazyColumn` inside a `verticalScroll` `Column`.
- */
+/** Success-state render: a pinned header (title, rail, filters) above a
+ *  [HorizontalPager] of per-day [DayPage]s, kept in sync with the
+ *  ViewModel's selected day via [selectedIndex]. */
 @Composable
 private fun SuccessContent(
     state: ScheduleUiState.Success,
@@ -320,308 +341,241 @@ private fun SuccessContent(
     // navigation away and back, resets on process restart. Fine for a nudge.
     var nudgeDismissed by rememberSaveable { mutableStateOf(false) }
 
-    val dayState = state.dayStates[selectedDate]
-    val dayLoaded = dayState?.loaded == true
-    val sessionsForSelected = dayState?.sessions.orEmpty()
-    // Recompute the time-of-day bucketing only when the selected day's
-    // session list actually changes (otherwise every recomposition reparses).
-    // Bucketing uses each session's own location timezone — see
-    // [sessionTimeZone].
-    val byBand: Map<TimeBand, List<ScheduleSessionDto>> = remember(sessionsForSelected) {
-        sessionsForSelected.groupBy {
-            Instant.parse(it.startAt)
-                .toLocalDateTime(sessionTimeZone(it.location.timezone))
-                .time.timeBand()
-        }
-    }
-    val activeBands = remember(byBand) {
-        TimeBand.values().filter { byBand[it]?.isNotEmpty() == true }
-    }
+    val haptics = rememberHaptics()
+    // state.days can shrink/shift under a refetch, so indexOf can miss —
+    // fall back to the first page rather than a negative index.
+    val selectedIndex = state.days.indexOf(selectedDate).coerceAtLeast(0)
+    val pagerState = rememberPagerState(initialPage = selectedIndex) { state.days.size }
+    // favoritesKnown gates against a FAILED favorites fetch: never nudge a
+    // member who may already have favorites we just couldn't confirm.
+    val showNudge = state.favoritesKnown && !state.hasFavorites && !nudgeDismissed
 
-    // A quick fade-in of the class list whenever the day changes (swipe or
-    // chip tap) — a lightweight cue that the content swapped. Applied to the
-    // list items only, so the rail/chips never flicker.
-    val dayFade = remember { Animatable(1f) }
-    LaunchedEffect(state.selectedDate) {
-        dayFade.snapTo(DAY_FADE_FROM)
-        dayFade.animateTo(1f, tween(durationMillis = DAY_FADE_MS))
-    }
-
-    // Stale-while-refetch: from a chip tap until the debounced refetch settles
-    // the class-list portion dims (rail/chips stay full-opacity and
-    // interactive) and a compact loader pins between the chips and the list.
-    // Composed with the day-change fade so both effects coexist on the list.
-    val listAlpha = (if (state.refreshingFilters) 0.6f else 1f) * dayFade.value
-
-    // Load-more trigger: when the user scrolls within LOAD_MORE_LOOKAHEAD
-    // items of the bottom, ask for the next page. The VM fully guards
-    // loadMore() (loaded page 1, non-null cursor, none in flight), so
-    // over-calling from here is safe. Keyed on selectedDate so a day switch
-    // restarts the collector against the new list shape.
-    val listState = rememberLazyListState()
-    LaunchedEffect(listState, state.selectedDate) {
-        snapshotFlow {
-            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index to
-                listState.layoutInfo.totalItemsCount
-        }
+    // Pager → ViewModel: a settled swipe selects the day. Keyed on pagerState
+    // only: state.days can change (midnight roll) without settledPage changing,
+    // and re-keying on it would replay the stale page index against the new list.
+    val currentDays by rememberUpdatedState(state.days)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
-            .collect { (lastVisible, totalCount) ->
-                if (lastVisible != null && lastVisible >= totalCount - LOAD_MORE_LOOKAHEAD) {
-                    viewModel.loadMore()
-                }
+            .drop(1)
+            .collect { page ->
+                val date = currentDays.getOrNull(page) ?: return@collect
+                viewModel.selectDay(date, method = "swipe")
             }
     }
+    // ViewModel → pager: a chip tap (or a restored selection) scrolls the pager.
+    // MutatorMutex hands priority to a live drag/fling, so this never fights one.
+    LaunchedEffect(selectedIndex) {
+        if (pagerState.currentPage != selectedIndex) {
+            pagerState.animateScrollToPage(selectedIndex, animationSpec = Springs.Settle)
+        }
+    }
+    // A chip tap can sweep several pages; only a finger-owned scroll ticks.
+    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
+    var fingerDriven by remember { mutableStateOf(false) }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { isDragged }.collect { dragging -> if (dragging) fingerDriven = true }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.isScrollInProgress }.collect { inProgress ->
+            if (!inProgress) fingerDriven = false
+        }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.drop(1).collect { if (fingerDriven) haptics.tick() }
+    }
 
-    // Side-to-side swipe over the list body navigates days. The horizontal
-    // rails (day chips, filter chips) are deeper in the tree and consume their
-    // own horizontal drags first; vertical drags go to the LazyColumn — so this
-    // only fires on a clear horizontal swipe over the class list. Keyed on the
-    // selected day so the closure always sees the current position.
-    val daySwipe = Modifier.pointerInput(state.days, state.selectedDate) {
-        val thresholdPx = DAY_SWIPE_THRESHOLD.toPx()
-        var accumulated = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { accumulated = 0f },
-            onDragCancel = { accumulated = 0f },
-            onDragEnd = {
-                val forward = accumulated <= -thresholdPx
-                val backward = accumulated >= thresholdPx
-                if (forward || backward) {
-                    dayAfterSwipe(state.days, state.selectedDate, forward)
-                        ?.let { viewModel.selectDay(it, method = "swipe") }
+    Column(Modifier.fillMaxSize()) {
+        // Track the *selected* day so the header flips when the user taps
+        // a day in a different month (e.g. May 27 → June 1 on the rail).
+        Row(
+            modifier = Modifier.padding(start = 24.dp, end = 16.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Display(
+                text = "${titleCase(selectedDate.month.name)}.",
+                size = 56, color = Ink,
+            )
+            SearchEntryPill(
+                onClick = { onOpenSearch(searchPillBounds) },
+                onBounds = { searchPillBounds = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp)
+                    // The month is all-caps display type: its ink centre
+                    // sits ~0.0914em above the layout centre (see
+                    // ui/OpticalCentering.kt), so a box centred on the
+                    // layout reads low beside it. 56sp × 0.0914 ≈ 5dp.
+                    .offset(y = (-5).dp),
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        DayRail(
+            days = state.days,
+            position = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
+            selectedIndex = selectedIndex,
+            onSelect = { i ->
+                state.days.getOrNull(i)?.let { day ->
+                    haptics.selection()
+                    viewModel.selectDay(day)
                 }
             },
-        ) { _, dragAmount -> accumulated += dragAmount }
-    }
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().then(daySwipe),
-        contentPadding = PaddingValues(bottom = 24.dp + LocalFloatingBarInset.current),
-    ) {
-        item("title") {
-            // Track the *selected* day so the header flips when the user taps
-            // a day in a different month (e.g. May 27 → June 1 on the rail).
-            Row(
-                modifier = Modifier.padding(start = 24.dp, end = 16.dp, top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        )
+        Spacer(Modifier.height(16.dp))
+        // Filter controls stay in the layout flow at a fixed height; the four
+        // expandable panels render as an anchored popover in the stage below, so
+        // opening one overlays the schedule instead of pushing it down.
+        var expandedSection by rememberSaveable { mutableStateOf("") }
+        val expandedSlugs = rememberSaveable(
+            saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
+        ) { mutableStateListOf<String>() }
+        FilterControls(
+            state = state,
+            viewModel = viewModel,
+            expandedSection = expandedSection,
+            onExpandedSectionChange = { expandedSection = it },
+        )
+        // Pinned between the controls and the pager while a debounced filter
+        // refetch is in flight — pairs with each page's own list dim.
+        if (state.refreshingFilters) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 4.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Display(
-                    text = "${titleCase(selectedDate.month.name)}.",
-                    size = 56, color = Ink,
-                )
-                SearchEntryPill(
-                    onClick = { onOpenSearch(searchPillBounds) },
-                    onBounds = { searchPillBounds = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 12.dp)
-                        // The month is all-caps display type: its ink centre
-                        // sits ~0.0914em above the layout centre (see
-                        // ui/OpticalCentering.kt), so a box centred on the
-                        // layout reads low beside it. 56sp × 0.0914 ≈ 5dp.
-                        .offset(y = (-5).dp),
-                )
+                DotMatrixLoaderCompact()
             }
         }
+        Spacer(Modifier.height(12.dp))
+        // Stage: the day pager, with the filter popover overlaid on top of it and
+        // anchored to its top edge (directly under the controls). The pager never
+        // moves when a filter opens — the popover floats above it.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            // Cap the popover so it can't run under the floating tab bar and a
+            // slice of the schedule always stays visible beneath it.
+            val popoverMax = (maxHeight - PAGER_MIN_VISIBLE - LocalFloatingBarInset.current)
+                .coerceIn(160.dp, FILTER_PANEL_MAX)
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+                key = { page -> state.days.getOrNull(page)?.toString() ?: "page-$page" },
+            ) { page ->
+                val date = state.days.getOrNull(page) ?: return@HorizontalPager
+                val isCurrent = date == selectedDate
+                DayPage(
+                    date = date,
+                    dayState = state.dayStates[date],
+                    dayError = if (isCurrent) state.dayError else null,
+                    dayRetrying = state.dayRetrying,
+                    refreshingFilters = state.refreshingFilters,
+                    bookedSessions = state.bookedSessions,
+                    isCurrent = isCurrent,
+                    onOpenClassDetail = onOpenClassDetail,
+                    onRetry = viewModel::retryDay,
+                    onLoadMore = viewModel::loadMore,
+                    // Only pinned when there's a nudge to show; a collapsed
+                    // (zero-height) header item would defeat the jump-to-top arrow's
+                    // canScrollBackward check.
+                    header = if (showNudge) {
+                        {
+                            FavoritesNudge(
+                                visible = true,
+                                onManageFavorites = onManageFavorites,
+                                onDismiss = { nudgeDismissed = true },
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+            FilterPopoverOverlay(
+                state = state,
+                viewModel = viewModel,
+                onManageFavorites = onManageFavorites,
+                expandedSection = expandedSection,
+                expandedSlugs = expandedSlugs,
+                onExpandedSectionChange = { expandedSection = it },
+                popoverMaxHeight = popoverMax,
+            )
+        }
+    }
+}
 
-        item("day-rail") {
-            Spacer(Modifier.height(20.dp))
+/** The "choose favorites" nudge: a one-tap path into the favorites manager for
+ *  a member with none yet. Dismissal is hoisted so it applies across every
+ *  day's page, not just the one it was tapped from. */
+@Composable
+private fun FavoritesNudge(visible: Boolean, onManageFavorites: () -> Unit, onDismiss: () -> Unit) {
+    val cardShape = ArcanaShapes.Card
+    TransientSurface(visible = visible, collapse = true) {
+        Column {
             Row(
                 modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = 24.dp)
+                    .fillMaxWidth()
+                    .cardShadow(cardShape)
+                    .clip(cardShape)
+                    .background(Surface)
+                    .border(1.dp, Ash, cardShape)
+                    // Keep both the top and bottom whitespace INSIDE the column
+                    // (BodyText top pad + CTA bottom pad) so the column's vertical
+                    // midpoint matches the card's — that's what keeps the dismiss
+                    // X (centered against the row) reading as centered in the cell.
+                    .padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                state.days.forEachIndexed { i, date ->
-                    DayChip(
-                        date = date,
-                        label = if (i == 0) "TODAY" else "",
-                        active = date == selectedDate,
-                        onClick = { viewModel.selectDay(date) },
-                    )
-                }
-            }
-        }
-
-        // Collapsed-by-default filter section: a summary bar that expands the
-        // studio accordion in place (replaces the old two-tier chip rails).
-        item("filter-section") {
-            Spacer(Modifier.height(16.dp))
-            ScheduleFilterSection(state = state, viewModel = viewModel, onManageFavorites = onManageFavorites)
-        }
-
-        // Nudge banner: members with no favorites yet get a one-tap path into
-        // the favorites manager. Dismissable per-session via the close glyph.
-        // `favoritesKnown` keeps it hidden when the favorites fetch failed —
-        // never nudge a member who may already have favorites.
-        if (state.favoritesKnown && !state.hasFavorites && !nudgeDismissed) {
-            item("favorites-nudge") {
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 24.dp)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Paper)
-                        .border(1.dp, Mist, RoundedCornerShape(16.dp))
-                        // Keep both the top and bottom whitespace INSIDE the column
-                        // (BodyText top pad + CTA bottom pad) so the column's vertical
-                        // midpoint matches the card's — that's what keeps the dismiss
-                        // X (centered against the row) reading as centered in the cell.
-                        .padding(start = 16.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        BodyText(
-                            text = "Make it yours. Save your favorite Studios.",
-                            size = 13, color = Ink,
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                        // Padding inside the clickable so the CTA's hit area
-                        // clears the 40dp minimum despite the 11sp label.
-                        Overline(
-                            text = "CHOOSE FAVORITES",
-                            size = 11, color = Moss,
-                            modifier = Modifier
-                                .clickable(onClick = onManageFavorites)
-                                .padding(top = 12.dp, bottom = 12.dp, end = 12.dp),
-                        )
-                    }
-                    // 40dp tap target around the 14dp glyph (house pattern —
-                    // see StudioAccordionCard's chevron).
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .clickable { nudgeDismissed = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        StrokeIcon(
-                            icon = ArcanaIcons.Close,
-                            size = 14.dp,
-                            tint = Ash2,
-                            contentDescription = "Dismiss",
-                        )
-                    }
-                }
-            }
-        }
-
-        // Pinned between the chips and the list while a debounced filter
-        // refetch is in flight — pairs with the list dim below.
-        if (state.refreshingFilters) {
-            item("refreshing-filters") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 4.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    DotMatrixLoaderCompact()
-                }
-            }
-        }
-
-        item("filter-trailing-space") { Spacer(Modifier.height(16.dp)) }
-
-        val dayError = state.dayError
-        if (dayError != null) {
-            // Its own list-area item, not a screen-level swap, so the
-            // header/rail/banner/chips above stay live and tappable.
-            item("day-error") {
-                InlineError(
-                    type = dayError,
-                    onRetry = viewModel::retryDay,
-                    retrying = state.dayRetrying,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
-                        .alpha(listAlpha),
-                )
-            }
-        } else if (!dayLoaded) {
-            // Page 1 of this day hasn't landed under the current filter set —
-            // loader in the list area only (header/rail/banner/chips stay).
-            item("day-loading") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 64.dp)
-                        .alpha(listAlpha),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    DotMatrixLoader()
-                }
-            }
-        } else if (sessionsForSelected.isEmpty()) {
-            item("empty") {
-                Column(
-                    modifier = Modifier
-                        .padding(start = 24.dp, end = 24.dp, top = 16.dp)
-                        .alpha(listAlpha),
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     BodyText(
-                        text = "No classes match your filters for this day.",
-                        size = 14, color = Ash,
+                        text = "Make it yours. Save your favorite Studios.",
+                        size = 13, color = Ink,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    val chooseSource = remember { MutableInteractionSource() }
+                    val choosePressed by rememberPressed(chooseSource)
+                    val chooseAlpha = animateFloatAsState(
+                        targetValue = if (choosePressed) 0.7f else 1f,
+                        animationSpec = Springs.Snappy,
+                        label = "chooseFavoritesAlpha",
+                    )
+                    // Padding inside the clickable so the CTA's hit area
+                    // clears the 40dp minimum despite the 11sp label.
+                    Overline(
+                        text = "CHOOSE FAVORITES",
+                        size = 11, color = Moss,
+                        modifier = Modifier
+                            .graphicsLayer { alpha = chooseAlpha.value }
+                            .clickable(interactionSource = chooseSource, indication = null, onClick = onManageFavorites)
+                            .padding(top = 12.dp, bottom = 12.dp, end = 12.dp),
+                    )
+                }
+                // 40dp tap target around the 14dp glyph (house pattern —
+                // see StudioAccordionCard's chevron).
+                val dismissSource = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .pressable(dismissSource, pressedScale = 0.94f)
+                        .softShadow(CircleShape)
+                        .clip(CircleShape)
+                        .background(Surface)
+                        .border(1.dp, Ash, CircleShape)
+                        .clickable(interactionSource = dismissSource, indication = null) { onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    StrokeIcon(
+                        icon = ArcanaIcons.Close,
+                        size = 16.dp,
+                        tint = Ink,
+                        contentDescription = "Dismiss",
                     )
                 }
             }
-        } else {
-            activeBands.forEachIndexed { bandIdx, band ->
-                item("band-header-$band") {
-                    Column(
-                        modifier = Modifier
-                            .padding(horizontal = 24.dp)
-                            .alpha(listAlpha),
-                    ) {
-                        if (bandIdx > 0) Spacer(Modifier.height(24.dp))
-                        SectionRule(label = band.label)
-                        Spacer(Modifier.height(8.dp))
-                    }
-                }
-                items(
-                    items = byBand[band].orEmpty(),
-                    key = { session -> "row-${session.id}" },
-                ) { session ->
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 24.dp)
-                            .alpha(listAlpha),
-                    ) {
-                        ClassRow(
-                            session,
-                            onClick = { onOpenClassDetail(session.id) },
-                            bookedStatus = state.bookedSessions[session.id],
-                        )
-                    }
-                }
-            }
-            // Footer loader — present while more pages exist for this day.
-            // The scroll trigger above usually fetches before this scrolls
-            // into view, so it mostly reads as "the page is arriving".
-            if (dayState.nextCursor != null) {
-                item("load-more") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                            .alpha(listAlpha),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        DotMatrixLoaderCompact()
-                    }
-                }
-            } else {
-                // The full day is loaded — a quiet brand full-stop so the
-                // bottom of the list reads as "that's all", not "still loading".
-                item("end-of-day") {
-                    EndOfListMarker(
-                        text = "That's everything for ${titleCase(selectedDate.dayOfWeek.name)}",
-                        modifier = Modifier.alpha(listAlpha),
-                    )
-                }
-            }
+            // Inside the collapsing column so dismissal closes this gap with the
+            // card instead of leaving it behind for a frame.
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -638,13 +592,19 @@ private fun SearchEntryPill(
 ) {
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.CenterEnd) {
         val showLabel = maxWidth >= 120.dp
+        val source = remember { MutableInteractionSource() }
         Row(
             modifier = Modifier
                 .height(44.dp)
+                .pressable(source, pressedScale = 0.96f)
+                .softShadow(CircleShape)
                 .clip(CircleShape)
-                .background(Paper)
-                .border(1.dp, Mist, CircleShape)
-                .clickable(onClick = onClick)
+                .background(Surface)
+                .border(1.dp, Ash, CircleShape)
+                .clickable(interactionSource = source, indication = null, onClick = onClick)
+                // A graphicsLayer scale update schedules no layout pass, so this
+                // stays accurate mid-press: onGloballyPositioned only re-fires on
+                // an actual layout change, not a redraw.
                 .onGloballyPositioned { onBounds(it.boundsInRoot()) }
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -689,66 +649,123 @@ internal fun EndOfListMarker(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-// ── Day chip ------------------------------------------------------------------
+// ── Filter section (collapsed bar → expandable studio accordion) ─────────────
 
+// Shared expand/collapse for every filter panel. Exit is the true reverse of
+// enter — same Medium duration + Emphasized easing — so closing reads as smooth
+// as the downward unroll rather than snapping shut.
+private val filterPanelEnter =
+    expandVertically(tween(Dur.Medium, easing = Ease.Emphasized), expandFrom = Alignment.Top) +
+        fadeIn(tween(Dur.Short))
+private val filterPanelExit =
+    shrinkVertically(tween(Dur.Medium, easing = Ease.Emphasized), shrinkTowards = Alignment.Top) +
+        fadeOut(tween(Dur.Short))
+
+/** Wraps an expanded filter's content as the floating popover card: elevation,
+ *  rounded on every corner (no pointer), a hairline, a capped height with its own
+ *  scroll, and a 24.dp horizontal inset matching the controls' content width so
+ *  the card is never wider than them (parent CLAUDE.md: width <= controls).
+ *  [FilterPopoverOverlay] anchors it under the controls, over the schedule. */
 @Composable
-private fun DayChip(
-    date: LocalDate,
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
+private fun FloatingFilterPanel(
+    maxHeight: Dp,
+    verticalArrangement: Arrangement.Vertical,
+    contentHorizontalPadding: Dp = 16.dp,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
+    val cardSource = remember { MutableInteractionSource() }
+    val scroll = rememberScrollState()
+    val scrollScope = rememberCoroutineScope()
+    Box(
         modifier = Modifier
-            .size(width = 56.dp, height = 64.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (active) Moss else Paper)
-            .border(1.dp, if (active) Moss else Mist, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(top = 8.dp, bottom = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, bottom = 12.dp)
+            .cardShadow(ArcanaShapes.Card)
+            .clip(ArcanaShapes.Card)
+            .background(Surface)
+            .border(1.dp, Mist, ArcanaShapes.Card)
+            // Swallow taps in the card's own gaps so the outside-tap catcher
+            // behind it doesn't close the popover.
+            .clickable(interactionSource = cardSource, indication = null) {},
     ) {
-        Text(
-            text = label.ifEmpty { date.weekdayAbbr() },
-            maxLines = 1, softWrap = false,
-            style = TextStyle(
-                fontFamily = Arcana.fonts.body,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp,
-                letterSpacing = 0.20.em,
-                color = if (active) Lime else Ash,
-            ),
+        Column(
+            modifier = Modifier
+                .heightIn(max = maxHeight)
+                .verticalScroll(scroll)
+                .padding(horizontal = contentHorizontalPadding, vertical = 14.dp),
+            verticalArrangement = verticalArrangement,
+            content = content,
         )
-        Text(
-            text = date.day.toString(),
-            maxLines = 1, softWrap = false,
-            style = TextStyle(
-                fontFamily = Arcana.fonts.display,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                letterSpacing = (-0.02).em,
-                color = if (active) Stone else Ink,
-            ),
+        // Jump-to-top / jump-to-bottom affordances, each fading in only when the
+        // list can still scroll that way; a tap snaps to that end. Only the tall
+        // panels (All Studios, Modalities) ever overflow enough to show them.
+        ScrollJumpChevron(
+            pointsDown = false,
+            visible = scroll.canScrollBackward,
+            onClick = { scrollScope.launch { scroll.animateScrollTo(0) } },
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+        )
+        ScrollJumpChevron(
+            pointsDown = true,
+            visible = scroll.canScrollForward,
+            onClick = { scrollScope.launch { scroll.animateScrollTo(scroll.maxValue) } },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
         )
     }
 }
 
-// ── Filter section (collapsed bar → expandable studio accordion) ─────────────
-
+/** A round scroll affordance in the search-well treatment (Surface fill + Ash
+ *  outline). Fades in only when [visible]; a tap jumps the list to that end.
+ *  [pointsDown] = false renders an up-chevron (jump to top). Shared by the filter
+ *  popovers and the Book day list. */
 @Composable
-private fun ScheduleFilterSection(
+internal fun ScrollJumpChevron(
+    pointsDown: Boolean,
+    visible: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(Dur.Short),
+        label = "scrollJump",
+    )
+    if (alpha > 0f) {
+        val source = remember { MutableInteractionSource() }
+        Box(
+            modifier = modifier
+                .graphicsLayer { this.alpha = alpha }
+                .size(26.dp)
+                .pressable(source, pressedScale = 0.9f)
+                .softShadow(CircleShape)
+                .clip(CircleShape)
+                .background(Surface)
+                .border(1.dp, Ash, CircleShape)
+                .clickable(interactionSource = source, indication = null, enabled = visible, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            StrokeIcon(
+                icon = ArcanaIcons.ChevronDown,
+                size = 14.dp,
+                tint = Moss,
+                modifier = Modifier.graphicsLayer { rotationZ = if (pointsDown) 0f else 180f },
+                contentDescription = if (pointsDown) "Scroll to bottom" else "Scroll to top",
+            )
+        }
+    }
+}
+
+/** The always-visible filter controls (in the layout flow): the scope toggle,
+ *  the Time / Modalities buttons, and the active-filter chip rail. The panels
+ *  they open are drawn separately by [FilterPopoverOverlay]; [expandedSection] is
+ *  hoisted so the two agree on which one is open. */
+@Composable
+private fun FilterControls(
     state: ScheduleUiState.Success,
     viewModel: ScheduleViewModel,
-    onManageFavorites: () -> Unit,
+    expandedSection: String,
+    onExpandedSectionChange: (String) -> Unit,
 ) {
-    // Which section is expanded below the bars: "" none, "fav" favorites list,
-    // "all" studio accordion, "time" time picker, "mod" modality list.
-    var expandedSection by rememberSaveable { mutableStateOf("") }
-    val expandedSlugs = rememberSaveable(
-        saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
-    ) { mutableStateListOf<String>() }
-
     val favoritesActive = state.scope == ScopeMode.Favorites
     val hasModalities = state.availableModalities.isNotEmpty()
     val modalityLabels = state.availableModalities.associate { it.slug to it.label }
@@ -764,96 +781,21 @@ private fun ScheduleFilterSection(
                 if (!favoritesActive) {
                     // First tap just switches scope (no auto-expand — less jarring).
                     viewModel.useMyFavorites()
-                    expandedSection = ""
+                    onExpandedSectionChange("")
                 } else {
                     // Tapping the already-active scope toggles its panel.
-                    expandedSection = if (expandedSection == "fav") "" else "fav"
+                    onExpandedSectionChange(if (expandedSection == "fav") "" else "fav")
                 }
             },
             onAllStudios = {
                 if (favoritesActive) {
                     viewModel.showAllStudios()
-                    expandedSection = ""
+                    onExpandedSectionChange("")
                 } else {
-                    expandedSection = if (expandedSection == "all") "" else "all"
+                    onExpandedSectionChange(if (expandedSection == "all") "" else "all")
                 }
             },
         )
-
-        // Favorites panel — read-only, with a path into the Profile manager.
-        if (expandedSection == "fav" && state.hasFavorites && state.favoriteEntries.isNotEmpty()) {
-            LaunchedEffect(Unit) { viewModel.onFavoritesDropdownShown() }
-            Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                state.favoriteEntries.forEach { entry ->
-                    FavoriteEntryRow(name = entry.name, detail = entry.detail)
-                }
-                Overline(
-                    text = "MANAGE IN PROFILE",
-                    size = 11, color = Moss,
-                    modifier = Modifier
-                        .clickable {
-                            viewModel.onManageFavoritesTapped()
-                            onManageFavorites()
-                        }
-                        .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
-                )
-                FilterDoneButton(
-                    onClick = { expandedSection = "" },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        // All-Studios panel — the studio accordion for narrowing to a subset.
-        if (expandedSection == "all") {
-            Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                state.filterStudios.forEach { studio ->
-                    val chosen = studio.slug in state.filters.studioSlugs
-                    val expanded = studio.slug in expandedSlugs
-                    Column {
-                        StudioAccordionCard(
-                            name = studio.name,
-                            locationCount = studio.locations.size,
-                            chosen = chosen,
-                            expanded = expanded,
-                            selectedLocationCount = studio.locations.count { it.id in state.filters.locationIds },
-                            onToggle = { viewModel.toggleStudioWhole(studio.slug) },
-                            onToggleExpanded = {
-                                if (studio.slug in expandedSlugs) expandedSlugs.remove(studio.slug)
-                                else expandedSlugs.add(studio.slug)
-                            },
-                        )
-                        if (expanded) {
-                            Column(
-                                modifier = Modifier.padding(start = 32.dp, top = 12.dp, bottom = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                studio.locations.forEach { location ->
-                                    StudioLocationRow(
-                                        label = location.label,
-                                        checked = location.id in state.filters.locationIds || chosen,
-                                        implied = chosen,
-                                        onTap = { viewModel.toggleLocation(studio.slug, location.id) },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                FilterDoneButton(
-                    onClick = { expandedSection = "" },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                )
-            }
-        }
 
         // ── Tier 2: the additive overlay filters (Time + Modalities), visually
         // separated from the scope toggle. Each opens a picker; active state =
@@ -867,47 +809,14 @@ private fun ScheduleFilterSection(
                 label = "TIME",
                 active = state.timeFilter != null,
                 modifier = Modifier.weight(1f),
-                onClick = { expandedSection = if (expandedSection == "time") "" else "time" },
+                onClick = { onExpandedSectionChange(if (expandedSection == "time") "" else "time") },
             )
             if (hasModalities) {
                 FilterPill(
                     label = "MODALITIES",
                     active = state.selectedModalitySlugs.isNotEmpty(),
                     modifier = Modifier.weight(1f),
-                    onClick = { expandedSection = if (expandedSection == "mod") "" else "mod" },
-                )
-            }
-        }
-
-        // Time picker — presets + a custom From/To range.
-        if (expandedSection == "time") {
-            Spacer(Modifier.height(12.dp))
-            TimeFilterPanel(
-                active = state.timeFilter,
-                onApply = { viewModel.setTimeFilter(it); expandedSection = "" },
-                onClear = { viewModel.clearTimeFilter() },
-                onDone = { expandedSection = "" },
-            )
-        }
-
-        // Modalities picker — a flat multi-select list; picks become chips.
-        if (expandedSection == "mod" && hasModalities) {
-            Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                state.availableModalities.forEach { option ->
-                    StudioLocationRow(
-                        label = option.label,
-                        checked = option.slug in state.selectedModalitySlugs,
-                        implied = false,
-                        onTap = { viewModel.toggleModality(option.slug) },
-                    )
-                }
-                FilterDoneButton(
-                    onClick = { expandedSection = "" },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    onClick = { onExpandedSectionChange(if (expandedSection == "mod") "" else "mod") },
                 )
             }
         }
@@ -930,6 +839,275 @@ private fun ScheduleFilterSection(
     }
 }
 
+/** The expanded filter panels, drawn as a popover anchored to the top of the
+ *  schedule stage (directly under the controls) so opening one overlays the
+ *  schedule instead of pushing it down. A transparent full-stage catcher closes
+ *  the popover on an outside tap; the controls sit above the stage, so re-tapping
+ *  the open control still toggles it shut. Exactly one panel shows at a time. */
+@Composable
+private fun BoxScope.FilterPopoverOverlay(
+    state: ScheduleUiState.Success,
+    viewModel: ScheduleViewModel,
+    onManageFavorites: () -> Unit,
+    expandedSection: String,
+    expandedSlugs: MutableList<String>,
+    onExpandedSectionChange: (String) -> Unit,
+    popoverMaxHeight: Dp,
+) {
+    val hasModalities = state.availableModalities.isNotEmpty()
+
+    // Outside-tap catcher over the schedule beneath the popover.
+    val catcherSource = remember { MutableInteractionSource() }
+    if (expandedSection != "") {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(interactionSource = catcherSource, indication = null) {
+                    onExpandedSectionChange("")
+                },
+        )
+    }
+
+    // The cards, anchored at the stage's top edge. Only one is ever visible; each
+    // keeps the shared downward-reveal enter and its smooth reverse exit.
+    Box(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+        // Favorites panel — read-only, with a path into the Profile manager.
+        AnimatedVisibility(
+            visible = expandedSection == "fav" && state.hasFavorites && state.favoriteEntries.isNotEmpty(),
+            enter = filterPanelEnter,
+            exit = filterPanelExit,
+        ) {
+            // Only composed while the panel is open (or closing), so this
+            // fires on every appearance and never while collapsed.
+            LaunchedEffect(Unit) { viewModel.onFavoritesDropdownShown() }
+            FloatingFilterPanel(maxHeight = popoverMaxHeight, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                state.favoriteEntries.forEach { entry ->
+                    FavoriteEntryRow(name = entry.name, detail = entry.detail)
+                }
+                val manageSource = remember { MutableInteractionSource() }
+                val managePressed by rememberPressed(manageSource)
+                val manageAlpha = animateFloatAsState(
+                    targetValue = if (managePressed) 0.7f else 1f,
+                    animationSpec = Springs.Snappy,
+                    label = "manageInProfileAlpha",
+                )
+                Overline(
+                    text = "MANAGE IN PROFILE",
+                    size = 11, color = Moss,
+                    modifier = Modifier
+                        .graphicsLayer { alpha = manageAlpha.value }
+                        .clickable(interactionSource = manageSource, indication = null) {
+                            viewModel.onManageFavoritesTapped()
+                            onManageFavorites()
+                        }
+                        .padding(top = 4.dp, bottom = 8.dp, end = 12.dp),
+                )
+                FilterDoneButton(
+                    onClick = { onExpandedSectionChange("") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // All-Studios panel — compact studio rows for narrowing to a subset.
+        AnimatedVisibility(
+            visible = expandedSection == "all",
+            enter = filterPanelEnter,
+            exit = filterPanelExit,
+        ) {
+            FloatingFilterPanel(maxHeight = popoverMaxHeight, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                state.filterStudios.forEach { studio ->
+                    val chosen = studio.slug in state.filters.studioSlugs
+                    val expanded = studio.slug in expandedSlugs
+                    Column {
+                        CompactStudioFilterRow(
+                            name = studio.name,
+                            locationCount = studio.locations.size,
+                            chosen = chosen,
+                            expanded = expanded,
+                            selectedLocationCount = studio.locations.count { it.id in state.filters.locationIds },
+                            onToggle = { viewModel.toggleStudioWhole(studio.slug) },
+                            onToggleExpanded = {
+                                if (studio.slug in expandedSlugs) expandedSlugs.remove(studio.slug)
+                                else expandedSlugs.add(studio.slug)
+                            },
+                        )
+                        if (expanded) {
+                            Column(
+                                modifier = Modifier.padding(start = 34.dp, top = 4.dp, bottom = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                studio.locations.forEach { location ->
+                                    StudioLocationRow(
+                                        label = location.label,
+                                        checked = location.id in state.filters.locationIds || chosen,
+                                        implied = chosen,
+                                        onTap = { viewModel.toggleLocation(studio.slug, location.id) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                FilterDoneButton(
+                    onClick = { onExpandedSectionChange("") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
+        }
+
+        // Time picker — presets + a custom From/To range.
+        AnimatedVisibility(
+            visible = expandedSection == "time",
+            enter = filterPanelEnter,
+            exit = filterPanelExit,
+        ) {
+            FloatingFilterPanel(
+                maxHeight = popoverMaxHeight,
+                verticalArrangement = Arrangement.Top,
+                contentHorizontalPadding = 16.dp,
+            ) {
+                TimeFilterPanel(
+                    active = state.timeFilter,
+                    onApply = { viewModel.setTimeFilter(it); onExpandedSectionChange("") },
+                    onClear = { viewModel.clearTimeFilter() },
+                    onDone = { onExpandedSectionChange("") },
+                )
+            }
+        }
+
+        // Modalities picker — a flat multi-select list; picks become chips.
+        AnimatedVisibility(
+            visible = expandedSection == "mod" && hasModalities,
+            enter = filterPanelEnter,
+            exit = filterPanelExit,
+        ) {
+            FloatingFilterPanel(maxHeight = popoverMaxHeight, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                state.availableModalities.forEach { option ->
+                    StudioLocationRow(
+                        label = option.label,
+                        checked = option.slug in state.selectedModalitySlugs,
+                        implied = false,
+                        onTap = { viewModel.toggleModality(option.slug) },
+                    )
+                }
+                FilterDoneButton(
+                    onClick = { onExpandedSectionChange("") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Compact single-line studio row for the All-Studios FILTER popover: a small
+ *  square check, the studio name at the favorites-list size with an inline
+ *  "· N locations", and a chevron that expands the location list below. This is
+ *  the filter's own row — the tall [StudioAccordionCard] stays on the favorites
+ *  StudioSelection screen and is deliberately not reused here. */
+@Composable
+private fun CompactStudioFilterRow(
+    name: String,
+    locationCount: Int,
+    chosen: Boolean,
+    expanded: Boolean,
+    selectedLocationCount: Int,
+    onToggle: () -> Unit,
+    onToggleExpanded: () -> Unit,
+) {
+    val partial = !chosen && selectedLocationCount > 0
+    val checkShape = RoundedCornerShape(6.dp)
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(Dur.Short, easing = Ease.Emphasized),
+        label = "compactChevron",
+    )
+    val rowSource = remember { MutableInteractionSource() }
+    val checkSource = remember { MutableInteractionSource() }
+    val chevronSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(interactionSource = rowSource, indication = null, onClick = onToggleExpanded)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Square check — the compact filter's counterpart to the accordion's
+        // round check. Labeled on the 40dp well, not the glyph (absent 2/3 of
+        // the states), matching StudioAccordionCard.
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .pressable(checkSource, pressedScale = 0.9f)
+                .clip(CircleShape)
+                .clickable(interactionSource = checkSource, indication = null, onClick = onToggle)
+                .semantics { contentDescription = if (chosen) "Deselect $name" else "Select $name" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(checkShape)
+                    .then(
+                        when {
+                            chosen -> Modifier.background(Lime)
+                            partial -> Modifier.border(2.dp, Lime, checkShape)
+                            else -> Modifier.border(2.dp, Mist, checkShape)
+                        }
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (chosen) {
+                    // decorative — the well above carries the label.
+                    StrokeIcon(ArcanaIcons.Check, size = 14.dp, tint = Ink)
+                } else if (partial) {
+                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(Lime))
+                }
+            }
+        }
+        // Name + inline "· N locations" on one line; the name ellipsizes first.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BodyText(
+                text = name,
+                size = 14,
+                color = Ink,
+                weight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            val locationsWord = if (locationCount == 1) "location" else "locations"
+            Caption(
+                text = if (partial) "  ·  $selectedLocationCount of $locationCount $locationsWord"
+                       else "  ·  $locationCount $locationsWord",
+                size = 12,
+                color = if (partial) Moss else Ash,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .pressable(chevronSource, pressedScale = 0.9f)
+                .clip(CircleShape)
+                .clickable(interactionSource = chevronSource, indication = null, onClick = onToggleExpanded),
+            contentAlignment = Alignment.Center,
+        ) {
+            StrokeIcon(
+                icon = ArcanaIcons.ChevronDown,
+                size = 16.dp,
+                tint = Moss,
+                modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
+                contentDescription = if (expanded) "Hide $name locations" else "Show $name locations",
+            )
+        }
+    }
+}
+
 /** The Favorites ⟷ All Studios scope toggle — a connected two-segment control
  *  (exactly one active). Favorites segment hidden when the member has none. */
 @Composable
@@ -943,20 +1121,23 @@ private fun ScopeToggle(
     // it opens/closes the studio accordion exactly like the toggle's segment
     // (scope is already AllStudios, so onAllStudios just flips the panel).
     if (!hasFavorites) {
+        val source = remember { MutableInteractionSource() }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
+                .pressable(source, pressedScale = 0.97f)
+                .controlShadow(ArcanaShapes.Pill)
                 .clip(CircleShape)
-                .clickable(onClick = onAllStudios)
-                .background(Ink)
+                .background(Moss)
+                .clickable(interactionSource = source, indication = null, onClick = onAllStudios)
                 .padding(vertical = 10.dp),
             contentAlignment = Alignment.Center,
         ) { ScopeLabel("ALL STUDIOS", onInk = true) }
         return
     }
 
-    // Thumb-tracking toggle: a single Ink highlight slides under the finger as
+    // Thumb-tracking toggle: a single Moss highlight slides under the finger as
     // you drag (Favorites at the left half, All Studios at the right), and
     // animates/commits to whichever side it lands on when you lift. Taps on
     // either label still switch (or expand the active panel).
@@ -973,7 +1154,7 @@ private fun ScopeToggle(
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .clip(CircleShape)
-            .border(1.dp, Mist, CircleShape),
+            .border(1.dp, Ash, CircleShape),
     ) {
         val halfPx = with(density) { maxWidth.toPx() } / 2f
         var dragging by remember { mutableStateOf(false) }
@@ -981,13 +1162,13 @@ private fun ScopeToggle(
         val offset = remember { Animatable(if (favoritesActive) 0f else halfPx) }
         // Follow external scope changes (favorites saved/cleared) when not dragging.
         LaunchedEffect(favoritesActive, halfPx) {
-            if (!dragging) offset.animateTo(if (favoritesActive) 0f else halfPx)
+            if (!dragging) offset.animateTo(if (favoritesActive) 0f else halfPx, animationSpec = Springs.Settle)
         }
         val favHighlighted by remember(halfPx) {
             derivedStateOf { offset.value < halfPx / 2f }
         }
 
-        // The sliding Ink highlight — drawn behind the labels, tracks the thumb.
+        // The sliding Moss highlight — drawn behind the labels, tracks the thumb.
         // Wrapped in a matchParentSize box so the pill fills the toggle's real
         // height (set by the labels) rather than the incoming constraints — which
         // may be unbounded here (scrolling parent), collapsing fillMaxHeight to 0.
@@ -997,9 +1178,12 @@ private fun ScopeToggle(
                     .offset { IntOffset(offset.value.roundToInt(), 0) }
                     .width(with(density) { halfPx.toDp() })
                     .fillMaxHeight()
-                    .padding(3.dp)
+                    // 2.dp inset (not 3): with the segment's 12.dp vpad this makes the
+                    // Moss fill the same height + width as the Time/Modalities pills.
+                    .padding(2.dp)
+                    .controlShadow(ArcanaShapes.Pill)
                     .clip(CircleShape)
-                    .background(Ink),
+                    .background(Moss),
             )
         }
 
@@ -1019,7 +1203,7 @@ private fun ScopeToggle(
                             dragging = false
                             val toFavorites = offset.value < halfPx / 2f
                             coroutineScope.launch {
-                                offset.animateTo(if (toFavorites) 0f else halfPx)
+                                offset.animateTo(if (toFavorites) 0f else halfPx, animationSpec = Springs.Settle)
                             }
                             // Commit only on an actual side change — a no-cross
                             // drag just springs back (and never toggles a panel).
@@ -1029,7 +1213,7 @@ private fun ScopeToggle(
                         onDragCancel = {
                             dragging = false
                             coroutineScope.launch {
-                                offset.animateTo(if (currentFavoritesActive) 0f else halfPx)
+                                offset.animateTo(if (currentFavoritesActive) 0f else halfPx, animationSpec = Springs.Settle)
                             }
                         },
                     )
@@ -1051,32 +1235,33 @@ private fun ScopeSegment(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val source = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            // 12.dp (vs the pills' 10.dp) so that, after the 2.dp thumb inset, the
+            // Moss fill matches the Time/Modalities pill height exactly.
+            .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         ScopeLabel(label, onInk)
     }
 }
 
+private val SCOPE_LABEL_SIZE = 12.sp
+private const val SCOPE_LABEL_TRACKING_EM = 0.10f
+
 @Composable
 private fun ScopeLabel(label: String, onInk: Boolean) {
     Text(
         text = label,
-        modifier = Modifier.offset(y = 1.dp),
+        modifier = Modifier.opticallyCentredCaps(SCOPE_LABEL_SIZE, SCOPE_LABEL_TRACKING_EM),
         maxLines = 1, softWrap = false,
         style = TextStyle(
             fontFamily = Arcana.fonts.display,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-            lineHeight = 12.sp,
-            lineHeightStyle = LineHeightStyle(
-                alignment = LineHeightStyle.Alignment.Center,
-                trim = LineHeightStyle.Trim.Both,
-            ),
-            letterSpacing = 0.10.em,
+            fontSize = SCOPE_LABEL_SIZE,
+            letterSpacing = SCOPE_LABEL_TRACKING_EM.em,
             color = if (onInk) Stone else Ink,
         ),
     )
@@ -1104,8 +1289,9 @@ private fun TimeFilterPanel(
     var from by remember(active) { mutableStateOf(seed(active?.startGte, minMinute)) }
     var to by remember(active) { mutableStateOf(seed(active?.startLte, maxMinute)) }
 
+    // Horizontal inset comes from the popover card (contentHorizontalPadding);
+    // this column only owns its vertical rhythm.
     Column(
-        modifier = Modifier.padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Overline(text = "QUICK", size = 11, color = Ash)
@@ -1209,12 +1395,25 @@ private fun TimeRangeSlider(
  *  selected, hairline otherwise. */
 @Composable
 private fun SelectablePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val fill by animateColorAsState(
+        targetValue = if (selected) Moss else Surface,
+        animationSpec = tween(Dur.Short),
+        label = "presetPillFill",
+    )
+    val border by animateColorAsState(
+        targetValue = if (selected) Moss else Ash,
+        animationSpec = tween(Dur.Short),
+        label = "presetPillBorder",
+    )
     Box(
         modifier = Modifier
+            .pressable(source, pressedScale = 0.97f)
+            .then(if (selected) Modifier.controlShadow(ArcanaShapes.Pill) else Modifier.softShadow(ArcanaShapes.Pill))
             .clip(CircleShape)
-            .background(if (selected) Moss else Color.Transparent)
-            .border(1.dp, if (selected) Moss else Mist, CircleShape)
-            .clickable(onClick = onClick)
+            .background(fill)
+            .border(1.dp, border, CircleShape)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -1243,9 +1442,9 @@ private fun FavoriteEntryRow(name: String, detail: String) {
     }
 }
 
-/** Pill toggle for the schedule filter (Favorites / All Studios). Ink-filled
- *  when active, hairline otherwise. Pass `Modifier.weight(1f)` to size two pills
- *  equally; the label centers. */
+/** The Time / Modalities overlay-filter buttons. Moss-filled when active, an Ash
+ *  outline otherwise. Pass `Modifier.weight(1f)` to size two pills equally; the
+ *  label centers. */
 @Composable
 private fun FilterPill(
     label: String,
@@ -1253,72 +1452,79 @@ private fun FilterPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val source = remember { MutableInteractionSource() }
+    val fill by animateColorAsState(
+        targetValue = if (active) Moss else Surface,
+        animationSpec = tween(Dur.Short),
+        label = "filterPillFill",
+    )
+    val border by animateColorAsState(
+        targetValue = if (active) Moss else Ash,
+        animationSpec = tween(Dur.Short),
+        label = "filterPillBorder",
+    )
     Row(
         modifier = modifier
+            .pressable(source, pressedScale = 0.97f)
+            .then(if (active) Modifier.controlShadow(ArcanaShapes.Pill) else Modifier.softShadow(ArcanaShapes.Pill))
             .clip(CircleShape)
-            .background(if (active) Ink else Color.Transparent)
-            .border(1.dp, if (active) Ink else Mist, CircleShape)
-            .clickable(onClick = onClick)
+            .background(fill)
+            .border(1.dp, border, CircleShape)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            // Nudge down ~9% of the font size — the line-height trim centers the
-            // box, but League Spartan caps still ride a touch high (mirrors the
-            // CircleMonogram recipe).
-            modifier = Modifier.offset(y = 1.dp),
+            modifier = Modifier.opticallyCentredCaps(FILTER_PILL_LABEL_SIZE, FILTER_PILL_LABEL_TRACKING_EM),
             maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-                // Trim + center the line box so the all-caps League Spartan
-                // glyphs sit vertically centered in the pill (they otherwise
-                // ride high). Same fix used by CircleMonogram / the tab bar.
-                lineHeight = 12.sp,
-                lineHeightStyle = LineHeightStyle(
-                    alignment = LineHeightStyle.Alignment.Center,
-                    trim = LineHeightStyle.Trim.Both,
-                ),
-                letterSpacing = 0.10.em,
+                fontSize = FILTER_PILL_LABEL_SIZE,
+                letterSpacing = FILTER_PILL_LABEL_TRACKING_EM.em,
                 color = if (active) Stone else Ink,
             ),
         )
     }
 }
 
+private val FILTER_PILL_LABEL_SIZE = 12.sp
+private const val FILTER_PILL_LABEL_TRACKING_EM = 0.10f
+
 /** Moss-filled "DONE" button that collapses an expanded filter section — the
  *  same effect as tapping the active pill again, but reachable from the bottom
  *  of a long favorites list / studio accordion without scrolling back up. */
 @Composable
 private fun FilterDoneButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(source)
+    val fill by animateColorAsState(
+        targetValue = if (pressed) Moss.pressedShade() else Moss,
+        animationSpec = tween(Dur.Quick),
+        label = "filterDoneFill",
+    )
     Row(
         modifier = modifier
+            .pressable(source, pressedScale = 0.97f)
+            .controlShadow(ArcanaShapes.Pill)
             .clip(CircleShape)
-            .background(Moss)
-            .clickable(onClick = onClick)
+            .background(fill)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "DONE",
-            // Same vertical-centering recipe as FilterPill (League Spartan caps
-            // ride high without the line-height trim + 1dp nudge).
-            modifier = Modifier.offset(y = 1.dp),
+            modifier = Modifier.opticallyCentredCaps(FILTER_PILL_LABEL_SIZE, FILTER_PILL_LABEL_TRACKING_EM),
             maxLines = 1, softWrap = false,
             style = TextStyle(
                 fontFamily = Arcana.fonts.display,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-                lineHeight = 12.sp,
-                lineHeightStyle = LineHeightStyle(
-                    alignment = LineHeightStyle.Alignment.Center,
-                    trim = LineHeightStyle.Trim.Both,
-                ),
-                letterSpacing = 0.10.em,
+                fontSize = FILTER_PILL_LABEL_SIZE,
+                letterSpacing = FILTER_PILL_LABEL_TRACKING_EM.em,
                 color = Stone,
             ),
         )
@@ -1335,6 +1541,9 @@ internal fun ClassRow(
      *  when the member holds no booking on it. Non-null ⇒ a status pill on the
      *  title line. */
     bookedStatus: String? = null,
+    /** Samples the host page's shared elapsed-ms clock for the capacity bar's
+     *  first-draw fill; null (Search's rows) draws the bar at its final fill. */
+    barClock: (() -> Float)? = null,
     modifier: Modifier = Modifier,
 ) {
     // Display the class's local wall-clock — the session's own location
@@ -1363,11 +1572,13 @@ internal fun ClassRow(
         ((offered - available).toFloat() / offered).coerceIn(0f, 1f)
     } else 0f
     val instructorName = session.instructors.firstOrNull()?.name ?: ""
+    val rowSource = remember { MutableInteractionSource() }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressable(rowSource, pressedScale = 0.99f)
+            .clickable(interactionSource = rowSource, indication = null, onClick = onClick)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1423,7 +1634,9 @@ internal fun ClassRow(
             BodyText(
                 text = session.template.name,
                 size = 16,
-                color = if (isFull) Ash else Ink,
+                // Full/not-open rows stay a touch softer than a bookable Ink title,
+                // but Graphite (not Ash) keeps the name readable over the atmosphere.
+                color = if (isFull) Graphite else Ink,
                 weight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1456,8 +1669,22 @@ internal fun ClassRow(
                     ) {
                         Box(
                             Modifier
-                                .fillMaxWidth(fill)
+                                .fillMaxWidth()
                                 .height(4.dp)
+                                // Sampled from the page's shared clock, not a per-row
+                                // Animatable, so a row's fill is a pure function of
+                                // elapsed and never replays on scroll-back.
+                                .graphicsLayer {
+                                    val clock = barClock
+                                    scaleX = when {
+                                        fill <= 0f -> 0f
+                                        clock == null -> fill
+                                        else -> fill * Ease.Emphasized.transform(
+                                            (clock.invoke() / Dur.Medium).coerceIn(0f, 1f),
+                                        )
+                                    }
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
+                                }
                                 .background(
                                     when {
                                         isScarce -> Warning
@@ -1472,8 +1699,8 @@ internal fun ClassRow(
                     text = tier.label,
                     size = 10,
                     color = when (tier) {
-                        CapacityTier.NotOpen -> Ash2
-                        CapacityTier.Full -> Ash2
+                        CapacityTier.NotOpen -> Ash
+                        CapacityTier.Full -> Ash
                         CapacityTier.AlmostFull -> Warning
                         CapacityTier.FillingUp -> MossLight
                         CapacityTier.Available -> Ash

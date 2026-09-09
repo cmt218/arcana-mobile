@@ -41,7 +41,7 @@ val Plate       = Color(0xFFFFFFFF) // the one pure white: a plate under content
 
 // ---- Functional ----
 val Danger      = Color(0xFFB23A2A)
-val Warning     = Color(0xFFD89B2A)
+val Warning     = Color(0xFFAC6E10) // deep amber — readable over the olive atmosphere
 val Clay        = Color(0xFFB5503F) // destructive-action red, gentle not alarm
 val ClayDeep    = Color(0xFF8F3D2F) // destructive-action red, gentle not alarm (arrow well)
 val Success     = Lime
@@ -55,3 +55,10 @@ val StoneAlpha65 = Color(0xA6F5F2ED)
 val StoneAlpha55 = Color(0x8CF5F2ED)
 val StoneAlpha18 = Color(0x2EF5F2ED)
 val StoneAlpha10 = Color(0x1AF5F2ED)
+val InkAlpha04   = Color(0x0A161812)
+
+/** Opaque lifted surface for cards, pills, chips and sheets that sit on the atmosphere.
+ *  A hair warmer and greener than Paper so it belongs to the palette, still light enough
+ *  to read as raised off the mesh. Replaced the 72% translucent experiment (§Decisions H)
+ *  on 2026-09-07: translucency read as flat stark white against the lime surface. */
+val Surface = Color(0xFFF1F0E4)

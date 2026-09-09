@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +34,9 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.ArcanaDropdownField
 import org.arcana.mobile.ui.ArcanaIcons
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SheetState
+import org.arcana.mobile.ui.ArcanaSheet
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.DropdownOption
@@ -45,9 +45,10 @@ import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
+import org.arcana.mobile.ui.SlideToConfirm
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun BookingSheet(
     session: ScheduleSessionDto,
     requiresSpot: Boolean,
@@ -69,10 +70,12 @@ fun BookingSheet(
     errorMessage: String? = null,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    sheetState: SheetState,
+    booked: Boolean = false,
+    bookedStatus: String? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var spotMapExpanded by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Stone) {
+    ArcanaSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         // Scrollable so tall content (e.g. a big spot grid + the studio-visit
         // prompt + CONFIRM) is always reachable — never clipped off the bottom.
         Column(
@@ -157,14 +160,26 @@ fun BookingSheet(
                     )
                 }
                 Spacer(Modifier.height(20.dp))
-                PrimaryCta(
-                    label = if (submitting) "BOOKING…" else "CONFIRM",
-                    onClick = onConfirm,
-                    enabled = if (submitting) false else confirmEnabled,
-                    trailing = if (submitting) {
-                        { CtaSpinner() }
-                    } else null,
-                )
+                if (useBookingGestures()) {
+                    SlideToConfirm(
+                        label = if (submitting) "BOOKING…" else "SLIDE TO BOOK",
+                        subLabel = null,
+                        onConfirm = onConfirm,
+                        enabled = confirmEnabled && !submitting,
+                        submitting = submitting,
+                        completed = booked,
+                        completedLabel = if (bookedStatus == "requested") "REQUESTED" else "BOOKED",
+                    )
+                } else {
+                    PrimaryCta(
+                        label = if (submitting) "BOOKING…" else "CONFIRM",
+                        onClick = onConfirm,
+                        enabled = if (submitting) false else confirmEnabled,
+                        trailing = if (submitting) {
+                            { CtaSpinner() }
+                        } else null,
+                    )
+                }
             }
         }
         if (spotMapExpanded) {

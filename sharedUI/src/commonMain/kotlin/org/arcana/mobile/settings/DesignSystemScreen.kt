@@ -22,13 +22,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
@@ -37,9 +42,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.todayIn
+import org.arcana.mobile.schedule.DayRail
+import org.arcana.mobile.schedule.SkeletonClassRow
+import org.arcana.mobile.schedule.titleCase
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
@@ -54,6 +68,7 @@ import org.arcana.mobile.theme.Ease
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Info
 import org.arcana.mobile.theme.Ink
+import org.arcana.mobile.theme.InkAlpha04
 import org.arcana.mobile.theme.InkAlpha08
 import org.arcana.mobile.theme.InkAlpha10
 import org.arcana.mobile.theme.Lime
@@ -65,6 +80,7 @@ import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.MossDeep
 import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Plate
 import org.arcana.mobile.theme.Springs
 import org.arcana.mobile.theme.Stone
@@ -80,6 +96,7 @@ import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.theme.systemAllowsAmbientMotion
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaIcons
+import org.arcana.mobile.ui.ArcanaSheet
 import org.arcana.mobile.ui.ArcanaTab
 import org.arcana.mobile.ui.ArcanaTabBar
 import org.arcana.mobile.ui.BodyText
@@ -90,18 +107,24 @@ import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.FilterChip
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.Heading3
+import org.arcana.mobile.ui.HoldToConfirm
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.SlideToConfirm
+import org.arcana.mobile.ui.StudioAccordionCard
 import org.arcana.mobile.ui.TextLink
 import org.arcana.mobile.ui.cardShadow
 import org.arcana.mobile.ui.barShadow
 import org.arcana.mobile.ui.controlShadow
 import org.arcana.mobile.ui.innerHighlight
+import org.arcana.mobile.ui.opticallyCentredCaps
 import org.arcana.mobile.ui.pressable
+import org.arcana.mobile.ui.recedeBehindSheet
 import org.arcana.mobile.ui.rememberHaptics
 import org.arcana.mobile.ui.safeContentPadding
+import org.arcana.mobile.ui.shimmerBrush
 import org.arcana.mobile.ui.softShadow
 
 /**
@@ -111,75 +134,103 @@ import org.arcana.mobile.ui.softShadow
  * so it has no entry point in a store build.
  */
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun DesignSystemScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     BackHandler { onBack() }
     var demoTab by remember { mutableStateOf(ArcanaTab.Home) }
+    var sheetOpen by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Atmosphere()
-        LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .safeContentPadding(),
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item { Header(onBack) }
+        Box(Modifier.fillMaxSize().recedeBehindSheet(sheetOpen)) {
+            LazyColumn(
+                modifier = modifier
+                    .fillMaxSize()
+                    .safeContentPadding(),
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item { Header(onBack) }
 
-            item { Section("Colours") }
-            COLOUR_GROUPS.forEach { group ->
-                item { GroupLabel(group.name) }
-                items(group.tokens) { token -> ColourRow(token.first, token.second) }
+                item { Section("Colours") }
+                COLOUR_GROUPS.forEach { group ->
+                    item { GroupLabel(group.name) }
+                    items(group.tokens) { token -> ColourRow(token.first, token.second) }
+                }
+
+                item { Section("Type") }
+                item { TypeSample("Display · 44sp") { Display("Display") } }
+                item { TypeSample("Heading2 · 28sp") { Heading2("Heading two") } }
+                item { TypeSample("Heading3 · 22sp") { Heading3("Heading three") } }
+                item { TypeSample("Overline · 11sp") { Overline("Overline") } }
+                item { TypeSample("BodyText · 15sp") { BodyText("The quick brown fox jumps over the lazy dog.") } }
+                item { TypeSample("AccentText · 20sp") { AccentText("Momentum, not stillness.") } }
+                item { TypeSample("Caption · 12sp") { Caption("Caption") } }
+
+                item { Section("Shapes") }
+                item { ShapesRow() }
+
+                item { Section("Depth") }
+                item { DepthGrid() }
+
+                item { Section("Atmosphere") }
+                item { AtmosphereSample() }
+
+                item { Section("Controls") }
+                item { ControlsBlock() }
+
+                item { Section("Tactile") }
+                item { TactileBlock() }
+
+                item { Section("Gestures") }
+                item { GesturesSample() }
+
+                item { Section("Motion") }
+                item { MotionTrack("Springs.Snappy", "damping 0.85 · stiffness medium", Springs.Snappy) }
+                item { MotionTrack("Springs.Settle", "damping 0.90 · stiffness medium low", Springs.Settle) }
+                item { MotionTrack("Springs.Kick", "damping 0.65 · stiffness medium", Springs.Kick) }
+                item {
+                    MotionTrack(
+                        name = "tween(Dur.Medium, Ease.Emphasized)",
+                        values = "340ms · cubic 0.2 0 0 1",
+                        spec = tween(Dur.Medium, easing = Ease.Emphasized),
+                    )
+                }
+                item {
+                    MotionTrack(
+                        name = "tween(Dur.Short, Ease.Exit)",
+                        values = "200ms · cubic 0.3 0 0.8 0.15",
+                        spec = tween(Dur.Short, easing = Ease.Exit),
+                    )
+                }
+
+                item { Section("Navigation") }
+                item { NavigationSample(onOpenSheet = { sheetOpen = true }) }
+
+                item { Section("Schedule") }
+                item { ScheduleSample() }
+
+                item { Section("Tab bar") }
+                item { TabBarSample(active = demoTab, onSelect = { demoTab = it }) }
+
+                item { Section("Haptics") }
+                item { HapticsGrid() }
+
+                item { Section("Loaders") }
+                item { LoadersRow() }
             }
-
-            item { Section("Type") }
-            item { TypeSample("Display · 44sp") { Display("Display") } }
-            item { TypeSample("Heading2 · 28sp") { Heading2("Heading two") } }
-            item { TypeSample("Heading3 · 22sp") { Heading3("Heading three") } }
-            item { TypeSample("Overline · 11sp") { Overline("Overline") } }
-            item { TypeSample("BodyText · 15sp") { BodyText("The quick brown fox jumps over the lazy dog.") } }
-            item { TypeSample("AccentText · 20sp") { AccentText("Momentum, not stillness.") } }
-            item { TypeSample("Caption · 12sp") { Caption("Caption") } }
-
-            item { Section("Shapes") }
-            item { ShapesRow() }
-
-            item { Section("Depth") }
-            item { DepthGrid() }
-
-            item { Section("Atmosphere") }
-            item { AtmosphereSample() }
-
-            item { Section("Controls") }
-            item { ControlsBlock() }
-
-            item { Section("Motion") }
-            item { MotionTrack("Springs.Snappy", "damping 0.85 · stiffness medium", Springs.Snappy) }
-            item { MotionTrack("Springs.Settle", "damping 0.90 · stiffness medium low", Springs.Settle) }
-            item { MotionTrack("Springs.Kick", "damping 0.65 · stiffness medium", Springs.Kick) }
-            item {
-                MotionTrack(
-                    name = "tween(Dur.Medium, Ease.Emphasized)",
-                    values = "340ms · cubic 0.2 0 0 1",
-                    spec = tween(Dur.Medium, easing = Ease.Emphasized),
+        }
+        // Sibling of the receding Box, not inside it: the sheet itself must stay full scale.
+        if (sheetOpen) {
+            ArcanaSheet(onDismissRequest = { sheetOpen = false }) {
+                Heading3(text = "A sheet, opened", modifier = Modifier.padding(horizontal = 24.dp))
+                BodyText(
+                    text = "Surface over the atmosphere, a Mist handle, a 40% Ink scrim. This page " +
+                        "is the only way to see it on Android without signing in.",
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 )
+                Spacer(Modifier.height(24.dp))
             }
-            item {
-                MotionTrack(
-                    name = "tween(Dur.Short, Ease.Exit)",
-                    values = "200ms · cubic 0.3 0 0.8 0.15",
-                    spec = tween(Dur.Short, easing = Ease.Exit),
-                )
-            }
-
-            item { Section("Tab bar") }
-            item { TabBarSample(active = demoTab, onSelect = { demoTab = it }) }
-
-            item { Section("Haptics") }
-            item { HapticsGrid() }
-
-            item { Section("Loaders") }
-            item { LoadersRow() }
         }
     }
 }
@@ -273,11 +324,13 @@ private val COLOUR_GROUPS = listOf(
         listOf(
             "InkAlpha10" to InkAlpha10,
             "InkAlpha08" to InkAlpha08,
+            "InkAlpha04" to InkAlpha04,
             "StoneAlpha72" to StoneAlpha72,
             "StoneAlpha65" to StoneAlpha65,
             "StoneAlpha55" to StoneAlpha55,
             "StoneAlpha18" to StoneAlpha18,
             "StoneAlpha10" to StoneAlpha10,
+            "Surface" to Surface,
         ),
     ),
 )
@@ -419,8 +472,8 @@ private fun AtmosphereSample() {
             Atmosphere()
         }
         Caption(
-            text = "16-point mesh · #EEEDDC #EBEBD4 #D3D5AB #C5CCA6 · amplitude 0.15 · " +
-                "periods 6.0s and 7.5s scaled 0.8-1.4 · vignette 6%",
+            text = "16-point mesh · #D8DBB6 #CED4A4 #C2CA86 #9AA662 · amplitude 0.15 · " +
+                "periods 6.0s and 7.5s scaled 0.8-1.4 · vignette 10%",
             size = 12,
             color = Ash,
             maxLines = 4,
@@ -492,6 +545,176 @@ private fun ControlsBlock() {
     }
 }
 
+// ---- Tactile ----
+
+private val TACTILE_ATMOSPHERE_HEIGHT = 180.dp
+private const val TACTILE_PILL_LABEL_SIZE = 12
+private const val TACTILE_PILL_LABEL_TRACKING_EM = 0.22f
+
+@Composable
+private fun TactileBlock() {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Caption(
+            text = "Surface: every card, pill and sheet renders on this opaque warm off-white, " +
+                "a hair greener than Paper so it belongs to the atmosphere, replacing the 72% " +
+                "asked to make.",
+            size = 12,
+            color = Ash,
+            maxLines = 3,
+        )
+
+        GroupLabel("Cards on the atmosphere")
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TACTILE_ATMOSPHERE_HEIGHT)
+                .clip(ArcanaShapes.Card)
+                .border(1.dp, Mist, ArcanaShapes.Card),
+        ) {
+            Atmosphere()
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // cardShadow draws a FILLED silhouette, not a ring, so the middle
+                // tile alone carries a faint Ink veil inside its translucent fill;
+                // the third tile isolates the fill alpha with no shadow at all.
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TactileCardTile(Paper, Modifier.cardShadow(ArcanaShapes.Card), Modifier.weight(1f))
+                    TactileCardTile(Surface, Modifier.cardShadow(ArcanaShapes.Card), Modifier.weight(1f))
+                    TactileCardTile(Surface, Modifier, Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TactilePillTile(Surface, Modifier.weight(1f))
+                    TactilePillTile(Paper, Modifier.weight(1f))
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Caption(
+                text = "Paper · opaque · cardShadow", size = 10, color = Ash2,
+                maxLines = 2, modifier = Modifier.weight(1f),
+            )
+            Caption(
+                text = "Surface · opaque · cardShadow (ships)", size = 10, color = Ash2,
+                maxLines = 2, modifier = Modifier.weight(1f),
+            )
+            Caption(
+                text = "Surface · opaque · no shadow", size = 10, color = Ash2,
+                maxLines = 2, modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Caption(text = "Surface · opaque", size = 10, color = Ash2, modifier = Modifier.weight(1f))
+            Caption(text = "Paper · opaque", size = 10, color = Ash2, modifier = Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(4.dp))
+        GroupLabel("FilterPill-style pill, outlined and filled")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TactileFilterPillSample(label = "MODALITIES", active = false, modifier = Modifier.weight(1f))
+            TactileFilterPillSample(label = "TIME", active = true, modifier = Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(4.dp))
+        GroupLabel("StudioAccordionCard")
+        var tactileChosen by remember { mutableStateOf(false) }
+        var tactileExpanded by remember { mutableStateOf(false) }
+        StudioAccordionCard(
+            name = "Fulcrum Strength",
+            locationCount = 3,
+            chosen = tactileChosen,
+            expanded = tactileExpanded,
+            selectedLocationCount = if (tactileChosen) 3 else 0,
+            onToggle = { tactileChosen = !tactileChosen },
+            onToggleExpanded = { tactileExpanded = !tactileExpanded },
+        )
+    }
+}
+
+@Composable
+private fun TactileCardTile(fill: Color, shadow: Modifier, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .height(72.dp)
+            .then(shadow)
+            .clip(ArcanaShapes.Card)
+            .background(fill)
+            .border(1.dp, Mist, ArcanaShapes.Card),
+    )
+}
+
+@Composable
+private fun TactilePillTile(fill: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .height(44.dp)
+            .softShadow(CircleShape)
+            .clip(CircleShape)
+            .background(fill)
+            .border(1.dp, Mist, CircleShape),
+    )
+}
+
+@Composable
+private fun TactileFilterPillSample(label: String, active: Boolean, modifier: Modifier = Modifier) {
+    val source = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .pressable(source, pressedScale = 0.97f)
+            .then(if (active) Modifier.controlShadow(ArcanaShapes.Pill) else Modifier.softShadow(ArcanaShapes.Pill))
+            .clip(CircleShape)
+            .background(if (active) Ink else Surface)
+            .border(1.dp, if (active) Ink else Mist, CircleShape)
+            .clickable(interactionSource = source, indication = null, onClick = {})
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Overline(
+            text = label,
+            modifier = Modifier.opticallyCentredCaps(TACTILE_PILL_LABEL_SIZE.sp, TACTILE_PILL_LABEL_TRACKING_EM),
+            size = TACTILE_PILL_LABEL_SIZE,
+            color = if (active) Stone else Ink,
+        )
+    }
+}
+
+// ---- Gestures ----
+
+@Composable
+private fun GesturesSample() {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Caption(
+            text = "Demo only: no ViewModel here, so the slide never books. onConfirm " +
+                "flashes the completed state and resets after a beat.",
+            size = 12,
+            color = Ash,
+            maxLines = 3,
+        )
+        GroupLabel("Slide to book")
+        var demoBooked by remember { mutableStateOf(false) }
+        LaunchedEffect(demoBooked) { if (demoBooked) { delay(1400); demoBooked = false } }
+        SlideToConfirm(
+            label = "SLIDE TO BOOK",
+            subLabel = null,
+            onConfirm = { demoBooked = true },
+            completed = demoBooked,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+
+        Spacer(Modifier.height(4.dp))
+        GroupLabel("Hold to cancel")
+        var demoCancelled by remember { mutableStateOf(false) }
+        LaunchedEffect(demoCancelled) { if (demoCancelled) { delay(1400); demoCancelled = false } }
+        HoldToConfirm(
+            label = if (demoCancelled) "CANCELLED" else "HOLD TO CANCEL",
+            onConfirm = { demoCancelled = true },
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+    }
+}
+
 // ---- Motion ----
 
 private val MOTION_DOT = 8.dp
@@ -532,6 +755,94 @@ private fun MotionTrack(name: String, values: String, spec: AnimationSpec<Float>
                     .clip(CircleShape)
                     .background(Lime),
             )
+        }
+    }
+}
+
+// ---- Navigation ----
+
+@Composable
+private fun NavigationSample(onOpenSheet: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        GroupLabel("Sheet")
+        PrimaryCta(label = "Open a sheet", onClick = onOpenSheet)
+        GroupLabel("Push and pop")
+        Caption(
+            text = "Push: rises from 12% of the height + fades in, 340ms Ease.Emphasized · " +
+                "the screen beneath scales out to 96% on the same curve.",
+            size = 12,
+            color = Ash,
+            maxLines = Int.MAX_VALUE,
+        )
+        Caption(
+            text = "Pop: the screen beneath scales back from 96%, 200ms Ease.Emphasized · " +
+                "this screen slides down 12% + fades out, 200ms Ease.Exit.",
+            size = 12,
+            color = Ash,
+            maxLines = Int.MAX_VALUE,
+        )
+        Caption(
+            text = "The screen beneath only scales: the spec's 12% Ink dim is not implemented.",
+            size = 12,
+            color = Ash,
+            maxLines = Int.MAX_VALUE,
+        )
+    }
+}
+
+// ---- Schedule ----
+
+private const val SCHEDULE_SAMPLE_DAYS = 7
+
+// Mirrors ScheduleScreen's two-way pager/rail binding without a ViewModel:
+// the only place this is reachable on Android, which has no signed-in session.
+@Composable
+private fun ScheduleSample() {
+    val days = remember {
+        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+        (0 until SCHEDULE_SAMPLE_DAYS).map { today.plus(it, DateTimeUnit.DAY) }
+    }
+    var selectedIndex by remember { mutableStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0) { days.size }
+
+    LaunchedEffect(selectedIndex) {
+        if (pagerState.currentPage != selectedIndex) {
+            pagerState.animateScrollToPage(selectedIndex, animationSpec = Springs.Settle)
+        }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { selectedIndex = it }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        GroupLabel("Day rail + pager")
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ArcanaShapes.Card)
+                .background(Paper)
+                .border(1.dp, Mist, ArcanaShapes.Card)
+                .padding(vertical = 12.dp),
+        ) {
+            DayRail(
+                days = days,
+                position = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
+                selectedIndex = selectedIndex,
+                onSelect = { i -> selectedIndex = i },
+            )
+            Spacer(Modifier.height(12.dp))
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(120.dp)) { page ->
+                val date = days.getOrNull(page) ?: return@HorizontalPager
+                Box(Modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
+                    Caption(text = "${titleCase(date.dayOfWeek.name)} · ${date.day}", color = Ink)
+                }
+            }
+        }
+        GroupLabel("Skeleton rows")
+        val skeletonBrush = shimmerBrush()
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            SkeletonClassRow(fill = 0.62f, brush = skeletonBrush)
+            SkeletonClassRow(fill = 0.42f, brush = skeletonBrush)
         }
     }
 }

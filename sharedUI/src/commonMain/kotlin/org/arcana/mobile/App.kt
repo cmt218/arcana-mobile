@@ -1,15 +1,14 @@
 package org.arcana.mobile
 
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -26,7 +26,6 @@ import androidx.compose.ui.backhandler.BackHandler
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
-import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -64,9 +63,12 @@ import org.arcana.mobile.signup.SignupSurveyViewModel
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
 import org.arcana.mobile.theme.Dur
+import org.arcana.mobile.theme.NavTransitions
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.ui.ArcanaTab
 import org.arcana.mobile.ui.ArcanaTabBar
+import org.arcana.mobile.ui.LocalFloatingBarInset
+import org.arcana.mobile.ui.floatingBarInset
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -302,33 +304,16 @@ private fun MainScaffold() {
         else -> null
     }
 
-    Scaffold(
-        containerColor = Stone,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (selectedTab != null) {
-                ArcanaTabBar(
-                    active = selectedTab,
-                    onSelect = { tab ->
-                        telemetry.tabTapped(tab.name.lowercase(), fromScreen = screenName)
-                        navController.navigateToTab(tab)
-                    },
-                    avatarInitials = avatarInitials,
-                )
-            }
-        },
-    ) { innerPadding ->
+    CompositionLocalProvider(LocalFloatingBarInset provides floatingBarInset) {
+    Box(Modifier.fillMaxSize().background(Stone)) {
         NavHost(
             navController = navController,
             startDestination = ArcanaDestination.Home,
-            modifier = Modifier.padding(innerPadding),
-            // Fades exist because iOS's default slide reads wrong navigating
-            // backwards between sibling destinations; tab-to-tab swaps skip it
-            // (see isTabToTab) since the bar's dot and icon bounce carry that motion.
-            enterTransition = { if (isTabToTab()) EnterTransition.None else fadeIn(tween(Dur.Quick)) },
-            exitTransition = { if (isTabToTab()) ExitTransition.None else fadeOut(tween(Dur.Quick)) },
-            popEnterTransition = { if (isTabToTab()) EnterTransition.None else fadeIn(tween(Dur.Quick)) },
-            popExitTransition = { if (isTabToTab()) ExitTransition.None else fadeOut(tween(Dur.Quick)) },
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = { with(NavTransitions) { enter() } },
+            exitTransition = { with(NavTransitions) { exit() } },
+            popEnterTransition = { with(NavTransitions) { popEnter() } },
+            popExitTransition = { with(NavTransitions) { popExit() } },
         ) {
             composable<ArcanaDestination.Home> {
                 HomeScreen(
@@ -371,6 +356,7 @@ private fun MainScaffold() {
                 // Near-invisible fade whose only job is to hold both screens
                 // mounted while SearchScreen's own reveal runs.
                 enterTransition = { searchHoldEnterTransition() },
+                popEnterTransition = { EnterTransition.None },
                 popExitTransition = { ExitTransition.None },
             ) { entry ->
                 val args = entry.toRoute<ArcanaDestination.Search>()
@@ -414,6 +400,32 @@ private fun MainScaffold() {
                 )
             }
         }
+        // selectedTab flips before the transition plays, so hold the last
+        // non-null tab through the fade-out. Keep this write above every read of
+        // lastTab, or each nav costs a full extra MainScaffold recomposition.
+        var lastTab by remember { mutableStateOf(selectedTab) }
+        if (selectedTab != null) lastTab = selectedTab
+        AnimatedVisibility(
+            visible = selectedTab != null,
+            enter = fadeIn(tween(Dur.Quick)),
+            exit = fadeOut(tween(Dur.Quick)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            lastTab?.let { tab ->
+                ArcanaTabBar(
+                    active = tab,
+                    onSelect = { selected ->
+                        // graphicsLayer alpha doesn't stop hit-testing, so the pill stays
+                        // tappable through its own fade-out; ignore taps once it's fading.
+                        if (selectedTab == null) return@ArcanaTabBar
+                        telemetry.tabTapped(selected.name.lowercase(), fromScreen = screenName)
+                        navController.navigateToTab(selected)
+                    },
+                    avatarInitials = avatarInitials,
+                )
+            }
+        }
+    }
     }
 }
 
@@ -432,15 +444,6 @@ internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest.hasRoute<ArcanaDestination.Search>() -> Telemetry.Screens.SEARCH
     else -> null
 }
-
-/** True when both ends of a transition are tab roots: tabs swap instantly, the bar's dot carries the motion. */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabToTab(): Boolean =
-    isTabRoot(initialState.destination) && isTabRoot(targetState.destination)
-
-private fun isTabRoot(dest: NavDestination): Boolean =
-    dest.hasRoute<ArcanaDestination.Home>() ||
-        dest.hasRoute<ArcanaDestination.Schedule>() ||
-        dest.hasRoute<ArcanaDestination.Profile>()
 
 private fun NavController.navigateToTab(tab: ArcanaTab) {
     val dest: ArcanaDestination = when (tab) {

@@ -17,15 +17,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
-import org.arcana.mobile.theme.Mist
-import org.arcana.mobile.theme.Stone2
+import org.arcana.mobile.theme.InkAlpha04
+import org.arcana.mobile.theme.InkAlpha10
 
-/** A subtle left-to-right shimmer brush for skeleton placeholders. Uses
- *  Mist as the base and Stone2 as the highlight — both read well on Stone. */
+/** A subtle left-to-right shimmer brush for skeleton placeholders. Translucent
+ *  Ink darkens whatever sits beneath, so it reads on Stone and on the atmosphere
+ *  alike; pass light colours for a dark surface. */
 @Composable
 fun shimmerBrush(
-    base: Color = Mist,
-    highlight: Color = Stone2,
+    base: Color = InkAlpha10,
+    highlight: Color = InkAlpha04,
 ): Brush {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val translate by transition.animateFloat(
@@ -41,8 +42,16 @@ fun shimmerBrush(
     )
 }
 
-/** A shimmering placeholder block. Size it with the modifier; pass a Shape for rounded blocks. */
+/** [shimmerBrush] frozen mid-sweep: same look, no [rememberInfiniteTransition]
+ *  running. For a skeleton page a member cannot currently see (kept composed
+ *  by beyondViewportPageCount) but that still needs to paint something. */
+fun staticShimmerBrush(base: Color = InkAlpha10, highlight: Color = InkAlpha04): Brush =
+    Brush.linearGradient(colors = listOf(base, highlight, base), start = Offset(-50f, 0f), end = Offset(450f, 0f))
+
+/** A shimmering placeholder block. Size it with the modifier; pass a Shape for
+ *  rounded blocks, or a pre-built [brush] to share one shimmer transition
+ *  across many boxes instead of animating each independently. */
 @Composable
-fun ShimmerBox(modifier: Modifier = Modifier, shape: Shape = RectangleShape) {
-    Box(modifier.clip(shape).background(shimmerBrush()))
+fun ShimmerBox(modifier: Modifier = Modifier, shape: Shape = RectangleShape, brush: Brush? = null) {
+    Box(modifier.clip(shape).background(brush ?: shimmerBrush()))
 }

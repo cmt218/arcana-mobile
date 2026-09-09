@@ -1,8 +1,12 @@
 package org.arcana.mobile.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +19,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -28,12 +34,15 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Dur
+import org.arcana.mobile.theme.Ease
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.StoneAlpha55
 
@@ -66,13 +75,34 @@ fun StudioAccordionCard(
     // Some-but-not-all selection: individual locations are picked without the
     // whole studio — surfaced via a partial check ring + "N of M locations".
     val partial = !chosen && selectedLocationCount > 0
+    val cardShape = ArcanaShapes.Card
+    val cardSource = remember { MutableInteractionSource() }
+    val toggleSource = remember { MutableInteractionSource() }
+    val chevronSource = remember { MutableInteractionSource() }
+    val cardFill by animateColorAsState(
+        targetValue = if (chosen) Ink else Surface,
+        animationSpec = tween(Dur.Short),
+        label = "studioCardFill",
+    )
+    val cardBorder by animateColorAsState(
+        targetValue = if (chosen) Ink else Ash,
+        animationSpec = tween(Dur.Short),
+        label = "studioCardBorder",
+    )
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(Dur.Short, easing = Ease.Emphasized),
+        label = "chevron",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (chosen) Ink else Paper)
-            .border(1.dp, if (chosen) Ink else Mist, RoundedCornerShape(16.dp))
-            .clickable(onClick = onToggleExpanded),
+            .pressable(cardSource, pressedScale = 0.99f)
+            .cardShadow(cardShape)
+            .clip(cardShape)
+            .background(cardFill)
+            .border(1.dp, cardBorder, cardShape)
+            .clickable(interactionSource = cardSource, indication = null, onClick = onToggleExpanded),
     ) {
         Row(
             modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
@@ -85,8 +115,9 @@ fun StudioAccordionCard(
                 // description would leave the control unnamed 2/3 of the time.
                 modifier = Modifier
                     .size(40.dp)
+                    .pressable(toggleSource, pressedScale = 0.9f)
                     .clip(CircleShape)
-                    .clickable(onClick = onToggle)
+                    .clickable(interactionSource = toggleSource, indication = null, onClick = onToggle)
                     .semantics {
                         contentDescription =
                             if (chosen) "Deselect $name" else "Select $name"
@@ -144,15 +175,16 @@ fun StudioAccordionCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
+                    .pressable(chevronSource, pressedScale = 0.9f)
                     .clip(CircleShape)
-                    .clickable(onClick = onToggleExpanded),
+                    .clickable(interactionSource = chevronSource, indication = null, onClick = onToggleExpanded),
                 contentAlignment = Alignment.Center,
             ) {
                 StrokeIcon(
                     icon = ArcanaIcons.ChevronDown,
                     size = 18.dp,
                     tint = if (chosen) Lime else Moss,
-                    modifier = Modifier.rotate(if (expanded) 180f else 0f),
+                    modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
                     contentDescription =
                         if (expanded) "Hide $name locations" else "Show $name locations",
                 )
@@ -190,7 +222,7 @@ fun StudioLocationRow(
                 .clip(CircleShape)
                 .then(
                     if (checked) Modifier.background(checkTint)
-                    else Modifier.border(2.dp, Mist, CircleShape)
+                    else Modifier.border(2.dp, Ash, CircleShape)
                 ),
             contentAlignment = Alignment.Center,
         ) {

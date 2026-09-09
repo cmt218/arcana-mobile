@@ -2,6 +2,7 @@ package org.arcana.mobile.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +73,10 @@ import org.arcana.mobile.ui.StatusPill
 import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.ui.TransientSurface
+import org.arcana.mobile.ui.cardShadow
+import org.arcana.mobile.ui.innerHighlight
+import org.arcana.mobile.ui.pressable
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -321,7 +326,13 @@ fun HomeScreen(
         }
     }
     }
-    if (refreshFailed) {
+    TransientSurface(
+        visible = refreshFailed,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .safeHorizontalPadding()
+            .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+    ) {
         ErrorSnackbar(
             text = ErrorCopy.REFRESH_FAILED,
             onRetry = {
@@ -329,10 +340,6 @@ fun HomeScreen(
                 vm.refresh()
             },
             onDismiss = vm::dismissRefreshFailed,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .safeHorizontalPadding()
-                .padding(bottom = 16.dp + LocalFloatingBarInset.current),
         )
     }
     }
@@ -455,13 +462,18 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
     } ?: "--"
     val amPm = local?.let { if (it.hour < 12) "am" else "pm" } ?: ""
     val spotLabel = booking.spot?.label ?: booking.fulfilledSpot?.label ?: booking.requestedSpot?.label
+    val cardSource = remember { MutableInteractionSource() }
+    val cardShape = RoundedCornerShape(20.dp)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .clickable { onClick() }
-            .background(Moss),
+            .pressable(cardSource, pressedScale = 0.98f)
+            .cardShadow(cardShape)
+            .clip(cardShape)
+            .background(Moss)
+            .innerHighlight(cardShape)
+            .clickable(interactionSource = cardSource, indication = null, onClick = onClick),
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -589,6 +601,7 @@ private fun UpcomingRow(
         val mon = it.month.name.take(3)
         "${dow} · ${mon} ${it.date.day}"
     } ?: ""
+    val rowSource = remember { MutableInteractionSource() }
 
     Column(modifier = modifier) {
         if (showDayDivider && dayLabel.isNotEmpty()) {
@@ -604,7 +617,8 @@ private fun UpcomingRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .pressable(rowSource, pressedScale = 0.99f)
+                .clickable(interactionSource = rowSource, indication = null, onClick = onClick)
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -682,11 +696,14 @@ private fun ManifestoCard(
     weekStreak: Int,
     modifier: Modifier = Modifier,
 ) {
+    val cardShape = RoundedCornerShape(20.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Ink),
+            .cardShadow(cardShape)
+            .clip(cardShape)
+            .background(Ink)
+            .innerHighlight(cardShape),
     ) {
         Column(
             modifier = Modifier.padding(24.dp),

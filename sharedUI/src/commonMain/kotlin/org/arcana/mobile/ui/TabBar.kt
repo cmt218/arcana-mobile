@@ -12,11 +12,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,26 +31,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
+import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Springs
-import org.arcana.mobile.theme.Stone
 import org.jetbrains.compose.resources.DrawableResource
 
 /** The three primary destinations. Profile renders as the member's avatar. */
@@ -54,12 +61,35 @@ enum class ArcanaTab(val label: String, val icon: DrawableResource, val isAvatar
     Profile("You", ArcanaIcons.User, isAvatar = true),
 }
 
+private val BAR_SIDE_INSET = 12.dp
+private val BAR_BOTTOM_INSET = 10.dp
+private const val BAR_ALPHA = 0.92f
+
+// Measured pixel height of the pill (Modifier.border draws inside the node,
+// so the border rows count). Re-measure on the Design system "Tab bar" sample if TabItem changes.
+private val BAR_HEIGHT = 69.dp
+
+// Shared by the icon slot's height and the avatar's size below — the two must
+// match or the shorter one either floats in an oversized slot or drops the
+// labels off their shared baseline.
+private val ICON_SLOT = 26.dp
+
 /**
- * Bottom navigation, Android only (iOS uses the native SwiftUI bar). Stone
- * surface, hairline top. One Lime dot travels between the three items on a
- * spring; the active icon bounces; the active item reads in Moss. The bar
- * fills its whole slot including the gesture-nav inset with a Stone fill, so
- * nothing behind the Scaffold can bleed through under the visible tab row.
+ * Bottom clearance a tab-root scrollable needs to clear the floating bar: the
+ * device's own system-bar/display-cutout inset plus the gap and pill height
+ * this file draws. Runtime-computed because that inset varies by device;
+ * deliberately not `safeDrawing`, which folds in the IME.
+ */
+val floatingBarInset: Dp
+    @Composable get() = with(LocalDensity.current) {
+        WindowInsets.systemBars.union(WindowInsets.displayCutout)
+            .only(WindowInsetsSides.Bottom).getBottom(this).toDp()
+    } + BAR_BOTTOM_INSET + BAR_HEIGHT
+
+/**
+ * Bottom navigation, Android only: a floating Paper pill over the atmosphere.
+ * One Lime dot travels between the three items on a spring; the active icon
+ * bounces; the active item reads in Moss.
  */
 @Composable
 fun ArcanaTabBar(
@@ -78,22 +108,18 @@ fun ArcanaTabBar(
     )
     Column(
         modifier = modifier
+            .safeBottomBarPadding()
+            .padding(start = BAR_SIDE_INSET, end = BAR_SIDE_INSET, bottom = BAR_BOTTOM_INSET)
             .fillMaxWidth()
-            .background(Stone)
-            .drawBehind {
-                drawLine(
-                    color = Mist,
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 1.dp.toPx(),
-                )
-            },
+            .barShadow(ArcanaShapes.Pill)
+            .clip(ArcanaShapes.Pill)
+            .background(Paper.copy(alpha = BAR_ALPHA))
+            .border(1.dp, Mist, ArcanaShapes.Pill),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .safeBottomBarPadding()
-                .padding(start = 8.dp, end = 8.dp, top = 10.dp, bottom = 12.dp),
+                .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         ) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 ArcanaTab.entries.forEach { tab ->
@@ -167,11 +193,18 @@ private fun TabItem(
     ) {
         // Reserves the dot's row; the dot itself is drawn once by TravellingDot.
         Spacer(Modifier.size(DOT_SIZE))
-        Box(Modifier.graphicsLayer { scaleX = bounce; scaleY = bounce }) {
+        // Fixed height so HOME/BOOK's 22dp icon and YOU's 26dp avatar share one
+        // slot and the labels below them land on the same baseline.
+        Box(
+            modifier = Modifier
+                .height(ICON_SLOT)
+                .graphicsLayer { scaleX = bounce; scaleY = bounce },
+            contentAlignment = Alignment.Center,
+        ) {
             if (tab.isAvatar) {
                 Box(
                     modifier = Modifier
-                        .size(26.dp)
+                        .size(ICON_SLOT)
                         .clip(CircleShape)
                         .background(if (active) Moss else Mist2)
                         .then(

@@ -1,5 +1,12 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package org.arcana.mobile.schedule
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
@@ -7,6 +14,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +32,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Text
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,17 +43,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.delay
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
@@ -60,15 +74,19 @@ import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
 import org.arcana.mobile.booking.cancelErrorCopy
 import org.arcana.mobile.booking.outsideWindowCopy
+import org.arcana.mobile.booking.useBookingGestures
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
-import org.arcana.mobile.theme.Atmosphere
-import org.arcana.mobile.theme.BurntNectar
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
+import org.arcana.mobile.theme.Atmosphere
+import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Clay
 import org.arcana.mobile.theme.ClayDeep
+import org.arcana.mobile.theme.Dur
+import org.arcana.mobile.theme.Ease
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
@@ -76,11 +94,13 @@ import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.MossLight
-import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Surface
+import org.arcana.mobile.theme.Springs
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
+import org.arcana.mobile.ui.ArcanaSheet
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.CircleMonogram
@@ -92,18 +112,33 @@ import org.arcana.mobile.ui.ErrorCopy
 import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading3
+import org.arcana.mobile.ui.HoldToConfirm
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.StrokeIcon
+import org.arcana.mobile.ui.TransientSurface
+import org.arcana.mobile.ui.cardShadow
+import org.arcana.mobile.ui.controlShadow
+import org.arcana.mobile.ui.innerHighlight
+import org.arcana.mobile.ui.opticallyCentredCapsVertical
+import org.arcana.mobile.ui.pressable
+import org.arcana.mobile.ui.pressedShade
+import org.arcana.mobile.ui.recedeBehindSheet
+import org.arcana.mobile.ui.rememberHaptics
+import org.arcana.mobile.ui.rememberPressed
 import org.arcana.mobile.ui.safeBottomBarPadding
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
+import org.arcana.mobile.ui.softShadow
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
 // ── Constants -----------------------------------------------------------------
 
+// Keep the booking sheet mounted this long after a gesture booking so the
+// in-place BOOKED check is seen before the VM-closed sheet unmounts.
+private const val CONFIRM_HOLD_MS = 550L
 
 // Copy of Month.abbr() from ScheduleScreen — small intentional duplication
 // to keep both files self-contained without promoting the helper to internal.
@@ -249,6 +284,7 @@ fun ClassDetailScreen(
 
 @Composable
 private fun LoadingBlock(onClose: () -> Unit) {
+    BackHandler { onClose() }
     // TopBar overlays rather than stacks: stacking leaves only the space below
     // the bar, so the loader centres below the true middle.
     Box(modifier = Modifier.fillMaxSize()) {
@@ -276,6 +312,7 @@ private fun ErrorBlock(
     onRetry: () -> Unit,
     retrying: Boolean,
 ) {
+    BackHandler { onClose() }
     Box(modifier = Modifier.fillMaxSize()) {
         FullScreenError(
             type = type,
@@ -291,8 +328,8 @@ private fun ErrorBlock(
 
 // ── Success layout ------------------------------------------------------------
 
-@Composable
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun SuccessBlock(
     session: ScheduleSessionDto,
     onClose: () -> Unit,
@@ -319,6 +356,12 @@ private fun SuccessBlock(
     val isPast = remember(session.endAt) {
         try { Instant.parse(session.endAt) < Clock.System.now() } catch (_: Exception) { false }
     }
+    // Hoisted above the LazyColumn: a remember() inside CapacityPips (a lazy
+    // item) is torn down on scroll-away and replays from empty on return.
+    val pipsTaken = (session.arcanaSpotsOffered - session.arcanaSpotsAvailable).coerceAtLeast(0)
+    // Capacity renders at its final value — no fill animation.
+    val takenProgress = remember { Animatable(pipsTaken.toFloat()) }
+    LaunchedEffect(pipsTaken) { takenProgress.snapTo(pipsTaken.toFloat()) }
 
     val requiresSpot = session.template.spotSelectionMode != "none"
     val bookingVm: BookingViewModel = koinViewModel {
@@ -363,11 +406,53 @@ private fun SuccessBlock(
     // independently (isPast) once loaded.
     val ctaLoading = !loaded && submit is BookingSubmit.Idle
     val hasLiveBooking = existing != null
+    val haptics = rememberHaptics()
+    val useGestures = useBookingGestures()
+    LaunchedEffect(submit) {
+        when (submit) {
+            is BookingSubmit.Booked -> haptics.confirm()
+            is BookingSubmit.Failed -> haptics.reject()
+            else -> Unit
+        }
+    }
+    // Cancel success is the Submitting -> Idle transition; CancelState has no
+    // Success. Tap path only — HoldToConfirm fires reject() itself on completion.
+    var prevCancel by remember { mutableStateOf<CancelState>(CancelState.Idle) }
+    LaunchedEffect(cancelState) {
+        val was = prevCancel
+        prevCancel = cancelState
+        if (!useGestures && was is CancelState.Submitting && cancelState is CancelState.Idle) {
+            haptics.reject()
+        }
+    }
+    var holdForConfirm by remember { mutableStateOf(false) }
+    LaunchedEffect(submit) {
+        if (submit is BookingSubmit.Booked && useGestures) {
+            holdForConfirm = true
+            delay(CONFIRM_HOLD_MS)
+            holdForConfirm = false
+        }
+    }
+
+    // Route the system back gesture through onClose so it plays the X's
+    // push-down (popExit) on both platforms, not the platform interactive-pop.
+    // Disabled while a sheet is up so back dismisses the sheet first.
+    BackHandler(enabled = !(sheetOpen || cancelSheetOpen || holdForConfirm)) { onClose() }
 
     // Scrollable list under a sticky CTA. The LazyColumn pads its bottom by
     // ~140dp so the last content can scroll out from behind the CTA without
     // ever being permanently obscured.
-    Box(modifier = Modifier.fillMaxSize()) {
+    // The atmosphere lives on the screen's root, so the surface exposed around the
+    // receding page is the same living one, dimmed by the scrim, not flat Stone.
+    val bookingSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val cancelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Drive the recede off the sheet's target, not the VM boolean: targetValue flips
+    // to Hidden the instant a dismiss begins, so the page tracks the sheet down as it
+    // slides instead of un-shrinking after it is already gone.
+    val bookingReceding = (sheetOpen && bookingSheetState.targetValue != SheetValue.Hidden) || holdForConfirm
+    val cancelReceding = cancelSheetOpen && cancelSheetState.targetValue != SheetValue.Hidden
+
+    Box(modifier = Modifier.fillMaxSize().recedeBehindSheet(open = bookingReceding || cancelReceding)) {
         ArcanaPullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = {
@@ -442,6 +527,7 @@ private fun SuccessBlock(
                         capacity = capacity,
                         publishesCapacity = studio.publishesCapacity,
                         studioColor = sc,
+                        takenProgress = takenProgress,
                         // Non-null for a not-open class — replaces the spot count
                         // with "Booking opens …" (ET).
                         opensLine = if (notOpenYet) opensAtAvailabilityLine(opensAt!!) else null,
@@ -499,7 +585,18 @@ private fun SuccessBlock(
                     .zIndex(2f),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-            if (membershipLoadFailed) {
+            TransientSurface(
+                visible = membershipLoadFailed,
+                modifier = Modifier
+                    .safeHorizontalPadding()
+                    // The CTA opens with a 40dp fade before its pill, so
+                    // sitting flush above it leaves 48dp to the PILL. Drop
+                    // into the fade to match the pill's own bottom gap.
+                    .offset(y = CTA_FADE_HEIGHT + CTA_EDGE_GAP - CTA_PILL_GAP)
+                    // Above the fade: the CTA is a later sibling, so its
+                    // gradient would paint across the bar as a glow.
+                    .zIndex(1f),
+            ) {
                 ErrorSnackbar(
                     text = ErrorCopy.REFRESH_FAILED,
                     // Same refresh the pull gesture drives, or the top indicator
@@ -510,15 +607,6 @@ private fun SuccessBlock(
                         bookingVm.load()
                     },
                     onDismiss = bookingVm::dismissMembershipLoadFailed,
-                    modifier = Modifier
-                        .safeHorizontalPadding()
-                        // The CTA opens with a 40dp fade before its pill, so
-                        // sitting flush above it leaves 48dp to the PILL. Drop
-                        // into the fade to match the pill's own bottom gap.
-                        .offset(y = CTA_FADE_HEIGHT + CTA_EDGE_GAP - CTA_PILL_GAP)
-                        // Above the fade: the CTA is a later sibling, so its
-                        // gradient would paint across the bar as a glow.
-                        .zIndex(1f),
                 )
             }
             StickyReserveCta(
@@ -531,6 +619,7 @@ private fun SuccessBlock(
                 // Show the booked spot on the CTA's sub-line for spot studios.
                 spotLabel = bookedSpotLabel,
                 loading = ctaLoading,
+                pulse = submit is BookingSubmit.Booked,
                 // Tappable when there's a live booking (→ cancel) or the class is
                 // bookable; while loading the CTA is inert and shows a spinner. A
                 // not-open class (no live booking) is inert until the window opens.
@@ -548,7 +637,7 @@ private fun SuccessBlock(
         }
     }
 
-    if (sheetOpen) {
+    if (sheetOpen || holdForConfirm) {
         // A failed attempt renders inside the sheet (replacing the confirm UI)
         // rather than as a top banner that collides with the camera punch-out.
         val bookingError = (submit as? BookingSubmit.Failed)?.let { f ->
@@ -572,7 +661,10 @@ private fun SuccessBlock(
             submitting = submit is BookingSubmit.Submitting,
             errorMessage = bookingError,
             onConfirm = bookingVm::confirmBooking,
-            onDismiss = bookingVm::dismissSheet,
+            onDismiss = { if (!holdForConfirm) bookingVm.dismissSheet() },
+            booked = submit is BookingSubmit.Booked,
+            bookedStatus = existing?.status,
+            sheetState = bookingSheetState,
         )
     }
     if (cancelSheetOpen) {
@@ -583,6 +675,7 @@ private fun SuccessBlock(
             cancelState = cancelState,
             onConfirm = bookingVm::confirmCancel,
             onDismiss = bookingVm::dismissCancelSheet,
+            sheetState = cancelSheetState,
         )
     }
 }
@@ -591,12 +684,12 @@ private fun SuccessBlock(
 
 /**
  * Confirmation sheet for cancelling an existing booking from the detail page.
- * Mirrors BookingSheet's Stone-container structure. The forfeit warning is
+ * Mirrors BookingSheet's ArcanaSheet structure. The forfeit warning is
  * driven by the booking's cancel policy: past the studio cutoff the credit is
  * lost (Warning), otherwise it's refunded (Moss).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun CancelBookingSheet(
     className: String,
     spotLabel: String?,
@@ -604,10 +697,10 @@ private fun CancelBookingSheet(
     cancelState: CancelState,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    sheetState: SheetState,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val submitting = cancelState is CancelState.Submitting
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Stone) {
+    ArcanaSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Heading3("Cancel booking?", size = 20, color = Ink)
             Spacer(Modifier.height(8.dp))
@@ -626,16 +719,24 @@ private fun CancelBookingSheet(
                 BodyText("You'll get your credit back.", size = 13, color = Moss)
             }
             Spacer(Modifier.height(20.dp))
-            PrimaryCta(
-                label = if (submitting) "CANCELLING…" else "CANCEL BOOKING",
-                onClick = onConfirm,
-                enabled = !submitting,
-                containerColor = Clay,
-                accentColor = ClayDeep,
-                trailing = if (submitting) {
-                    { CtaSpinner() }
-                } else null,
-            )
+            if (useBookingGestures()) {
+                HoldToConfirm(
+                    label = if (submitting) "CANCELLING…" else "HOLD TO CANCEL",
+                    onConfirm = onConfirm,
+                    enabled = !submitting,
+                )
+            } else {
+                PrimaryCta(
+                    label = if (submitting) "CANCELLING…" else "CANCEL BOOKING",
+                    onClick = onConfirm,
+                    enabled = !submitting,
+                    containerColor = Clay,
+                    accentColor = ClayDeep,
+                    trailing = if (submitting) {
+                        { CtaSpinner() }
+                    } else null,
+                )
+            }
             if (cancelState is CancelState.Failed) {
                 Spacer(Modifier.height(12.dp))
                 // cancelErrorCopy (not bookingErrorCopy) so an unmapped code
@@ -671,13 +772,16 @@ private fun CircleIconButton(
     onClick: () -> Unit,
     contentDescription: String,
 ) {
+    val source = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .size(38.dp)
+            .pressable(source, pressedScale = 0.94f)
+            .softShadow(CircleShape)
             .clip(CircleShape)
-            .background(Paper)
-            .border(1.dp, Mist, CircleShape)
-            .clickable(onClick = onClick),
+            .background(Surface)
+            .border(1.dp, Ash, CircleShape)
+            .clickable(interactionSource = source, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         StrokeIcon(
@@ -710,7 +814,8 @@ private fun HeroCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .cardShadow(ArcanaShapes.Hero)
+            .clip(ArcanaShapes.Hero)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
@@ -719,7 +824,7 @@ private fun HeroCard(
                     ),
                 ),
             )
-            .border(1.dp, studioColor.copy(alpha = 0.20f), RoundedCornerShape(14.dp)),
+            .border(1.dp, studioColor.copy(alpha = 0.20f), ArcanaShapes.Hero),
     ) {
         Column(
             modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 20.dp),
@@ -753,8 +858,9 @@ private fun BrandLocationChip(
 ) {
     Row(
         modifier = Modifier
+            .softShadow(CircleShape)
             .clip(CircleShape)
-            .background(Paper)
+            .background(Surface)
             .border(1.dp, studioColor.copy(alpha = 0.35f), CircleShape)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -807,7 +913,7 @@ private fun SummaryStrip(
     val time = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')}"
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(MossLight))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -821,7 +927,7 @@ private fun SummaryStrip(
             VerticalHairline()
             SummaryCell(label = "DURATION", value = durationMinutes.toString(), unit = "MIN", modifier = Modifier.weight(1f))
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(MossLight))
     }
 }
 
@@ -840,7 +946,7 @@ private fun SummaryCell(
         Spacer(Modifier.height(8.dp))
         Display(text = value, size = 22, color = Ink)
         Spacer(Modifier.height(4.dp))
-        Overline(text = unit, size = 9, color = Ash2)
+        Overline(text = unit, size = 9, color = Ash)
     }
 }
 
@@ -849,7 +955,7 @@ private fun VerticalHairline() {
     // Horizontal padding gives the hairline its own breathing room so adjacent
     // cell values ("07:00", "45") don't crowd the bar — the 1dp line stays thin
     // but sits inset 12dp from the values on either side.
-    Box(Modifier.padding(horizontal = 12.dp).width(1.dp).height(56.dp).background(Mist))
+    Box(Modifier.padding(horizontal = 12.dp).width(1.dp).height(56.dp).background(MossLight))
 }
 
 // ── Instructor row ------------------------------------------------------------
@@ -916,6 +1022,7 @@ private fun AvailabilityBlock(
     capacity: DetailCapacity,
     publishesCapacity: Boolean,
     studioColor: Color,
+    takenProgress: Animatable<Float, AnimationVector1D>,
     modifier: Modifier = Modifier,
     // Non-null for a not-open Mariana Tek class: "Booking opens Mon, Jun 22 ·
     // 11:00 AM ET". When present it replaces the spot-count headline + pips —
@@ -946,8 +1053,9 @@ private fun AvailabilityBlock(
             if (offered > 0) {
                 Spacer(Modifier.height(12.dp))
                 CapacityPips(
-                    offered = offered, taken = taken,
+                    offered = offered,
                     capacity = capacity, studioColor = studioColor,
+                    takenProgress = takenProgress,
                 )
             }
         } else {
@@ -965,9 +1073,11 @@ private fun AvailabilityBlock(
 @Composable
 private fun CapacityPips(
     offered: Int,
-    taken: Int,
     capacity: DetailCapacity,
     studioColor: Color,
+    // Owned by SuccessBlock, above the LazyColumn, so the sweep survives this
+    // composable's own lazy-item disposal on scroll-away.
+    takenProgress: Animatable<Float, AnimationVector1D>,
 ) {
     // Available capacity is the prominent signal: open pips carry the state
     // color (moss when open, warning when scarce), taken pips recede to stone.
@@ -994,7 +1104,10 @@ private fun CapacityPips(
                     .weight(1f)
                     .height(10.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(if (i < taken) takenColor else openColor),
+                    .background(takenColor)
+                    // Draw phase only, so a 20-pip row doesn't recompose every
+                    // animation frame.
+                    .drawBehind { if (i >= takenProgress.value) drawRect(openColor) },
             )
         }
     }
@@ -1042,6 +1155,11 @@ private fun LocationRow(
     }
 }
 
+// Shared by the primary label's style and its optical nudge: separate
+// literals would drift and silently un-centre the label (ui/Buttons.kt CTA_LABEL_SIZE).
+private val CTA_PRIMARY_LABEL_SIZE = 14.sp
+private const val CTA_PRIMARY_LABEL_TRACKING_EM = 0.10f
+
 // ── Sticky CTA ----------------------------------------------------------------
 
 /**
@@ -1071,7 +1189,9 @@ private fun StickyReserveCta(
     // Replaces the computed time/day sub-stamp with custom text when non-null
     // (used for the "outside your membership" coverage explanation).
     subStampOverride: String? = null,
+    pulse: Boolean = false,
 ) {
+    val pillShape = RoundedCornerShape(22.dp)
     val pillColor = when {
         loading -> Graphite
         !enabled -> Graphite
@@ -1091,30 +1211,28 @@ private fun StickyReserveCta(
         DetailCapacity.Full -> "CLASS FULL"
         DetailCapacity.NotOpen -> "NOT OPEN"
     }
-    val hour12 = ((startLocal.hour + 11) % 12) + 1
-    val ampm = if (startLocal.hour < 12) "AM" else "PM"
-    val timeStamp = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')} $ampm"
-    val dayStamp = "${startLocal.dayOfWeek.name.take(3)} ${startLocal.date.day} ${startLocal.date.month.abbr()}"
-    val subStamp = subStampOverride
-        ?: if (spotLabel != null) "$timeStamp · $dayStamp · ${spotLabel.uppercase()}" else "$timeStamp · $dayStamp"
+    val subStamp = remember(startLocal, spotLabel, subStampOverride) {
+        val hour12 = ((startLocal.hour + 11) % 12) + 1
+        val ampm = if (startLocal.hour < 12) "AM" else "PM"
+        val timeStamp = "${hour12.toString().padStart(2, '0')}:${startLocal.minute.toString().padStart(2, '0')} $ampm"
+        val dayStamp = "${startLocal.dayOfWeek.name.take(3)} ${startLocal.date.day} ${startLocal.date.month.abbr()}"
+        subStampOverride
+            ?: if (spotLabel != null) "$timeStamp · $dayStamp · ${spotLabel.uppercase()}" else "$timeStamp · $dayStamp"
+    }
+    val glow = remember { Animatable(0f) }
+    LaunchedEffect(pulse) {
+        if (!pulse) return@LaunchedEffect
+        glow.animateTo(1f, tween(Dur.Short, easing = Ease.Emphasized))
+        glow.animateTo(0f, tween(Dur.Medium, easing = Ease.Exit))
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // 40dp transparent→stone fade so list content scrolls under the CTA
-        // and feathers out before the pill begins.
+        // No scrim: the page's atmosphere sits behind the CTA, and the list's
+        // 140dp bottom pad already clears content above the pill. A Stone fade
+        // here read as a white bloom over the lime surface.
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(40.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Stone.copy(alpha = 0.92f)),
-                    ),
-                ),
-        )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(Stone.copy(alpha = 0.92f))
                 .padding(horizontal = 24.dp, vertical = 8.dp),
         ) {
             if (loading) {
@@ -1124,20 +1242,35 @@ private fun StickyReserveCta(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .clip(pillShape)
                         .background(pillColor),
                     contentAlignment = Alignment.Center,
                 ) {
                     DotMatrixLoaderCompact()
                 }
             } else {
+                val source = remember { MutableInteractionSource() }
+                val pressed by rememberPressed(source)
+                val fill by animateColorAsState(
+                    targetValue = if (pressed && enabled) pillColor.pressedShade() else pillColor,
+                    animationSpec = tween(Dur.Quick),
+                    label = "stickyCtaFill",
+                )
+                val kick by animateDpAsState(
+                    targetValue = if (pressed && enabled) 2.dp else 0.dp,
+                    animationSpec = Springs.kick(),
+                    label = "stickyCtaKick",
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(pillColor)
-                        .clickable(enabled = enabled, onClick = onClick)
+                        .pressable(source, enabled)
+                        .then(if (enabled) Modifier.controlShadow(pillShape) else Modifier)
+                        .clip(pillShape)
+                        .background(fill)
+                        .then(if (enabled) Modifier.innerHighlight(pillShape) else Modifier)
+                        .clickable(enabled = enabled, interactionSource = source, indication = null, onClick = onClick)
                         .padding(start = 20.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1145,11 +1278,12 @@ private fun StickyReserveCta(
                         Text(
                             text = primaryLabel,
                             maxLines = 1,
+                            modifier = Modifier.opticallyCentredCapsVertical(CTA_PRIMARY_LABEL_SIZE),
                             style = TextStyle(
                                 fontFamily = Arcana.fonts.display,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                                letterSpacing = 0.10.em,
+                                fontSize = CTA_PRIMARY_LABEL_SIZE,
+                                letterSpacing = CTA_PRIMARY_LABEL_TRACKING_EM.em,
                                 color = Stone,
                             ),
                         )
@@ -1170,7 +1304,10 @@ private fun StickyReserveCta(
                     }
                     Box(
                         modifier = Modifier
+                            .offset { IntOffset(kick.roundToPx(), 0) }
                             .size(44.dp)
+                            .graphicsLayer { val s = 1f + 0.12f * glow.value; scaleX = s; scaleY = s }
+                            .drawBehind { drawCircle(Lime.copy(alpha = 0.35f * glow.value), radius = size.minDimension * (0.5f + 0.35f * glow.value)) }
                             .clip(CircleShape)
                             .background(arrowWellColor),
                         contentAlignment = Alignment.Center,
@@ -1181,9 +1318,9 @@ private fun StickyReserveCta(
                 }
             }
         }
-        // Home-indicator inset — paint Stone beneath so the system gesture
-        // bar reads as part of the CTA surface, not a glitch.
-        Box(Modifier.fillMaxWidth().background(Stone.copy(alpha = 0.92f)).safeBottomBarPadding())
+        // Home-indicator inset — transparent so the atmosphere shows through
+        // rather than a white Stone strip under the gesture bar.
+        Box(Modifier.fillMaxWidth().safeBottomBarPadding())
     }
 }
 

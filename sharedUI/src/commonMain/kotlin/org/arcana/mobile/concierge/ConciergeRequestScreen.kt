@@ -29,9 +29,8 @@ import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
-import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaMultilineTextField
@@ -80,8 +79,8 @@ fun ConciergeRequestScreen(
             icon = ArcanaIcons.Close,
             diameter = 38,
             iconSize = 18,
-            background = Paper,
-            borderColor = Mist,
+            background = Surface,
+            borderColor = Ash,
             contentColor = Ink,
             onClick = onClose,
             contentDescription = "Close",
@@ -151,8 +150,8 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
             icon = ArcanaIcons.Close,
             diameter = 38,
             iconSize = 18,
-            background = Paper,
-            borderColor = Mist,
+            background = Surface,
+            borderColor = Ash,
             contentColor = Ink,
             onClick = onClose,
             contentDescription = "Close",
