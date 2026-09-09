@@ -15,21 +15,6 @@ import kotlinx.datetime.TimeZone
  */
 
 /**
- * The day a horizontal swipe lands on, or null at the window's edges.
- * `forward` (a left swipe) advances one day; otherwise steps back one. Pure
- * so the bounds logic is unit-testable without the gesture plumbing.
- */
-fun dayAfterSwipe(
-    days: List<LocalDate>,
-    selected: LocalDate,
-    forward: Boolean,
-): LocalDate? {
-    val idx = days.indexOf(selected)
-    if (idx < 0) return null
-    return days.getOrNull(if (forward) idx + 1 else idx - 1)
-}
-
-/**
  * Resolve a session's location timezone for display: a class shows its own
  * local wall-clock (a 6 PM Williamsburg class reads "18:00" wherever the
  * device is). Server timezone strings are IANA ids, but `TimeZone.of` throws

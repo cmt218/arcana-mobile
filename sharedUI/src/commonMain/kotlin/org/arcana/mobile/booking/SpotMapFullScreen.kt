@@ -37,10 +37,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.arcana.mobile.data.SpotDto
+import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Wood
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.Caption
@@ -85,9 +88,9 @@ fun SpotMapFullScreen(
                     icon = ArcanaIcons.Close,
                     diameter = 40,
                     iconSize = 18,
-                    background = Paper,
-                    borderColor = Mist,
-                    contentColor = Wood,
+                    background = Surface,
+                    borderColor = Ash,
+                    contentColor = Ink,
                     onClick = onClose,
                     contentDescription = "Close room map",
                     modifier = Modifier.align(Alignment.CenterEnd),

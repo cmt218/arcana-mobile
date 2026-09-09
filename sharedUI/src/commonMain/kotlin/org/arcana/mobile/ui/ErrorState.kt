@@ -1,9 +1,12 @@
 package org.arcana.mobile.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,13 +45,15 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.BurntNectar
+import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.Paper
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Stone
 
 /**
@@ -130,11 +137,21 @@ fun RetryButton(
     retrying: Boolean = false,
     label: String = "Try again",
 ) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(source)
+    val fill by animateColorAsState(
+        targetValue = if (pressed && !retrying) Moss.pressedShade() else Moss,
+        animationSpec = tween(Dur.Quick),
+        label = "retryFill",
+    )
+    val shape = ArcanaShapes.Hero
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Moss)
-            .clickable(enabled = !retrying, onClick = onClick)
+            .pressable(source, enabled = !retrying)
+            .controlShadow(shape)
+            .clip(shape)
+            .background(fill)
+            .clickable(enabled = !retrying, interactionSource = source, indication = null, onClick = onClick)
             .defaultMinSize(minWidth = 152.dp, minHeight = 56.dp)
             .padding(horizontal = 32.dp, vertical = 16.dp),
         contentAlignment = Alignment.Center,
@@ -272,8 +289,9 @@ fun InlineError(
         modifier = modifier
             .fillMaxWidth()
             .safeHorizontalPadding()
+            .cardShadow(shape)
             .clip(shape)
-            .background(Paper)
+            .background(Surface)
             .border(1.dp, Mist, shape)
             // Equal gaps: card top, headline-to-retry, card bottom.
             .padding(horizontal = 20.dp, vertical = INLINE_CARD_GAP),

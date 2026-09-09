@@ -47,6 +47,7 @@ import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
@@ -163,8 +164,9 @@ private fun EditingForm(
         ) {
             IconCircle(
                 icon = ArcanaIcons.Close,
-                diameter = 36, iconSize = 16,
-                borderColor = Ash.copy(alpha = 0.4f),
+                diameter = 38, iconSize = 18,
+                background = Surface,
+                borderColor = Ash,
                 contentColor = Ink,
                 onClick = onClose,
                 contentDescription = "Close without saving",
@@ -422,8 +424,9 @@ private fun LoadErrorState(
         Box(modifier = Modifier.safeContentPadding().padding(horizontal = 28.dp, vertical = 4.dp)) {
             IconCircle(
                 icon = ArcanaIcons.Close,
-                diameter = 36, iconSize = 16,
-                borderColor = Ash.copy(alpha = 0.4f),
+                diameter = 38, iconSize = 18,
+                background = Surface,
+                borderColor = Ash,
                 contentColor = Ink,
                 onClick = onClose,
                 contentDescription = "Close without saving",

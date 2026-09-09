@@ -23,6 +23,7 @@ import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
+import org.arcana.mobile.theme.MossLight
 
 /**
  * The dot half of the design system — the brand's repeating gesture.
@@ -94,7 +95,9 @@ fun SectionRule(
             Modifier
                 .weight(1f)
                 .height(1.dp)
-                .background(Mist)
+                // MossLight, not Mist: a near-Stone hairline vanishes on the
+                // atmosphere; full Moss reads too heavy for a rule.
+                .background(MossLight)
         )
     }
 }

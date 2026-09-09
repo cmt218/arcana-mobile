@@ -66,6 +66,8 @@ import org.arcana.mobile.schedule.sessionTimeZone
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
+import org.arcana.mobile.theme.Surface
+import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Paper
@@ -181,9 +183,10 @@ fun SearchScreen(
                 Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
                     IconCircle(
                         icon = ArcanaIcons.Close,
-                        diameter = 36,
-                        iconSize = 16,
-                        borderColor = Mist,
+                        diameter = 38,
+                        iconSize = 18,
+                        background = Surface,
+                        borderColor = Ash,
                         contentColor = Ink,
                         onClick = ::animatedClose,
                         contentDescription = "Close search",
@@ -494,7 +497,7 @@ private fun ScopeChip(scope: SearchScope, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(CircleShape)
-            .border(1.dp, Mist, CircleShape)
+            .border(1.dp, Moss, CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

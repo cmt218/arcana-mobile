@@ -2,6 +2,7 @@ package org.arcana.mobile.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -9,11 +10,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 
@@ -29,9 +33,11 @@ fun FilterChip(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val removeSource = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
-            .clip(CircleShape)
+            .controlShadow(ArcanaShapes.Pill)
+            .clip(ArcanaShapes.Pill)
             .background(Moss)
             .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -41,9 +47,10 @@ fun FilterChip(
         Box(
             modifier = Modifier
                 .size(18.dp)
+                .pressable(removeSource, pressedScale = 0.9f)
                 .clip(CircleShape)
                 .background(Stone.copy(alpha = 0.20f))
-                .clickable(onClick = onRemove),
+                .clickable(interactionSource = removeSource, indication = null, onClick = onRemove),
             contentAlignment = Alignment.Center,
         ) {
             StrokeIcon(

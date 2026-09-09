@@ -27,8 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
@@ -36,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
-import org.arcana.mobile.theme.Mist
+import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
@@ -88,9 +86,10 @@ fun StudioSelectionScreen(
             ) {
                 IconCircle(
                     icon = ArcanaIcons.Close,
-                    diameter = 36,
-                    iconSize = 16,
-                    borderColor = Mist,
+                    diameter = 38,
+                    iconSize = 18,
+                    background = Surface,
+                    borderColor = Ash,
                     contentColor = Ink,
                     onClick = onClose,
                     contentDescription = "Close studio selection",
@@ -117,16 +116,14 @@ fun StudioSelectionScreen(
             }
         }
 
-        // Sticky CTA — fades the bottom of the scroll under the bar.
+        // Sticky CTA over the atmosphere — no scrim (a Stone fade read as a white
+        // halo); the list carries 128.dp bottom padding so rows clear the button.
         if (state is StudioSelectionUiState.Ready) {
             val s = state as StudioSelectionUiState.Ready
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Stone, Stone))
-                    )
                     .safeBottomBarPadding()
                     .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

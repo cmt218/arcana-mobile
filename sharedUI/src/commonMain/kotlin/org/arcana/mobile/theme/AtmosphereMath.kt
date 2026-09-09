@@ -8,8 +8,9 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /*
- * Values are the spec of record: docs/superpowers/specs/2026-09-04-mobile-premium-polish-design.md
- * §Atmosphere. The colours already carry the chosen "Quiet" presence — do not layer alpha on top.
+ * Spec: docs/superpowers/specs/2026-09-04-mobile-premium-polish-design.md §Atmosphere.
+ * Colours are pre-mixed over Stone and device-tuned (the perimeter deeper than the
+ * spec's original presence, to kill a white edge halo) — do not layer alpha on top.
  */
 const val ATMOSPHERE_GRID = 4
 const val ATMOSPHERE_AMPLITUDE = 0.15f
@@ -20,10 +21,18 @@ private const val PERIOD_SCALE_MIN = 0.8f
 private const val PERIOD_SCALE_MAX = 1.4f
 private const val TWO_PI = (2 * PI).toFloat()
 
-private val LimeWhisper = Color(0xFFEEEDDC)   // Stone + Lime 10.8%
-private val LimeTint = Color(0xFFEBEBD4)      // Stone + Lime 15.6%
-private val OliveShade = Color(0xFFC5CCA6)    // Stone + Olive(MossLight+Lime 50%) 39%
-private val LimeDeepShade = Color(0xFFD3D5AB) // Stone + LimeDeep 36%
+// Felicia's O "Deep centre" over Stone #F5F2ED: a deep-olive centre inside a
+// LIGHT-olive perimeter, so the field reads as a gradient that breathes as the
+// points drift — not a flat olive slab. The perimeter is light enough to stay
+// airy but clearly tinted (never the near-white that read as a halo).
+// Olive = MossLight+Lime 50%.
+// Lighter overall than a solid olive, but the two centre points are far apart in
+// value (a deep-olive accent beside a light one) so the drift stays legible as
+// they swirl — the field breathes without ever going dark across the board.
+private val LimeWhisper = Color(0xFFD8DBB6)   // corner: light olive (off Stone, no halo)
+private val LimeTint = Color(0xFFCED4A4)      // edge:   light olive
+private val OliveShade = Color(0xFF9AA662)    // centre: deep-olive accent (the darkest)
+private val LimeDeepShade = Color(0xFFC2CA86) // centre: light olive — wide gap = visible drift
 
 val ATMOSPHERE_COLORS: List<Color> = listOf(
     LimeWhisper, LimeTint, LimeTint, LimeWhisper,
@@ -32,8 +41,10 @@ val ATMOSPHERE_COLORS: List<Color> = listOf(
     LimeWhisper, LimeTint, LimeTint, LimeWhisper,
 )
 
-val ATMOSPHERE_VIGNETTE = Color(0xFFC6CA91)   // Stone + LimeDeep 50%
-const val ATMOSPHERE_VIGNETTE_ALPHA = 0.06f
+// A whisper of olive at the very corners — enough to seat them, not enough to
+// flatten the centre-to-edge gradient (0.20 did exactly that).
+val ATMOSPHERE_VIGNETTE = Color(0xFFA6B277)   // Stone + Olive 65%
+const val ATMOSPHERE_VIGNETTE_ALPHA = 0.10f
 
 data class PointSeed(val periodX: Float, val periodY: Float, val phaseX: Float, val phaseY: Float)
 

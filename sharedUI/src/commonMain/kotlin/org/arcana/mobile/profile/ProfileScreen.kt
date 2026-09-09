@@ -61,8 +61,10 @@ import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.MossDeep
+import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Stone
+import org.arcana.mobile.theme.Stone2
 import org.arcana.mobile.theme.StoneAlpha18
 import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.ui.AccentText
@@ -80,8 +82,10 @@ import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.ShimmerBox
+import org.arcana.mobile.ui.shimmerBrush
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.ui.TransientSurface
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
 import org.jetbrains.compose.resources.DrawableResource
@@ -288,7 +292,7 @@ fun ProfileScreen(
                 modifier = Modifier
                     .padding(start = 24.dp, end = 24.dp, top = 8.dp)
                     .fillMaxWidth()
-                    .drawTopRule()
+                    .drawTopRule(MossLight)
                     .clickable { apiClient.logout() }
                     .padding(vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
@@ -313,7 +317,7 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Overline(text = "Delete account", size = 11, color = Ash2)
+                Overline(text = "Delete account", size = 11, color = Ash)
             }
         }
 
@@ -327,7 +331,7 @@ fun ProfileScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 AccentText(text = "Not for the casual.", size = 18, color = Ash)
-                Overline(text = "Arcana · v${appVersionName()}", size = 10, color = Ash2)
+                Overline(text = "Arcana · v${appVersionName()}", size = 10, color = Ash)
             }
         }
         }
@@ -381,7 +385,13 @@ fun ProfileScreen(
             else -> {}
         }
 
-        if (refreshFailed) {
+        TransientSurface(
+            visible = refreshFailed,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .safeHorizontalPadding()
+                .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+        ) {
             ErrorSnackbar(
                 text = ErrorCopy.REFRESH_FAILED,
                 onRetry = {
@@ -389,10 +399,6 @@ fun ProfileScreen(
                     vm.refresh()
                 },
                 onDismiss = vm::dismissRefreshFailed,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .safeHorizontalPadding()
-                    .padding(bottom = 16.dp + LocalFloatingBarInset.current),
             )
         }
     }
@@ -455,6 +461,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                             .width(140.dp)
                             .height(12.dp),
                         shape = RoundedCornerShape(4.dp),
+                        brush = shimmerBrush(base = Mist, highlight = Stone2),
                     )
                 }
                 IconCircle(
@@ -521,6 +528,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                     ShimmerBox(
                         modifier = Modifier.size(116.dp),
                         shape = CircleShape,
+                        brush = shimmerBrush(base = Mist, highlight = Stone2),
                     )
                 }
 
@@ -533,6 +541,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                             .width(200.dp)
                             .height(36.dp),
                         shape = RoundedCornerShape(6.dp),
+                        brush = shimmerBrush(base = Mist, highlight = Stone2),
                     )
                 }
             }
@@ -666,7 +675,7 @@ private fun AccountRow(item: AccountItem, showDivider: Boolean = true, modifier:
         modifier = modifier
             .fillMaxWidth()
             .then(if (item.onClick != null) Modifier.clickable(onClick = item.onClick) else Modifier)
-            .then(if (showDivider) Modifier.drawBottomRule() else Modifier)
+            .then(if (showDivider) Modifier.drawBottomRule(MossLight) else Modifier)
             .padding(vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),

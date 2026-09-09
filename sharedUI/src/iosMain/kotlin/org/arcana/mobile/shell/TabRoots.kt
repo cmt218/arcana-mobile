@@ -2,9 +2,6 @@ package org.arcana.mobile.shell
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -46,7 +43,7 @@ import org.arcana.mobile.search.SearchScreen
 import org.arcana.mobile.search.searchHoldEnterTransition
 import org.arcana.mobile.studios.StudioSelectionScreen
 import org.arcana.mobile.theme.ArcanaTheme
-import org.arcana.mobile.theme.Dur
+import org.arcana.mobile.theme.NavTransitions
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.koin.compose.koinInject
@@ -123,6 +120,7 @@ fun ScheduleTabViewController(onRootChanged: (Boolean) -> Unit): UIViewControlle
                 // Near-invisible fade whose only job is to hold both screens
                 // mounted while SearchScreen's own reveal runs.
                 enterTransition = { searchHoldEnterTransition() },
+                popEnterTransition = { EnterTransition.None },
                 popExitTransition = { ExitTransition.None },
             ) { entry ->
                 val args = entry.toRoute<ArcanaDestination.Search>()
@@ -232,12 +230,10 @@ private fun TabRoot(
             NavHost(
                 navController = navController,
                 startDestination = start,
-                // Shared with MainScaffold via the Dur.Quick motion token —
-                // tab-sibling slides read wrong on iOS.
-                enterTransition = { fadeIn(tween(Dur.Quick)) },
-                exitTransition = { fadeOut(tween(Dur.Quick)) },
-                popEnterTransition = { fadeIn(tween(Dur.Quick)) },
-                popExitTransition = { fadeOut(tween(Dur.Quick)) },
+                enterTransition = { with(NavTransitions) { enter() } },
+                exitTransition = { with(NavTransitions) { exit() } },
+                popEnterTransition = { with(NavTransitions) { popEnter() } },
+                popExitTransition = { with(NavTransitions) { popExit() } },
             ) {
                 builder(navController)
             }

@@ -21,18 +21,24 @@ final class ShellModel: ObservableObject {
 
     private var perTabAtRoot: [Int: Bool] = [0: true, 1: true, 2: true]
     private var splashTimerStarted = false
+    // The native TabView never calls the Compose TabBar's Kotlin selection
+    // haptic, so the shell fires system selection feedback on a real switch.
+    private let selectionHaptic = UISelectionFeedbackGenerator()
 
     init() {
         // Pre-Liquid-Glass fallback (iOS 18.x): UIKit picks the tab bar's
         // transparent "scroll edge" appearance whenever it can't observe a
-        // UIScrollView scrolling underneath — and Compose content never is
-        // one — leaving the items floating over content with no backdrop.
-        // Pin BOTH appearances to the system's default (blurred) background
-        // so the legacy bar always has proper contrast. iOS 26's Liquid Glass
-        // bar draws its own material and must not be touched.
+        // UIScrollView scrolling underneath — and Compose content never is one.
+        // The default blurred material then blooms as a white halo over the
+        // Book tab's lime atmosphere; pin an OPAQUE Stone background on both
+        // appearances so the bar matches the app and reads cleanly. iOS 26's
+        // Liquid Glass bar draws its own material and must not be touched.
         if #unavailable(iOS 26.0) {
             let appearance = UITabBarAppearance()
-            appearance.configureWithDefaultBackground()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = UIColor(
+                red: 0xF5 / 255.0, green: 0xF2 / 255.0, blue: 0xED / 255.0, alpha: 1
+            )
             UITabBar.appearance().standardAppearance = appearance
             UITabBar.appearance().scrollEdgeAppearance = appearance
         }
@@ -118,6 +124,8 @@ final class ShellModel: ObservableObject {
         // $screen for the newly shown tab root — only on a real switch
         // (same-tab re-taps never re-fired $screen pre-shell either).
         if previous != tab {
+            selectionHaptic.selectionChanged()
+            selectionHaptic.prepare()
             IosShellBridge.shared.tabRootShown(tab: names[tab])
         }
         refreshTabBarVisibility()

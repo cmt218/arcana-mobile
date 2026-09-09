@@ -2,6 +2,7 @@ package org.arcana.mobile.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -147,8 +149,17 @@ fun TextLink(
     icon: DrawableResource = ArcanaIcons.ArrowRight,
     underline: Boolean = true,
 ) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(source)
+    val alpha = animateFloatAsState(
+        targetValue = if (pressed) 0.7f else 1f,
+        animationSpec = Springs.Snappy,
+        label = "linkAlpha",
+    )
     Row(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .graphicsLayer { this.alpha = alpha.value }
+            .clickable(interactionSource = source, indication = null, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -211,13 +222,20 @@ fun IconCircle(
     onClick: (() -> Unit)? = null,
     contentDescription: String? = null,
 ) {
+    val source = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .size(diameter.dp)
+            .then(if (onClick != null) Modifier.pressable(source, pressedScale = 0.94f) else Modifier)
+            .then(if (onClick != null && background != Color.Transparent) Modifier.softShadow(CircleShape) else Modifier)
             .clip(CircleShape)
             .background(background)
             .then(if (borderColor != null) Modifier.border(1.dp, borderColor, CircleShape) else Modifier)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = source, indication = null, onClick = onClick)
+                } else Modifier,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         StrokeIcon(

@@ -15,10 +15,10 @@ class AtmosphereMathTest {
         assertEquals(16, ATMOSPHERE_COLORS.size)
         assertEquals(
             listOf(
-                Color(0xFFEEEDDC), Color(0xFFEBEBD4), Color(0xFFEBEBD4), Color(0xFFEEEDDC),
-                Color(0xFFEBEBD4), Color(0xFFC5CCA6), Color(0xFFD3D5AB), Color(0xFFEBEBD4),
-                Color(0xFFEBEBD4), Color(0xFFD3D5AB), Color(0xFFC5CCA6), Color(0xFFEBEBD4),
-                Color(0xFFEEEDDC), Color(0xFFEBEBD4), Color(0xFFEBEBD4), Color(0xFFEEEDDC),
+                Color(0xFFD8DBB6), Color(0xFFCED4A4), Color(0xFFCED4A4), Color(0xFFD8DBB6),
+                Color(0xFFCED4A4), Color(0xFF9AA662), Color(0xFFC2CA86), Color(0xFFCED4A4),
+                Color(0xFFCED4A4), Color(0xFFC2CA86), Color(0xFF9AA662), Color(0xFFCED4A4),
+                Color(0xFFD8DBB6), Color(0xFFCED4A4), Color(0xFFCED4A4), Color(0xFFD8DBB6),
             ),
             ATMOSPHERE_COLORS,
         )
@@ -26,8 +26,8 @@ class AtmosphereMathTest {
 
     @Test
     fun vignette_matches_spec_color_and_alpha() {
-        assertEquals(Color(0xFFC6CA91), ATMOSPHERE_VIGNETTE)
-        assertEquals(0.06f, ATMOSPHERE_VIGNETTE_ALPHA)
+        assertEquals(Color(0xFFA6B277), ATMOSPHERE_VIGNETTE)
+        assertEquals(0.10f, ATMOSPHERE_VIGNETTE_ALPHA)
     }
 
     @Test
