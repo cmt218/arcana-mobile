@@ -98,6 +98,7 @@ import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.isNotOpenYet
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
@@ -507,7 +508,7 @@ private fun FavoritesNudge(visible: Boolean, onManageFavorites: () -> Unit, onDi
                     .cardShadow(cardShape)
                     .clip(cardShape)
                     .background(Surface)
-                    .border(1.dp, Ash, cardShape)
+                    .border(1.dp, Outline, cardShape)
                     // Keep both the top and bottom whitespace INSIDE the column
                     // (BodyText top pad + CTA bottom pad) so the column's vertical
                     // midpoint matches the card's — that's what keeps the dismiss
@@ -549,7 +550,7 @@ private fun FavoritesNudge(visible: Boolean, onManageFavorites: () -> Unit, onDi
                         .softShadow(CircleShape)
                         .clip(CircleShape)
                         .background(Surface)
-                        .border(1.dp, Ash, CircleShape)
+                        .border(1.dp, Outline, CircleShape)
                         .clickable(interactionSource = dismissSource, indication = null) { onDismiss() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -588,7 +589,7 @@ private fun SearchEntryPill(
                 .softShadow(CircleShape)
                 .clip(CircleShape)
                 .background(Surface)
-                .border(1.dp, Ash, CircleShape)
+                .border(1.dp, Outline, CircleShape)
                 .clickable(interactionSource = source, indication = null, onClick = onClick)
                 // A graphicsLayer scale update schedules no layout pass, so this
                 // stays accurate mid-press: onGloballyPositioned only re-fires on
@@ -665,7 +666,7 @@ internal fun ScrollJumpChevron(
                 .softShadow(CircleShape)
                 .clip(CircleShape)
                 .background(Surface)
-                .border(1.dp, Ash, CircleShape)
+                .border(1.dp, Outline, CircleShape)
                 .clickable(interactionSource = source, indication = null, enabled = visible, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -1082,7 +1083,7 @@ private fun ScopeToggle(
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .clip(CircleShape)
-            .border(1.dp, Ash, CircleShape),
+            .border(1.dp, Outline, CircleShape),
     ) {
         val halfPx = with(density) { maxWidth.toPx() } / 2f
         var dragging by remember { mutableStateOf(false) }
@@ -1330,7 +1331,7 @@ private fun SelectablePill(label: String, selected: Boolean, onClick: () -> Unit
         label = "presetPillFill",
     )
     val border by animateColorAsState(
-        targetValue = if (selected) Moss else Ash,
+        targetValue = if (selected) Moss else Outline,
         animationSpec = tween(Dur.Short),
         label = "presetPillBorder",
     )

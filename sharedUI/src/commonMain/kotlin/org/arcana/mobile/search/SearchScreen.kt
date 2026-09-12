@@ -63,6 +63,7 @@ import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.schedule.ClassRow
 import org.arcana.mobile.schedule.EndOfListMarker
 import org.arcana.mobile.schedule.sessionTimeZone
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
@@ -186,7 +187,7 @@ fun SearchScreen(
                         diameter = 38,
                         iconSize = 18,
                         background = Surface,
-                        borderColor = Ash,
+                        borderColor = Outline,
                         contentColor = Ink,
                         onClick = ::animatedClose,
                         contentDescription = "Close search",

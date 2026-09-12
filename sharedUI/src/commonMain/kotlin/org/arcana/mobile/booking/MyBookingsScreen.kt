@@ -98,7 +98,7 @@ fun MyBookingsScreen(
                 diameter = 38,
                 iconSize = 18,
                 background = Surface,
-                borderColor = Ash,
+                borderColor = Outline,
                 contentColor = Ink,
                 onClick = onClose,
                 contentDescription = "Close reservations",

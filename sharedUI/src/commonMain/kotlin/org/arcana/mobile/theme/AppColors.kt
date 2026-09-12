@@ -36,6 +36,7 @@ val Ash         = Color(0xFF6B6E5F) // secondary text on lifted surfaces (Surfac
 val Ash2        = Color(0xFF9B9F8F) // tertiary / muted text on lifted surfaces only; never directly on the atmosphere
 val Mist        = Color(0xFFD8D7C7) // dividers, input hairlines
 val Mist2       = Color(0xFFEBEADA) // subtle fills
+val Outline     = Color(0x4A161812) // soft edge for Surface-filled controls on the atmosphere; Ash read too heavy there
 val Plate       = Color(0xFFFFFFFF) // the one pure white: a plate under content
                                     // whose own fills are too close to Stone
 

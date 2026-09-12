@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Dur
@@ -61,7 +62,7 @@ fun SegmentedControl(
         modifier = modifier
             .fillMaxWidth()
             .clip(CircleShape)
-            .border(1.dp, Ash, CircleShape),
+            .border(1.dp, Outline, CircleShape),
     ) {
         val density = LocalDensity.current
         val segmentWidth = maxWidth / labels.size

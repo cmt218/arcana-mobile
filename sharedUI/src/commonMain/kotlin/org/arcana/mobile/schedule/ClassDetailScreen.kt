@@ -76,6 +76,7 @@ import org.arcana.mobile.booking.outsideWindowCopy
 import org.arcana.mobile.booking.useBookingGestures
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.networking.ErrorType
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
@@ -698,7 +699,7 @@ private fun CircleIconButton(
             .softShadow(CircleShape)
             .clip(CircleShape)
             .background(Surface)
-            .border(1.dp, Ash, CircleShape)
+            .border(1.dp, Outline, CircleShape)
             .clickable(interactionSource = source, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.networking.transportErrorCopy
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Atmosphere
@@ -81,7 +82,7 @@ fun ConciergeRequestScreen(
             diameter = 38,
             iconSize = 18,
             background = Surface,
-            borderColor = Ash,
+            borderColor = Outline,
             contentColor = Ink,
             onClick = onClose,
             contentDescription = "Close",
@@ -152,7 +153,7 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
             diameter = 38,
             iconSize = 18,
             background = Surface,
-            borderColor = Ash,
+            borderColor = Outline,
             contentColor = Ink,
             onClick = onClose,
             contentDescription = "Close",

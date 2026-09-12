@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.arcana.mobile.schedule.ScrollJumpChevron
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
@@ -117,7 +118,7 @@ internal fun FloatingFilterPanel(
 }
 
 
-/** The Time / Modalities overlay-filter buttons. Moss-filled when active, an Ash
+/** The Time / Modalities overlay-filter buttons. Moss-filled when active, a soft
  *  outline otherwise. Pass `Modifier.weight(1f)` to size two pills equally; the
  *  label centers. */
 @Composable
@@ -134,7 +135,7 @@ internal fun FilterPill(
         label = "filterPillFill",
     )
     val border by animateColorAsState(
-        targetValue = if (active) Moss else Ash,
+        targetValue = if (active) Moss else Outline,
         animationSpec = tween(Dur.Short),
         label = "filterPillBorder",
     )

@@ -161,7 +161,7 @@ private fun CloseButton(onClose: () -> Unit) {
         diameter = 38,
         iconSize = 18,
         background = Surface,
-        borderColor = Ash,
+        borderColor = Outline,
         contentColor = Ink,
         onClick = onClose,
         contentDescription = "Close studio",
@@ -333,7 +333,7 @@ private fun AmenityRow(page: StudioPageDto) {
             Box(
                 modifier = Modifier
                     .clip(ArcanaShapes.Pill)
-                    .border(1.dp, Ash, ArcanaShapes.Pill)
+                    .border(1.dp, Outline, ArcanaShapes.Pill)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Caption(text = amenity.label, size = 11, color = Ink)

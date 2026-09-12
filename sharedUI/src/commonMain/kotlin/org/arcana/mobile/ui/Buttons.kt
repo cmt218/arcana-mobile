@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
@@ -150,7 +151,7 @@ fun GhostCta(
     val source = remember { MutableInteractionSource() }
     val pressed by rememberPressed(source)
     val stroke by animateColorAsState(
-        targetValue = if (pressed) Moss else Ash,
+        targetValue = if (pressed) Moss else Outline,
         animationSpec = tween(Dur.Quick),
         label = "ghostStroke",
     )
