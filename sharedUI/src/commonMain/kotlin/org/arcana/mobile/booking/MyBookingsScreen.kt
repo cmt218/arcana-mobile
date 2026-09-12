@@ -320,7 +320,7 @@ private fun EmptyState(
         BodyText(title, size = 16, color = Ink)
         if (body != null) {
             Spacer(Modifier.height(4.dp))
-            Caption(body, size = 13, color = Ash)
+            Caption(body, size = 13, color = Charcoal)
         }
         if (action != null) {
             Spacer(Modifier.height(24.dp))
@@ -386,9 +386,9 @@ private fun ReservationRow(b: BookingDto, onCancel: (() -> Unit)?, onClick: () -
         ) {
             BodyText(b.session.name, size = 16, color = Wood)
             Spacer(Modifier.height(2.dp))
-            Caption(dateTimeLabel, size = 12, color = Ash)
+            Caption(dateTimeLabel, size = 12, color = Charcoal)
             Spacer(Modifier.height(2.dp))
-            Caption("$studioSpot$instructorSuffix", size = 12, color = Ash)
+            Caption("$studioSpot$instructorSuffix", size = 12, color = Charcoal)
             b.session.locationAddress?.takeIf { it.isNotBlank() }?.let { address ->
                 AddressLink(
                     name = b.session.location?.takeIf { it.isNotBlank() } ?: b.session.studio,

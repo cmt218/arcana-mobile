@@ -79,6 +79,7 @@ import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
@@ -754,7 +755,7 @@ private fun HeroCard(
             )
             Spacer(Modifier.height(14.dp))
             if (modality.isNotBlank()) {
-                Overline(text = modality, size = 10, color = Ash)
+                Overline(text = modality, size = 10, color = Charcoal)
                 Spacer(Modifier.height(8.dp))
             }
             Display(
@@ -859,11 +860,11 @@ private fun SummaryCell(
         modifier = modifier,
         horizontalAlignment = Alignment.Start,
     ) {
-        Overline(text = label, size = 9, color = Ash)
+        Overline(text = label, size = 9, color = Charcoal)
         Spacer(Modifier.height(8.dp))
         Display(text = value, size = 22, color = Ink)
         Spacer(Modifier.height(4.dp))
-        Overline(text = unit, size = 9, color = Ash)
+        Overline(text = unit, size = 9, color = Charcoal)
     }
 }
 
@@ -908,7 +909,7 @@ private fun InstructorRow(
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Overline(text = "TAUGHT BY", size = 10, color = Ash)
+            Overline(text = "TAUGHT BY", size = 10, color = Charcoal)
             Spacer(Modifier.height(4.dp))
             Display(text = name, size = 18, color = Ink)
         }
@@ -953,7 +954,7 @@ private fun AvailabilityBlock(
         if (opensLine != null) {
             Display(text = "NOT OPEN", size = 20, color = Ink, weight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            BodyText(text = opensLine, size = 14, color = Ash)
+            BodyText(text = opensLine, size = 14, color = Charcoal)
         } else if (publishesCapacity) {
             // Precise form: "N OF M SPOTS OPEN" + the segmented pip strip
             // showing exact taken-vs-open.
@@ -965,7 +966,7 @@ private fun AvailabilityBlock(
                 val headline = if (available <= 0) "FULLY BOOKED"
                 else "$available OF $offered SPOTS OPEN"
                 Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
-                Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
+                Overline(text = "$taken / $offered TAKEN", size = 10, color = Charcoal)
             }
             if (offered > 0) {
                 Spacer(Modifier.height(12.dp))
@@ -1001,10 +1002,10 @@ private fun CapacityPips(
     val openColor = when (capacity) {
         DetailCapacity.Open -> MossLight
         DetailCapacity.Scarce -> Warning
-        DetailCapacity.Full -> Ash2
+        DetailCapacity.Full -> Ash
         // Not reached — not-open classes render the "opens …" line, not pips —
         // but the when must be exhaustive.
-        DetailCapacity.NotOpen -> Ash2
+        DetailCapacity.NotOpen -> Ash
     }
     // Suppress unused-parameter warning while keeping the API future-proof —
     // when brand-tinted pips land in a later iteration, the studioColor will

@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ink
 
 /** [Display] and [Overline] uppercase their input. Centred inside a filled
@@ -100,7 +101,7 @@ fun Overline(
     text: String,
     modifier: Modifier = Modifier,
     size: Int = 11,
-    color: Color = Ash,
+    color: Color = Charcoal,
     // Defaults to a single line (the stamp/label use). Raise it (e.g. Int.MAX_VALUE)
     // for longer label text that should wrap to new lines instead of truncating.
     maxLines: Int = 1,
@@ -215,7 +216,7 @@ fun Caption(
     text: String,
     modifier: Modifier = Modifier,
     size: Int = 12,
-    color: Color = Ash,
+    color: Color = Charcoal,
     // Defaults to a single line (the metadata/stamp use). Raise it for prose
     // captions — error and empty-state messages — that should wrap onto more
     // lines instead of truncating.
@@ -239,7 +240,7 @@ fun Caption(
 @Composable
 internal fun captionStyle(
     size: Int = 12,
-    color: Color = Ash,
+    color: Color = Charcoal,
     textAlign: TextAlign = TextAlign.Unspecified,
 ): TextStyle = TextStyle(
     fontFamily = Arcana.fonts.body,

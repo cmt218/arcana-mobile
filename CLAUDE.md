@@ -257,6 +257,8 @@ On iOS the top-level chrome is **native SwiftUI**; Compose renders screen conten
 
 The brand-aligned theming lives in :sharedUI at `sharedUI/src/commonMain/kotlin/org/arcana/mobile/theme/` and the reusable UI primitives in `.../ui/`. (Note :sharedLogic also has an `org.arcana.mobile.ui` package for the pure `studioLocationLabel` helper.) **Screens should never hand-roll `TextStyle`s, hex colors, or raw icon paths** — compose them from these primitives. The brand color hexes and the typography hierarchy are sourced from the brand identity doc and the typography doc respectively (see the parent `arcana/CLAUDE.md` for live links).
 
+**Text on the atmosphere uses `Charcoal`, not `Ash`.** `Ash` (#6B6E5F) reads at about 3.2:1 over the olive atmosphere and `Ash2` under 2:1, so secondary text placed directly on a Stone root (section rules, overlines, captions, empty-state copy, the full-class label) is `Charcoal`; `Ash` stays for text on lifted surfaces (cards, popovers, sheets, the tab pill) and for hairlines and outlines, and `Ash2` for tertiary text on those surfaces only. `Overline` and `Caption` default to `Charcoal`.
+
 **`theme/AppColors.kt`** — five primaries are the brand doc's source of truth: `Lime #B6C24F`, `Moss #283B15`, `Stone #F5F2ED`, `Wood #2E1B0F`, `BurntNectar #F65713`. Derived variants (`LimeBright/Deep`, `MossDeep/Light`, `Stone2`, `Paper`) are HSL-style shifts of those primaries — recompute them, don't hand-edit, if a primary changes. `Ink/Graphite/Charcoal/Ash/Ash2/Mist/Mist2` are the warm neutrals. `StoneAlpha*` are translucent helpers for dark surfaces.
 
 **`theme/Typography.kt`** — three font families, sourced from `composeResources/font/`:

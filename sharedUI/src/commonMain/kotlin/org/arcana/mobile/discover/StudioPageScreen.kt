@@ -289,8 +289,8 @@ private fun Header(page: StudioPageDto, color: Color, state: StudioPageUiState.S
                     page.categories.take(3).forEach { category ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             // decorative — the category name follows.
-                            StrokeIcon(icon = CategoryIcons.iconFor(category.slug), size = 12.dp, tint = Ash)
-                            Overline(text = category.name, size = 10, color = Ash)
+                            StrokeIcon(icon = CategoryIcons.iconFor(category.slug), size = 12.dp, tint = Charcoal)
+                            Overline(text = category.name, size = 10, color = Charcoal)
                         }
                     }
                 }
@@ -302,7 +302,7 @@ private fun Header(page: StudioPageDto, color: Color, state: StudioPageUiState.S
                         neighborhoods = page.neighborhoods, locationCount = page.locationCount,
                     ),
                 ),
-                size = 12, color = Ash, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                size = 12, color = Charcoal, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -312,7 +312,7 @@ private fun Header(page: StudioPageDto, color: Color, state: StudioPageUiState.S
     }
     Spacer(Modifier.height(16.dp))
     when {
-        state.savingFavorites -> Caption("Saving…", size = 13, color = Ash)
+        state.savingFavorites -> Caption("Saving…", size = 13, color = Charcoal)
         state.isFavorite -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // decorative — the label names the state.
             StrokeIcon(icon = ArcanaIcons.Check, size = 14.dp, tint = Moss)

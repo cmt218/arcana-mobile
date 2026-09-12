@@ -313,13 +313,13 @@ private fun StudioCard(studio: DiscoverStudioDto, onClick: () -> Unit) {
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             // decorative — the category name follows.
-                            StrokeIcon(icon = CategoryIcons.iconFor(category.slug), size = 12.dp, tint = Ash)
-                            Overline(text = category.name, size = 10, color = Ash)
+                            StrokeIcon(icon = CategoryIcons.iconFor(category.slug), size = 12.dp, tint = Charcoal)
+                            Overline(text = category.name, size = 10, color = Charcoal)
                         }
                     }
                 }
             }
-            Caption(text = placeLine(studio), size = 12, color = Ash, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Caption(text = placeLine(studio), size = 12, color = Charcoal, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // decorative — the card is the control and the name labels it.
         StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)

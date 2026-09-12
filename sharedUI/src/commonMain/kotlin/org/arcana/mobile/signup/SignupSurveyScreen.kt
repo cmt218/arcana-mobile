@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Graphite
@@ -98,7 +99,7 @@ fun SignupSurveyScreen(
             text = "A few quick questions so we can make your first month count. " +
                 "Takes about 2 minutes.",
             size = 15,
-            color = Ash,
+            color = Charcoal,
         )
 
         Spacer(Modifier.height(36.dp))
@@ -157,7 +158,7 @@ fun SignupSurveyScreen(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Caption(text = "Already a member?", color = Ash)
+            Caption(text = "Already a member?", color = Charcoal)
             Spacer(Modifier.padding(horizontal = 6.dp))
             TextLink(label = "Log in", onClick = onNavigateToLogin)
         }
@@ -188,7 +189,7 @@ private fun SurveyQuestionBlock(
         // Prose, not a stamp: Caption defaults to one ellipsised line, which
         // hid the end of longer hints on narrower phones. A member cannot
         // answer a question they can only half read.
-        Caption(text = it, color = Ash, maxLines = Int.MAX_VALUE, overflow = TextOverflow.Clip)
+        Caption(text = it, color = Charcoal, maxLines = Int.MAX_VALUE, overflow = TextOverflow.Clip)
     }
     Spacer(Modifier.height(14.dp))
 

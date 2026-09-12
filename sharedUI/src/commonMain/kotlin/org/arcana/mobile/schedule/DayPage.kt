@@ -41,6 +41,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Ease
 import org.arcana.mobile.theme.InkAlpha10
@@ -175,7 +176,7 @@ internal fun DayPage(
                 ) {
                     BodyText(
                         text = "No classes match your filters for this day.",
-                        size = 14, color = Ash,
+                        size = 14, color = Charcoal,
                     )
                 }
             }

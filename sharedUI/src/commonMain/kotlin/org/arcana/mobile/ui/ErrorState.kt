@@ -47,6 +47,7 @@ import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Ink
@@ -118,7 +119,7 @@ private fun accentFor(type: ErrorType): Color =
     if (type == ErrorType.SERVER) BurntNectar else Lime
 
 private fun overlineColorFor(type: ErrorType): Color =
-    if (type == ErrorType.SERVER) BurntNectar else Ash
+    if (type == ErrorType.SERVER) BurntNectar else Charcoal
 
 /** Shared by the label's style and its optical-centring offset, so the two can
  *  never drift apart — the offset is derived from the type size, not guessed. */
@@ -264,7 +265,7 @@ fun FullScreenError(
             BodyText(
                 text = copy.body,
                 size = 15,
-                color = Ash,
+                color = Charcoal,
                 modifier = Modifier.widthIn(max = 232.dp),
             )
             Spacer(Modifier.height(32.dp))

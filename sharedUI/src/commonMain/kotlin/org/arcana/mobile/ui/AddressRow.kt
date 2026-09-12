@@ -33,6 +33,7 @@ import kotlinx.coroutines.delay
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.maps.MapTarget
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Mist2
@@ -77,14 +78,14 @@ fun AddressRow(
         leading?.invoke()
         Column(modifier = Modifier.weight(1f)) {
             if (overline != null) {
-                Overline(text = overline, size = 10, color = Ash)
+                Overline(text = overline, size = 10, color = Charcoal)
                 Spacer(Modifier.height(4.dp))
             }
             if (nameAsDisplay) Display(text = name, size = 18, color = Ink)
             else BodyText(text = name, size = 16, color = Ink)
             if (address.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
-                BodyText(text = address, size = 12, color = Ash)
+                BodyText(text = address, size = 12, color = Charcoal)
             }
         }
         // decorative — the row's semantics carry the label.
@@ -109,7 +110,7 @@ fun AddressLink(
     surface: String,
     modifier: Modifier = Modifier,
     businessName: String? = null,
-    color: Color = Ash,
+    color: Color = Charcoal,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
     val source = remember { MutableInteractionSource() }

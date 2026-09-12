@@ -101,6 +101,7 @@ import org.arcana.mobile.data.isNotOpenYet
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Dur
@@ -632,7 +633,7 @@ internal fun EndOfListMarker(text: String, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Overline(text = text, size = 10, color = Ash)
+        Overline(text = text, size = 10, color = Charcoal)
     }
 }
 
@@ -1442,7 +1443,7 @@ internal fun ClassRow(
                 ),
             )
             Spacer(Modifier.height(4.dp))
-            Overline(text = "${session.durationMinutes}min", size = 10, color = Ash)
+            Overline(text = "${session.durationMinutes}min", size = 10, color = Charcoal)
         }
         // Studio color bar
         Box(
@@ -1485,7 +1486,7 @@ internal fun ClassRow(
             // ran long; a dedicated line guarantees it always reads in full.
             if (instructorName.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Overline(text = "WITH $instructorName", size = 10, color = Ash)
+                Overline(text = "WITH $instructorName", size = 10, color = Charcoal)
             }
             Spacer(Modifier.height(8.dp))
             Row(
@@ -1526,7 +1527,7 @@ internal fun ClassRow(
                                 .background(
                                     when {
                                         isScarce -> Warning
-                                        isFull -> Ash2
+                                        isFull -> Ash
                                         else -> MossLight
                                     }
                                 )
@@ -1537,11 +1538,11 @@ internal fun ClassRow(
                     text = tier.label,
                     size = 10,
                     color = when (tier) {
-                        CapacityTier.NotOpen -> Ash
-                        CapacityTier.Full -> Ash
+                        CapacityTier.NotOpen -> Charcoal
+                        CapacityTier.Full -> Charcoal
                         CapacityTier.AlmostFull -> Warning
                         CapacityTier.FillingUp -> MossLight
-                        CapacityTier.Available -> Ash
+                        CapacityTier.Available -> Charcoal
                     },
                 )
             }

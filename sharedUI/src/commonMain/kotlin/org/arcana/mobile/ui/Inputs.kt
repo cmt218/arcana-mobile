@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
@@ -134,7 +135,7 @@ fun ArcanaTextField(
     val labelColor = when {
         error != null -> Danger
         focused -> Moss
-        else -> Ash
+        else -> Charcoal
     }
 
     Column(modifier = modifier) {
@@ -267,7 +268,7 @@ fun ArcanaMultilineTextField(
         )
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Overline(text = "${value.length}/$maxLength", size = 10, color = Ash2)
+            Overline(text = "${value.length}/$maxLength", size = 10, color = Ash)
         }
     }
 }
@@ -302,7 +303,7 @@ fun ArcanaDropdownField(
     val labelColor = when {
         error != null -> Danger
         expanded -> Moss
-        else -> Ash
+        else -> Charcoal
     }
     val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
 
@@ -371,9 +372,9 @@ private fun BodyTextPlaceholder(text: String) {
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Normal,
             fontSize = 18.sp,
-            // Ash, not Ash2: over the atmosphere the lighter muted tone was
-            // barely legible. Still clearly a placeholder against the Ink input.
-            color = Ash,
+            // Charcoal: the placeholder has to clear the atmosphere while still
+            // reading as a placeholder against Ink input text.
+            color = Charcoal,
         ),
     )
 }

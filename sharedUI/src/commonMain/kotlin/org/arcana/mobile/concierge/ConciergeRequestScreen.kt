@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.networking.transportErrorCopy
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
 import org.arcana.mobile.theme.Ink
@@ -94,7 +95,7 @@ fun ConciergeRequestScreen(
             text = "Having an issue, or want to reach the founders directly? " +
                 "Tell us what's going on and we'll be in touch.",
             size = 15,
-            color = Ash,
+            color = Charcoal,
         )
 
         Spacer(Modifier.height(28.dp))
@@ -180,7 +181,7 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
             BodyText(
                 text = "We've got it. The founders will reach out to you directly.",
                 size = 15,
-                color = Ash,
+                color = Charcoal,
             )
         }
         Spacer(Modifier.weight(1f))

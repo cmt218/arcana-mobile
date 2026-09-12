@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Surface
@@ -162,7 +163,7 @@ private fun ReadyContent(
                 AccentText(
                     text = "Save the places you keep coming back to.",
                     size = 18,
-                    color = Ash,
+                    color = Charcoal,
                 )
                 AccentText(text = "Change anytime.", size = 18, color = Moss)
             }
