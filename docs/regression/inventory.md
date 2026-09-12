@@ -1531,6 +1531,7 @@ today.
 ### SEARCH-01 — Idle state: hint, then recent searches
 - **Steps:** Log in with `accounts.<device>.member`. Open Search from the Book header with no prior searches on this install and observe. Type `regression`, wait for results, clear the query with the X control, and observe again.
 - **Expected:** Before any search: a single hint line ("Search classes, studios, instructors, or neighborhoods."). After: a RECENT section listing `regression` with a CLEAR control on its header row; tapping a recent runs that search again, and CLEAR empties the list (back to the hint line) and the device store. Recents are newest-first, capped at 8, persist across app restarts on the same device, and collapse typing intermediates case-insensitively: slowly typing `signature` (or backspacing through it) stores ONE entry, not a substring per debounce tick.
+- **Expected (2026-09-12 addendum):** The search field takes focus on its own once the reveal animation lands (about 400 ms after the pill tap) and the keyboard rises; no tap on the field is needed.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/search/SearchScreen.kt (`IdleContent`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/search/RecentSearches.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/search/SearchViewModel.kt
 - **Platforms:** shared
 
@@ -1543,6 +1544,7 @@ today.
 ### SEARCH-03 — Scope chip narrows results and is removable
 - **Steps:** From SEARCH-02's results, tap the "Regression Test Studio" chip. Then remove the resulting active chip.
 - **Expected:** Tapping the chip refetches scoped to that studio only (the `classes.full` session is among the rows; other studios' classes are gone); the active chip renders removable at the front of the chip row while further suggestion chips keep appearing as the query changes. Scopes COMBINE across types (a studio chip plus an instructor chip filters to that instructor at that studio; at most one active chip per type — a second studio chip replaces the first). While any chip is active, no "Matches …" captions render (the chips are the explanation). Removing it restores the unscoped results for the same query, which is preserved in the input throughout. The active/removable chip (the shared `FilterChip`, distinct from the suggestion `ScopeChip`s) now carries a soft shadow and its × well presses at 90% scale.
+- **Expected (2026-09-12 addendum):** Tapping any chip, a scope chip or an active chip's ×, dismisses the keyboard if it is showing; the field keeps its text and focus.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/search/SearchScreen.kt (`ScopeChip`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/search/SearchViewModel.kt (`onScope`, `clearScope`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/FilterChip.kt
 - **Platforms:** shared
 
