@@ -37,6 +37,8 @@ class HomeViewModelTest {
     private class FakeApi(val me: MembershipMeDto, val up: List<BookingDto>) : BookingApi, MembershipApi {
         override suspend fun membershipMe() = me
         override suspend fun myBookings() = MyBookingsDto(up, emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
         override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
     }
@@ -96,6 +98,8 @@ class HomeViewModelTest {
             return me
         }
         override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
         override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
     }
@@ -179,6 +183,8 @@ class HomeViewModelTest {
                 return meDto
             }
             override suspend fun myBookings() = MyBookingsDto(listOf(booking(1)), emptyList())
+            override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+            override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
             override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
             override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
         }

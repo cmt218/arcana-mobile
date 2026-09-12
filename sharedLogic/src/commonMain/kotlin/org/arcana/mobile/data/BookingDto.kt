@@ -23,6 +23,14 @@ data class SessionBriefDto(
     val studio: String,
     val location: String? = null,
     val instructor: String? = null,
+    @SerialName("brand_slug") val brandSlug: String? = null,
+    @SerialName("studio_slug") val studioSlug: String? = null,
+    @SerialName("location_id") val locationId: Int? = null,
+    @SerialName("location_address") val locationAddress: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @SerialName("class_type_key") val classTypeKey: String? = null,
+    @SerialName("instructor_profile_id") val instructorProfileId: Int? = null,
 )
 
 @Serializable
@@ -46,12 +54,31 @@ data class BookingDto(
     // Member-facing note ops attaches (e.g. a door code). Null/absent when none.
     // Defaulted so older server responses (no field) still deserialize.
     @SerialName("member_note") val memberNote: String? = null,
-)
+    // "studio" when the studio cancelled the class; "" otherwise. Only the
+    // scoped upcoming list surfaces studio-cancelled rows.
+    @SerialName("cancelled_by") val cancelledBy: String = "",
+) {
+    val cancelledByStudio: Boolean get() = status == "cancelled" && cancelledBy == "studio"
+}
 
 @Serializable
 data class MyBookingsDto(
     val upcoming: List<BookingDto>,
     val past: List<BookingDto>,
+)
+
+/** `GET bookings/me/?scope=upcoming`: live reservations plus studio-cancelled
+ *  ones until class time. */
+@Serializable
+data class MyUpcomingDto(
+    val upcoming: List<BookingDto>,
+)
+
+/** `GET bookings/me/?scope=past`: one keyset page, newest first. */
+@Serializable
+data class MyPastDto(
+    val past: List<BookingDto>,
+    @SerialName("next_cursor") val nextCursor: String? = null,
 )
 
 @Serializable

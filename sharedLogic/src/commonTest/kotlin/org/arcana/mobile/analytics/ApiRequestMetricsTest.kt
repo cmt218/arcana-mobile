@@ -27,6 +27,12 @@ class ApiRequestMetricsTest {
         assertEquals("my_bookings", normalizeEndpoint("GET", "/api/v1/bookings/me/"))
     }
 
+    @Test fun `discover slugs collapse to one bucket`() {
+        assertEquals("discover_directory", normalizeEndpoint("GET", "/api/v1/discover/studios/"))
+        assertEquals("discover_studio", normalizeEndpoint("GET", "/api/v1/discover/studios/solidcore/"))
+        assertEquals("discover_studio", normalizeEndpoint("GET", "/api/v1/discover/studios/id-hot-yoga/"))
+    }
+
     @Test fun `unmapped path is other`() {
         assertEquals("other", normalizeEndpoint("GET", "/api/v1/something/new/"))
     }
@@ -35,6 +41,7 @@ class ApiRequestMetricsTest {
      *  When you add an endpoint to normalizeEndpoint, add its assertion here. */
     @Test fun `every endpoint mapping is locked`() {
         val expected = mapOf(
+            ("GET" to "/api/v1/discover/studios/") to "discover_directory",
             ("GET" to "/api/v1/classes/") to "schedule_window",
             ("GET" to "/api/v1/classes/overview/") to "schedule_overview",
             ("GET" to "/api/v1/classes/sessions/") to "schedule_page",

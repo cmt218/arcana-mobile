@@ -125,6 +125,7 @@ private data class AccountItem(
 @Composable
 fun ProfileScreen(
     onManageStudios: () -> Unit,
+    onOpenReservations: () -> Unit,
     onOpenConcierge: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -189,6 +190,7 @@ fun ProfileScreen(
     }
     val accountItems = listOf(
         AccountItem(ArcanaIcons.Card, "Membership", tierLabel, Ash),
+        AccountItem(ArcanaIcons.Calendar, "Reservations", "", Moss, onClick = onOpenReservations),
         AccountItem(ArcanaIcons.Support, "Concierge", "", Moss, onClick = onOpenConcierge),
     )
 

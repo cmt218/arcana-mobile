@@ -26,6 +26,8 @@ import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CancelPolicyDto
 import org.arcana.mobile.data.MyBookingsDto
+import org.arcana.mobile.data.MyPastDto
+import org.arcana.mobile.data.MyUpcomingDto
 import org.arcana.mobile.data.SessionBriefDto
 import org.arcana.mobile.networking.ApiHttpError
 import org.arcana.mobile.networking.BookingApi
@@ -262,6 +264,8 @@ internal class FakeBookingApi(
         myBookingsCalls += 1
         return myBookingsResult()
     }
+    override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+    override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
 
     override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse =
         throw AssertionError("schedule VM must not call cancelBooking")

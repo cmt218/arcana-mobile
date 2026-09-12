@@ -443,6 +443,53 @@ class Telemetry(
     fun bookingCancelFailed(bookingId: Int, reasonCode: String) =
         track(Events.BOOKING_CANCEL_FAILED, mapOf("booking_id" to bookingId, "reason_code" to reasonCode))
 
+    // ---- Reservations ------------------------------------------------------
+
+    /** [source] is the entry point: "home" or "you". */
+    fun reservationsOpened(source: String) =
+        track(Events.RESERVATIONS_OPENED, mapOf("source" to source))
+
+    /** [segment] is "upcoming" or "past". */
+    fun reservationsSegmentChanged(segment: String) =
+        track(Events.RESERVATIONS_SEGMENT_CHANGED, mapOf("segment" to segment))
+
+    /** One past page landed; [pageIndex] is 0 for the first page. */
+    fun reservationsPageLoaded(pageIndex: Int, count: Int) =
+        track(Events.RESERVATIONS_PAGE_LOADED, mapOf("page_index" to pageIndex, "count" to count))
+
+    /** [surface]: class_detail | reservation_row | home_next_up | studio_page.
+     *  [app]: apple | google | copy. */
+    fun addressTapped(surface: String, app: String) =
+        track(Events.ADDRESS_TAPPED, mapOf("surface" to surface, "app" to app))
+
+    // ---- Discover ----------------------------------------------------------
+
+    fun discoverOpened() = track(Events.DISCOVER_OPENED)
+
+    fun discoverFilterChanged(categoryCount: Int, neighborhoodCount: Int) =
+        track(
+            Events.DISCOVER_FILTER_CHANGED,
+            mapOf("category_count" to categoryCount, "neighborhood_count" to neighborhoodCount),
+        )
+
+    /** [source]: directory | feed | search. */
+    fun studioPageViewed(brandSlug: String, source: String) =
+        track(Events.STUDIO_PAGE_VIEWED, mapOf("brand_slug" to brandSlug, "source" to source))
+
+    fun studioScheduleTapped(brandSlug: String) =
+        track(Events.STUDIO_SCHEDULE_TAPPED, mapOf("brand_slug" to brandSlug))
+
+    /** [result]: added | sheet. */
+    fun studioFavoriteTapped(brandSlug: String, locationCount: Int, result: String) =
+        track(
+            Events.STUDIO_FAVORITE_TAPPED,
+            mapOf("brand_slug" to brandSlug, "location_count" to locationCount, "result" to result),
+        )
+
+    /** [source]: studio_page | class_detail. */
+    fun instructorTapped(profileId: Int, source: String) =
+        track(Events.INSTRUCTOR_TAPPED, mapOf("profile_id" to profileId, "source" to source))
+
     // ---- Favorites (broken down by studio & location) --------------------
 
     fun favoriteAdded(
@@ -604,6 +651,18 @@ class Telemetry(
         const val FAVORITES_DROPDOWN_OPENED = "favorites_dropdown_opened"
         const val FAVORITES_MANAGE_TAPPED = "favorites_manage_tapped"
 
+        const val RESERVATIONS_OPENED = "reservations_opened"
+        const val RESERVATIONS_SEGMENT_CHANGED = "reservations_segment_changed"
+        const val RESERVATIONS_PAGE_LOADED = "reservations_page_loaded"
+        const val ADDRESS_TAPPED = "address_tapped"
+
+        const val DISCOVER_OPENED = "discover_opened"
+        const val DISCOVER_FILTER_CHANGED = "discover_filter_changed"
+        const val STUDIO_PAGE_VIEWED = "studio_page_viewed"
+        const val STUDIO_SCHEDULE_TAPPED = "studio_schedule_tapped"
+        const val STUDIO_FAVORITE_TAPPED = "studio_favorite_tapped"
+        const val INSTRUCTOR_TAPPED = "instructor_tapped"
+
         const val CONCIERGE_SUBMITTED = "concierge_request_submitted"
         const val CONCIERGE_FAILED = "concierge_request_failed"
     }
@@ -615,6 +674,8 @@ class Telemetry(
         const val PROFILE = "Profile"
         const val STUDIO_SELECTION = "StudioSelection"
         const val MY_BOOKINGS = "MyBookings"
+        const val DISCOVER = "Discover"
+        const val STUDIO_PAGE = "StudioPage"
         const val CONCIERGE_REQUEST = "ConciergeRequest"
         const val EDIT_PROFILE = "EditProfile"
         const val CLASS_DETAIL = "ClassDetail"

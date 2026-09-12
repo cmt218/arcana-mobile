@@ -54,10 +54,11 @@ import org.arcana.mobile.theme.Paper
 import org.arcana.mobile.theme.Springs
 import org.jetbrains.compose.resources.DrawableResource
 
-/** The three primary destinations. Profile renders as the member's avatar. */
+/** The four primary destinations. Profile renders as the member's avatar. */
 enum class ArcanaTab(val label: String, val icon: DrawableResource, val isAvatar: Boolean = false) {
     Home("Home", ArcanaIcons.Home),
     Schedule("Book", ArcanaIcons.Calendar),
+    Discover("Discover", ArcanaIcons.Compass),
     Profile("You", ArcanaIcons.User, isAvatar = true),
 }
 

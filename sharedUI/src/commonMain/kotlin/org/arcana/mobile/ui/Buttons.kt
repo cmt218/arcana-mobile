@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
+import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Ink
@@ -133,6 +134,51 @@ fun PrimaryCta(
                 StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 18.dp, tint = Ink)
             }
         }
+    }
+}
+
+/**
+ * Secondary action: the CTA's type in an outlined pill, no fill and no shadow,
+ * so it sits below a list without competing with the primary action.
+ */
+@Composable
+fun GhostCta(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(source)
+    val stroke by animateColorAsState(
+        targetValue = if (pressed) Moss else Ash,
+        animationSpec = tween(Dur.Quick),
+        label = "ghostStroke",
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .pressable(source)
+            .clip(ArcanaShapes.Pill)
+            .border(1.dp, stroke, ArcanaShapes.Pill)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label.uppercase(),
+            modifier = Modifier.opticallyCentredCaps(
+                fontSize = CTA_LABEL_SIZE,
+                letterSpacingEm = CTA_LABEL_TRACKING_EM,
+            ),
+            maxLines = 1,
+            style = TextStyle(
+                fontFamily = Arcana.fonts.display,
+                fontWeight = FontWeight.Bold,
+                fontSize = CTA_LABEL_SIZE,
+                letterSpacing = CTA_LABEL_TRACKING_EM.em,
+                color = Moss,
+            ),
+        )
     }
 }
 

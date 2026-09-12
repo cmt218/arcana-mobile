@@ -10,6 +10,9 @@ import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.MyBookingsViewModel
+import org.arcana.mobile.discover.DiscoverViewModel
+import org.arcana.mobile.discover.StudioPageViewModel
+import org.arcana.mobile.schedule.ScheduleScopeRequests
 import org.arcana.mobile.concierge.ConciergeRequestViewModel
 import org.arcana.mobile.defaultBaseUrl
 import org.arcana.mobile.favorites.FavoritesRepository
@@ -20,6 +23,7 @@ import org.arcana.mobile.profile.EditProfileViewModel
 import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.networking.BaseUrlProvider
 import org.arcana.mobile.networking.BookingApi
+import org.arcana.mobile.networking.DiscoverApi
 import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.ProfileApi
 import org.arcana.mobile.networking.FavoritesApi
@@ -77,6 +81,7 @@ val appModule = module {
     }
     single { ArcanaApiClient(get(), get(), get()) }
     single<BookingApi> { get<ArcanaApiClient>() }
+    single<DiscoverApi> { get<ArcanaApiClient>() }
     single<MembershipApi> { get<ArcanaApiClient>() }
     single<FavoritesApi> { get<ArcanaApiClient>() }
     single<ScheduleApi> { get<ArcanaApiClient>() }
@@ -110,9 +115,14 @@ val appModule = module {
     viewModel { ProfileViewModel(api = get(), favoritesRepository = get(), telemetry = get()) }
     viewModel { EditProfileViewModel(api = get()) }
     viewModel { DeleteAccountViewModel(conciergeApi = get()) }
-    viewModel { MyBookingsViewModel(api = get()) }
+    viewModel { MyBookingsViewModel(api = get(), telemetry = get()) }
     viewModel { ConciergeRequestViewModel(conciergeApi = get(), telemetry = get()) }
-    viewModel { ScheduleViewModel(get(), get(), get(), get()) }
+    single { ScheduleScopeRequests() }
+    viewModel { ScheduleViewModel(get(), get(), get(), get(), scopeRequests = get()) }
+    viewModel { DiscoverViewModel(api = get(), telemetry = get()) }
+    viewModel { (brandSlug: String, source: String) ->
+        StudioPageViewModel(brandSlug, source, api = get(), favoritesRepository = get(), scopeRequests = get(), telemetry = get())
+    }
     single { RecentSearches.backedBy(get()) }
     viewModel { SearchViewModel(api = get(), recentSearches = get(), telemetry = get()) }
     viewModel { StudioSelectionViewModel(get(), get(), get()) }

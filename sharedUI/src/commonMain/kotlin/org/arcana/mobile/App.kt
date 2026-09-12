@@ -42,6 +42,8 @@ import org.arcana.mobile.auth.AuthViewModel
 import org.arcana.mobile.auth.PasswordResetRequestScreen
 import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.booking.MyBookingsScreen
+import org.arcana.mobile.discover.DiscoverScreen
+import org.arcana.mobile.discover.StudioPageScreen
 import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
@@ -300,6 +302,7 @@ private fun MainScaffold() {
     val selectedTab: ArcanaTab? = when {
         currentDestination?.hasRoute<ArcanaDestination.Home>() == true -> ArcanaTab.Home
         currentDestination?.hasRoute<ArcanaDestination.Schedule>() == true -> ArcanaTab.Schedule
+        currentDestination?.hasRoute<ArcanaDestination.Discover>() == true -> ArcanaTab.Discover
         currentDestination?.hasRoute<ArcanaDestination.Profile>() == true -> ArcanaTab.Profile
         else -> null
     }
@@ -317,7 +320,7 @@ private fun MainScaffold() {
         ) {
             composable<ArcanaDestination.Home> {
                 HomeScreen(
-                    onSeeAllBookings = { navController.navigate(ArcanaDestination.MyBookings) },
+                    onSeeAllBookings = { navController.navigate(ArcanaDestination.MyBookings(source = "home")) },
                     onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
                 )
             }
@@ -370,9 +373,24 @@ private fun MainScaffold() {
                     onClose = { navController.popBackStack() },
                 )
             }
+            composable<ArcanaDestination.Discover> {
+                DiscoverScreen(
+                    onOpenStudio = { slug -> navController.navigate(ArcanaDestination.StudioPage(slug)) },
+                )
+            }
+            composable<ArcanaDestination.StudioPage> { entry ->
+                val args = entry.toRoute<ArcanaDestination.StudioPage>()
+                StudioPageScreen(
+                    brandSlug = args.brandSlug,
+                    source = args.source,
+                    onClose = { navController.popBackStack() },
+                    onSeeSchedule = { navController.navigateToTab(ArcanaTab.Schedule) },
+                )
+            }
             composable<ArcanaDestination.Profile> {
                 ProfileScreen(
                     onManageStudios = { navController.navigate(ArcanaDestination.StudioSelection) },
+                    onOpenReservations = { navController.navigate(ArcanaDestination.MyBookings(source = "you")) },
                     onOpenConcierge = { navController.navigate(ArcanaDestination.ConciergeRequest) },
                     onOpenSettings = { navController.navigate(ArcanaDestination.EditProfile) },
                 )
@@ -383,10 +401,13 @@ private fun MainScaffold() {
             composable<ArcanaDestination.EditProfile> {
                 EditProfileScreen(onClose = { navController.popBackStack() })
             }
-            composable<ArcanaDestination.MyBookings> {
+            composable<ArcanaDestination.MyBookings> { entry ->
+                val args = entry.toRoute<ArcanaDestination.MyBookings>()
                 MyBookingsScreen(
+                    source = args.source,
                     onClose = { navController.popBackStack() },
                     onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
+                    onBookClass = { navController.navigateToTab(ArcanaTab.Schedule) },
                 )
             }
             composable<ArcanaDestination.ConciergeRequest> {
@@ -438,6 +459,8 @@ internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest.hasRoute<ArcanaDestination.Profile>() -> Telemetry.Screens.PROFILE
     dest.hasRoute<ArcanaDestination.StudioSelection>() -> Telemetry.Screens.STUDIO_SELECTION
     dest.hasRoute<ArcanaDestination.MyBookings>() -> Telemetry.Screens.MY_BOOKINGS
+    dest.hasRoute<ArcanaDestination.Discover>() -> Telemetry.Screens.DISCOVER
+    dest.hasRoute<ArcanaDestination.StudioPage>() -> Telemetry.Screens.STUDIO_PAGE
     dest.hasRoute<ArcanaDestination.ConciergeRequest>() -> Telemetry.Screens.CONCIERGE_REQUEST
     dest.hasRoute<ArcanaDestination.EditProfile>() -> Telemetry.Screens.EDIT_PROFILE
     dest.hasRoute<ArcanaDestination.ClassDetail>() -> Telemetry.Screens.CLASS_DETAIL
@@ -449,6 +472,7 @@ private fun NavController.navigateToTab(tab: ArcanaTab) {
     val dest: ArcanaDestination = when (tab) {
         ArcanaTab.Home -> ArcanaDestination.Home
         ArcanaTab.Schedule -> ArcanaDestination.Schedule
+        ArcanaTab.Discover -> ArcanaDestination.Discover
         ArcanaTab.Profile -> ArcanaDestination.Profile
     }
     navigate(dest) {

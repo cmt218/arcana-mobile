@@ -5,7 +5,11 @@ import kotlinx.serialization.Serializable
 sealed interface ArcanaDestination {
     @Serializable data object Home : ArcanaDestination
     @Serializable data object Schedule : ArcanaDestination
+    @Serializable data object Discover : ArcanaDestination
     @Serializable data object Profile : ArcanaDestination
+
+    // Discover studio page. `source` is the entry point for telemetry.
+    @Serializable data class StudioPage(val brandSlug: String, val source: String = "directory") : ArcanaDestination
 
     @Serializable data object StudioSelection : ArcanaDestination
 
@@ -19,7 +23,8 @@ sealed interface ArcanaDestination {
         val originBottom: Float = -1f,
     ) : ArcanaDestination
 
-    @Serializable data object MyBookings : ArcanaDestination
+    // Reservations. `source` is the entry point for telemetry: "home" or "you".
+    @Serializable data class MyBookings(val source: String = "home") : ArcanaDestination
 
     @Serializable data object EditProfile : ArcanaDestination
 

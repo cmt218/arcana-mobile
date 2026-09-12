@@ -17,6 +17,8 @@ import org.arcana.mobile.data.MemberDto
 import org.arcana.mobile.data.MembershipBriefDto
 import org.arcana.mobile.data.MembershipMeDto
 import org.arcana.mobile.data.MyBookingsDto
+import org.arcana.mobile.data.MyPastDto
+import org.arcana.mobile.data.MyUpcomingDto
 import org.arcana.mobile.data.SessionBriefDto
 import org.arcana.mobile.data.TierDto
 import org.arcana.mobile.networking.BookingApi
@@ -51,6 +53,8 @@ class BookingTelemetryTest {
     ) : BookingApi, MembershipApi {
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(upcoming, emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = createResult()
         override suspend fun cancelBooking(bookingId: Int) = cancelResult()
     }

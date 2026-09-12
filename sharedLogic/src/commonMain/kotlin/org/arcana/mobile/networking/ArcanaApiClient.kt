@@ -47,7 +47,11 @@ import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.LoginRequest
 import org.arcana.mobile.data.MeProfileDto
 import org.arcana.mobile.data.MembershipMeDto
+import org.arcana.mobile.data.DiscoverDirectoryDto
 import org.arcana.mobile.data.MyBookingsDto
+import org.arcana.mobile.data.StudioPageDto
+import org.arcana.mobile.data.MyPastDto
+import org.arcana.mobile.data.MyUpcomingDto
 import org.arcana.mobile.data.PasswordResetRequest
 import org.arcana.mobile.data.ScheduleOverviewDto
 import org.arcana.mobile.data.SchedulePageDto
@@ -117,7 +121,7 @@ class ArcanaApiClient(
     // bodyOrThrow, the lot) against MockEngine. Production passes nothing and
     // Ktor picks the platform engine off the classpath.
     engine: HttpClientEngine? = null,
-) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, SearchApi, ConciergeApi, ProfileApi, PasswordResetApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, SearchApi, ConciergeApi, ProfileApi, PasswordResetApi, DiscoverApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -524,6 +528,25 @@ class ArcanaApiClient(
 
     override suspend fun myBookings(): MyBookingsDto =
         client.get(v1("bookings/me/")).bodyOrThrow()
+
+    override suspend fun fetchDirectory(categories: Set<String>, neighborhoods: Set<String>): DiscoverDirectoryDto =
+        client.get(v1("discover/studios/")) {
+            categories.forEach { parameter("category", it) }
+            neighborhoods.forEach { parameter("neighborhood", it) }
+        }.bodyOrThrow()
+
+    override suspend fun fetchStudioPage(brandSlug: String): StudioPageDto =
+        client.get(v1("discover/studios/$brandSlug/")).bodyOrThrow()
+
+    override suspend fun myUpcoming(): MyUpcomingDto =
+        client.get(v1("bookings/me/")) { parameter("scope", "upcoming") }.bodyOrThrow()
+
+    override suspend fun myPast(cursor: String?, limit: Int): MyPastDto =
+        client.get(v1("bookings/me/")) {
+            parameter("scope", "past")
+            parameter("limit", limit)
+            if (cursor != null) parameter("cursor", cursor)
+        }.bodyOrThrow()
 
     override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse =
         client.delete(v1("bookings/$bookingId/")).bodyOrThrow()

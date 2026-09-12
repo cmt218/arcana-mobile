@@ -50,6 +50,8 @@ class BookingViewModelTest {
         var createCalls: Int = 0
         override suspend fun membershipMe() = meResult
         override suspend fun myBookings() = MyBookingsDto(upcoming, emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?): BookingDto {
             created = sessionId to requestedSpotId
             createdVisitedBefore = studioVisitedBefore
@@ -65,6 +67,8 @@ class BookingViewModelTest {
     private class FailingMeApi(private val err: Throwable) : BookingApi, MembershipApi {
         override suspend fun membershipMe(): MembershipMeDto = throw err
         override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?): BookingDto =
             throw IllegalStateException()
         override suspend fun cancelBooking(bookingId: Int): CancelBookingResponse =
@@ -267,6 +271,8 @@ class BookingViewModelTest {
             return if (calls == 1) { delay(100); stale } else { delay(10); fresh }
         }
         override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto = MyUpcomingDto(myBookings().upcoming)
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(myBookings().past, null)
         override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?): BookingDto =
             throw IllegalStateException()
         override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
