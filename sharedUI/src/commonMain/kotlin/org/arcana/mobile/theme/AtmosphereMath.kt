@@ -13,7 +13,13 @@ import kotlin.random.Random
  * spec's original presence, to kill a white edge halo) — do not layer alpha on top.
  */
 const val ATMOSPHERE_GRID = 4
-const val ATMOSPHERE_AMPLITUDE = 0.15f
+// 0.08, not the prototype's 0.15: the interior control points sit a third of the
+// width apart, and at 0.15 two of them can close to within 0.03 of each other, so
+// the Catmull-Rom patches fold over and the later triangles paint sawtooth seams
+// across the earlier ones (the "jagged edges" in the field). At 0.08 the mesh
+// never folds and its thinnest triangle keeps ~28% of its rest area; locked by
+// AtmosphereMeshFoldTest.
+const val ATMOSPHERE_AMPLITUDE = 0.08f
 private const val EDGE_AMPLITUDE_FACTOR = 0.6f
 private const val BASE_PERIOD_X = 6.0f
 private const val BASE_PERIOD_Y = 7.5f

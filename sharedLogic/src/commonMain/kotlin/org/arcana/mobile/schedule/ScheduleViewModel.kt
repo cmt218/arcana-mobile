@@ -127,6 +127,9 @@ sealed interface ScheduleUiState {
          *  surfaces here only after the next refresh, never blocking or
          *  breaking the schedule itself. */
         val bookedSessions: Map<Int, String> = emptyMap(),
+        /** Non-null while a studio page's "See schedule" scope is active;
+         *  renders as a removable brand chip. */
+        val scopedBrand: ScheduleScopeRequest? = null,
     ) : ScheduleUiState
     data class Error(val type: ErrorType) : ScheduleUiState
 }
@@ -174,6 +177,7 @@ class ScheduleViewModel(
     private val favoritesRepository: FavoritesRepository,
     private val bookingApi: BookingApi,
     private val telemetry: Telemetry = Telemetry.Noop,
+    private val scopeRequests: ScheduleScopeRequests = ScheduleScopeRequests(),
 ) : ViewModel() {
 
     /** Per-day count of load-more pages fetched, for the `schedule_load_more`
@@ -267,7 +271,19 @@ class ScheduleViewModel(
      *  made elsewhere (the favorites manager saving a new set). */
     private var lastAppliedFavorites: FavoritesDto? = null
 
+    /** A studio page's "See schedule" scope, shown as a removable chip. */
+    private var scopedBrand: ScheduleScopeRequest? = null
+    private var scopeBeforeBrand: Pair<ScopeMode, ScheduleFilters>? = null
+
     init {
+        viewModelScope.launch {
+            scopeRequests.pending.collect { request ->
+                if (request != null) {
+                    scopeRequests.consume()
+                    applyBrandScope(request)
+                }
+            }
+        }
         // Debounced filter pipeline. drop(1) skips the StateFlow's replay of
         // the initial epoch — the cold-start fetch below runs immediately
         // rather than waiting out the debounce. collectLatest cancels an
@@ -337,7 +353,14 @@ class ScheduleViewModel(
      *  `private`, so a test can call it directly rather than via the
      *  favorites-repository collector. */
     internal fun applyFavoritesScope(favorites: FavoritesDto?) {
-        if (favorites != null && !favorites.isEmpty()) scope = ScopeMode.Favorites
+        val hasFavorites = favorites != null && !favorites.isEmpty()
+        if (scopedBrand != null) {
+            // A studio page's scope landed before favorites resolved: keep the
+            // brand scope and let removing its chip restore Favorites.
+            if (hasFavorites) scopeBeforeBrand = ScopeMode.Favorites to ScheduleFilters()
+        } else if (hasFavorites) {
+            scope = ScopeMode.Favorites
+        }
         lastAppliedFavorites = favorites
     }
 
@@ -481,6 +504,7 @@ class ScheduleViewModel(
     /** Scope toggle → Favorites. Clears the studio subset; KEEPS the time +
      *  modality overlays. No-op without favorites or when already on Favorites. */
     fun useMyFavorites() {
+        dropBrandScope()
         if (scope == ScopeMode.Favorites) return
         val favorites = favoritesRepository.favorites.value
         if (favorites == null || favorites.isEmpty()) return
@@ -492,6 +516,7 @@ class ScheduleViewModel(
     /** Scope toggle → All Studios (reset to the whole fleet: clears the studio
      *  subset). KEEPS the time + modality overlays. */
     fun showAllStudios() {
+        dropBrandScope()
         if (scope == ScopeMode.AllStudios && filters == ScheduleFilters()) return
         scope = ScopeMode.AllStudios
         filters = ScheduleFilters()
@@ -535,6 +560,7 @@ class ScheduleViewModel(
      *  individual location picks (redundant). Implies All-Studios scope; keeps
      *  the overlays. */
     fun toggleStudioWhole(slug: String) {
+        dropBrandScope()
         scope = ScopeMode.AllStudios
         val locationIdsForStudio = catalog()[slug].orEmpty().toSet()
         filters = if (slug in filters.studioSlugs) {
@@ -552,6 +578,7 @@ class ScheduleViewModel(
      *  - With the whole studio selected → narrow: studio off, this location on.
      *  - Selecting the last unselected location PROMOTES to a whole-studio pick. */
     fun toggleLocation(slug: String, id: Int) {
+        dropBrandScope()
         scope = ScopeMode.AllStudios
         val allLocationIds = catalog()[slug].orEmpty().toSet()
         filters = when {
@@ -573,6 +600,32 @@ class ScheduleViewModel(
             }
         }
         onFiltersChanged()
+    }
+
+    /** Scope the schedule to one brand's locations without touching
+     *  favorites; [clearBrandScope] restores what was active before. */
+    private fun applyBrandScope(request: ScheduleScopeRequest) {
+        if (scopedBrand == null) scopeBeforeBrand = scope to filters
+        scopedBrand = request
+        scope = ScopeMode.AllStudios
+        filters = ScheduleFilters(locationIds = request.locationIds.toSet())
+        onFiltersChanged()
+    }
+
+    fun clearBrandScope() {
+        val previous = scopeBeforeBrand ?: return
+        scopedBrand = null
+        scopeBeforeBrand = null
+        scope = previous.first
+        filters = previous.second
+        onFiltersChanged()
+    }
+
+    /** Any manual studio or location pick, or a scope switch, ends the brand
+     *  chip: the member has taken over the selection. */
+    private fun dropBrandScope() {
+        scopedBrand = null
+        scopeBeforeBrand = null
     }
 
     /** slug → its location ids, from the loaded overview catalog. */
@@ -867,6 +920,7 @@ class ScheduleViewModel(
             availableModalities = availableModalities,
             selectedModalitySlugs = selectedModalitySlugs,
             bookedSessions = bookedSessions,
+            scopedBrand = scopedBrand,
         )
     }
 

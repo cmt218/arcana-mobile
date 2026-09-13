@@ -29,7 +29,11 @@ fun normalizeEndpoint(method: String, encodedPath: String): String {
     val shape = path.split('/')
         .joinToString("/") { seg -> if (seg.toIntOrNull() != null) "{id}" else seg }
     val m = method.uppercase()
+    // Slug paths cannot collapse like ids; match the prefix so the brand
+    // slug never reaches PostHog.
+    if (m == "GET" && shape.startsWith("discover/studios/")) return "discover_studio"
     return when (m to shape) {
+        "GET" to "discover/studios" -> "discover_directory"
         "GET" to "classes" -> "schedule_window"
         "GET" to "classes/overview" -> "schedule_overview"
         "GET" to "classes/sessions" -> "schedule_page"

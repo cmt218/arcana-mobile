@@ -32,7 +32,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
@@ -70,21 +69,21 @@ import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingSubmit
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.bookingInfoOrNull
+import org.arcana.mobile.booking.CancelReservationSheet
 import org.arcana.mobile.booking.CancelState
 import org.arcana.mobile.booking.bookingErrorCopy
-import org.arcana.mobile.booking.cancelErrorCopy
 import org.arcana.mobile.booking.outsideWindowCopy
 import org.arcana.mobile.booking.useBookingGestures
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.networking.ErrorType
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.BurntNectar
-import org.arcana.mobile.theme.Clay
-import org.arcana.mobile.theme.ClayDeep
 import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Ease
 import org.arcana.mobile.theme.Graphite
@@ -98,21 +97,19 @@ import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Springs
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.Warning
+import org.arcana.mobile.ui.AddressRow
+import org.arcana.mobile.ui.studioColorFor
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
-import org.arcana.mobile.ui.ArcanaSheet
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.CircleMonogram
-import org.arcana.mobile.ui.CtaSpinner
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.ErrorCopy
 import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.FullScreenError
-import org.arcana.mobile.ui.Heading3
-import org.arcana.mobile.ui.HoldToConfirm
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.SectionRule
@@ -220,19 +217,6 @@ internal fun classDetailCtaLabel(
     outsideWindow -> "OUTSIDE YOUR MEMBERSHIP"
     opensAt != null -> opensAtCtaLabel(opensAt)
     else -> fallback
-}
-
-// Copy of studioColorFor from ScheduleScreen — small intentional duplication.
-private fun studioColorFor(primaryColor: String): Color {
-    if (primaryColor.length != 7 || !primaryColor.startsWith("#")) return Moss
-    return try {
-        val r = primaryColor.substring(1, 3).toInt(16)
-        val g = primaryColor.substring(3, 5).toInt(16)
-        val b = primaryColor.substring(5, 7).toInt(16)
-        Color(r, g, b)
-    } catch (_: NumberFormatException) {
-        Moss
-    }
 }
 
 // DetailCapacity + computeDetailCapacity live in :sharedLogic schedule/ClassDetailLogic.kt
@@ -551,6 +535,8 @@ private fun SuccessBlock(
                     studioName = studio.name,
                     locationName = session.location.name,
                     address = session.location.address,
+                    latitude = session.location.latitude,
+                    longitude = session.location.longitude,
                     studioColor = sc,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
@@ -668,7 +654,7 @@ private fun SuccessBlock(
         )
     }
     if (cancelSheetOpen) {
-        CancelBookingSheet(
+        CancelReservationSheet(
             className = session.template.name,
             spotLabel = bookedSpotLabel,
             willForfeitCredit = existing?.cancelPolicy?.willForfeitCredit == true,
@@ -677,73 +663,6 @@ private fun SuccessBlock(
             onDismiss = bookingVm::dismissCancelSheet,
             sheetState = cancelSheetState,
         )
-    }
-}
-
-// ── Cancel booking sheet ------------------------------------------------------
-
-/**
- * Confirmation sheet for cancelling an existing booking from the detail page.
- * Mirrors BookingSheet's ArcanaSheet structure. The forfeit warning is
- * driven by the booking's cancel policy: past the studio cutoff the credit is
- * lost (Warning), otherwise it's refunded (Moss).
- */
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun CancelBookingSheet(
-    className: String,
-    spotLabel: String?,
-    willForfeitCredit: Boolean,
-    cancelState: CancelState,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    sheetState: SheetState,
-) {
-    val submitting = cancelState is CancelState.Submitting
-    ArcanaSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
-            Heading3("Cancel booking?", size = 20, color = Ink)
-            Spacer(Modifier.height(8.dp))
-            BodyText(className, size = 16, color = Ink)
-            if (spotLabel != null) {
-                Spacer(Modifier.height(2.dp))
-                Caption(spotLabel, size = 12, color = Ash)
-            }
-            Spacer(Modifier.height(16.dp))
-            if (willForfeitCredit) {
-                BodyText(
-                    "Cancelling now forfeits this class's credit. You're past the studio cutoff.",
-                    size = 13, color = Warning,
-                )
-            } else {
-                BodyText("You'll get your credit back.", size = 13, color = Moss)
-            }
-            Spacer(Modifier.height(20.dp))
-            if (useBookingGestures()) {
-                HoldToConfirm(
-                    label = if (submitting) "CANCELLING…" else "HOLD TO CANCEL",
-                    onConfirm = onConfirm,
-                    enabled = !submitting,
-                )
-            } else {
-                PrimaryCta(
-                    label = if (submitting) "CANCELLING…" else "CANCEL BOOKING",
-                    onClick = onConfirm,
-                    enabled = !submitting,
-                    containerColor = Clay,
-                    accentColor = ClayDeep,
-                    trailing = if (submitting) {
-                        { CtaSpinner() }
-                    } else null,
-                )
-            }
-            if (cancelState is CancelState.Failed) {
-                Spacer(Modifier.height(12.dp))
-                // cancelErrorCopy (not bookingErrorCopy) so an unmapped code
-                // still falls back to cancel-appropriate copy.
-                Caption(cancelErrorCopy(cancelState.code), size = 13, color = BurntNectar, maxLines = 3)
-            }
-        }
     }
 }
 
@@ -780,7 +699,7 @@ private fun CircleIconButton(
             .softShadow(CircleShape)
             .clip(CircleShape)
             .background(Surface)
-            .border(1.dp, Ash, CircleShape)
+            .border(1.dp, Outline, CircleShape)
             .clickable(interactionSource = source, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -837,7 +756,7 @@ private fun HeroCard(
             )
             Spacer(Modifier.height(14.dp))
             if (modality.isNotBlank()) {
-                Overline(text = modality, size = 10, color = Ash)
+                Overline(text = modality, size = 10, color = Charcoal)
                 Spacer(Modifier.height(8.dp))
             }
             Display(
@@ -942,11 +861,11 @@ private fun SummaryCell(
         modifier = modifier,
         horizontalAlignment = Alignment.Start,
     ) {
-        Overline(text = label, size = 9, color = Ash)
+        Overline(text = label, size = 9, color = Charcoal)
         Spacer(Modifier.height(8.dp))
         Display(text = value, size = 22, color = Ink)
         Spacer(Modifier.height(4.dp))
-        Overline(text = unit, size = 9, color = Ash)
+        Overline(text = unit, size = 9, color = Charcoal)
     }
 }
 
@@ -991,7 +910,7 @@ private fun InstructorRow(
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Overline(text = "TAUGHT BY", size = 10, color = Ash)
+            Overline(text = "TAUGHT BY", size = 10, color = Charcoal)
             Spacer(Modifier.height(4.dp))
             Display(text = name, size = 18, color = Ink)
         }
@@ -1036,7 +955,7 @@ private fun AvailabilityBlock(
         if (opensLine != null) {
             Display(text = "NOT OPEN", size = 20, color = Ink, weight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            BodyText(text = opensLine, size = 14, color = Ash)
+            BodyText(text = opensLine, size = 14, color = Charcoal)
         } else if (publishesCapacity) {
             // Precise form: "N OF M SPOTS OPEN" + the segmented pip strip
             // showing exact taken-vs-open.
@@ -1048,7 +967,7 @@ private fun AvailabilityBlock(
                 val headline = if (available <= 0) "FULLY BOOKED"
                 else "$available OF $offered SPOTS OPEN"
                 Display(text = headline, size = 20, color = Ink, weight = FontWeight.Bold)
-                Overline(text = "$taken / $offered TAKEN", size = 10, color = Ash)
+                Overline(text = "$taken / $offered TAKEN", size = 10, color = Charcoal)
             }
             if (offered > 0) {
                 Spacer(Modifier.height(12.dp))
@@ -1084,10 +1003,10 @@ private fun CapacityPips(
     val openColor = when (capacity) {
         DetailCapacity.Open -> MossLight
         DetailCapacity.Scarce -> Warning
-        DetailCapacity.Full -> Ash2
+        DetailCapacity.Full -> Ash
         // Not reached — not-open classes render the "opens …" line, not pips —
         // but the when must be exhaustive.
-        DetailCapacity.NotOpen -> Ash2
+        DetailCapacity.NotOpen -> Ash
     }
     // Suppress unused-parameter warning while keeping the API future-proof —
     // when brand-tinted pips land in a later iteration, the studioColor will
@@ -1115,44 +1034,42 @@ private fun CapacityPips(
 
 // ── Location row --------------------------------------------------------------
 
-/** Flat location row that mirrors [InstructorRow]: a Pin-icon avatar + a
- *  "LOCATION / NAME" block (address as a sub-line when present). No card — it
- *  sits on the page like the instructor row, so it doesn't read as tappable. */
+/** The class's location as an [AddressRow]: Pin avatar, "LOCATION" overline,
+ *  name and address. Tapping opens the maps sheet. */
 @Composable
 private fun LocationRow(
     studioName: String,
     locationName: String,
     address: String,
+    latitude: Double?,
+    longitude: Double?,
     studioColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(Mist2)
-                .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            // decorative — the "LOCATION" overline and address name this block.
-            StrokeIcon(icon = ArcanaIcons.Pin, size = 22.dp, tint = studioColor)
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Overline(text = "LOCATION", size = 10, color = Ash)
-            Spacer(Modifier.height(4.dp))
-            val displayName = if (locationName.isNotBlank()) locationName else studioName
-            Display(text = displayName, size = 18, color = Ink)
-            if (address.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                BodyText(text = address, size = 12, color = Ash)
+    AddressRow(
+        name = if (locationName.isNotBlank()) locationName else studioName,
+        businessName = listOf(studioName, locationName).filter { it.isNotBlank() }.distinct().joinToString(" "),
+        address = address,
+        latitude = latitude,
+        longitude = longitude,
+        surface = "class_detail",
+        overline = "LOCATION",
+        nameAsDisplay = true,
+        modifier = modifier,
+        leading = {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(Mist2)
+                    .border(1.5.dp, studioColor.copy(alpha = 0.33f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                // decorative — the row carries the accessible label.
+                StrokeIcon(icon = ArcanaIcons.Pin, size = 22.dp, tint = studioColor)
             }
-        }
-    }
+        },
+    )
 }
 
 // Shared by the primary label's style and its optical nudge: separate

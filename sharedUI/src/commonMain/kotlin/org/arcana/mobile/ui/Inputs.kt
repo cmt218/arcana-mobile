@@ -25,6 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentType
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
@@ -78,6 +81,7 @@ fun ArcanaTextField(
     // Optional control rendered on the input line (above the underline),
     // vertically centred on the text — e.g. Search's clear affordance.
     trailing: (@Composable () -> Unit)? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     // Bridge to the TextFieldValue overload so a programmatic value change
     // (a tapped recent search, a cleared field) lands the cursor at the END
@@ -104,6 +108,7 @@ fun ArcanaTextField(
         visualTransformation = visualTransformation,
         error = error,
         trailing = trailing,
+        focusRequester = focusRequester,
     )
 }
 
@@ -123,6 +128,7 @@ fun ArcanaTextField(
     visualTransformation: VisualTransformation? = null,
     error: String? = null,
     trailing: (@Composable () -> Unit)? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -134,7 +140,7 @@ fun ArcanaTextField(
     val labelColor = when {
         error != null -> Danger
         focused -> Moss
-        else -> Ash
+        else -> Charcoal
     }
 
     Column(modifier = modifier) {
@@ -145,6 +151,7 @@ fun ArcanaTextField(
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .then(
                     if (contentType != null) {
                         Modifier.semantics { this.contentType = contentType }
@@ -267,7 +274,7 @@ fun ArcanaMultilineTextField(
         )
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Overline(text = "${value.length}/$maxLength", size = 10, color = Ash2)
+            Overline(text = "${value.length}/$maxLength", size = 10, color = Ash)
         }
     }
 }
@@ -302,7 +309,7 @@ fun ArcanaDropdownField(
     val labelColor = when {
         error != null -> Danger
         expanded -> Moss
-        else -> Ash
+        else -> Charcoal
     }
     val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
 
@@ -371,9 +378,9 @@ private fun BodyTextPlaceholder(text: String) {
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Normal,
             fontSize = 18.sp,
-            // Ash, not Ash2: over the atmosphere the lighter muted tone was
-            // barely legible. Still clearly a placeholder against the Ink input.
-            color = Ash,
+            // Charcoal: the placeholder has to clear the atmosphere while still
+            // reading as a placeholder against Ink input text.
+            color = Charcoal,
         ),
     )
 }

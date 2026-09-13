@@ -41,6 +41,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.datetime.LocalDate
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
@@ -203,7 +204,7 @@ private fun ChipFill(coverage: Float, source: MutableInteractionSource) {
                 .matchParentSize()
                 .clip(ArcanaShapes.Card)
                 .background(Surface.copy(alpha = Surface.alpha * fillAlpha))
-                .border(1.dp, Ash.copy(alpha = fillAlpha), ArcanaShapes.Card),
+                .border(1.dp, Outline.copy(alpha = Outline.alpha * fillAlpha), ArcanaShapes.Card),
         )
     }
 }

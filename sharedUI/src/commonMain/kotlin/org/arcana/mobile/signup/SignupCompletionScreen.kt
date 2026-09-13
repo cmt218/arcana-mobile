@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import org.arcana.mobile.ui.ArcanaDropdownField
 import org.arcana.mobile.ui.DropdownOption
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
@@ -384,7 +385,7 @@ private val DateMaskVisualTransformation = object : VisualTransformation {
 @Composable
 private fun LockedEmailRow(email: String) {
     Column {
-        Overline(text = "Email", color = Ash)
+        Overline(text = "Email", color = Charcoal)
         Spacer(Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -402,7 +403,7 @@ private fun LockedEmailRow(email: String) {
                 StrokeIcon(icon = ArcanaIcons.Check, size = 13.dp, tint = Lime)
             }
             BodyText(text = email, modifier = Modifier.weight(1f), size = 18, color = Ink)
-            Overline(text = "From checkout", size = 9, color = Ash2)
+            Overline(text = "From checkout", size = 9, color = Ash)
         }
         Spacer(Modifier.height(12.dp))
         Box(
@@ -513,7 +514,7 @@ private fun ErrorState(
                 Spacer(Modifier.height(14.dp))
                 Display(text = "Log in\ninstead.", size = 44, color = Ink)
                 Spacer(Modifier.height(18.dp))
-                BodyText(text = body, size = 15, color = Ash)
+                BodyText(text = body, size = 15, color = Charcoal)
                 Spacer(Modifier.height(32.dp))
                 PrimaryCta(label = "Log in", onClick = onNavigateToLogin)
             }

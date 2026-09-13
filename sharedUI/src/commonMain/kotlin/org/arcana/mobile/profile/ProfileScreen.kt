@@ -52,6 +52,7 @@ import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.networking.ArcanaApiClient
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
@@ -125,6 +126,7 @@ private data class AccountItem(
 @Composable
 fun ProfileScreen(
     onManageStudios: () -> Unit,
+    onOpenReservations: () -> Unit,
     onOpenConcierge: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -188,7 +190,8 @@ fun ProfileScreen(
         else -> success.tierName
     }
     val accountItems = listOf(
-        AccountItem(ArcanaIcons.Card, "Membership", tierLabel, Ash),
+        AccountItem(ArcanaIcons.Card, "Membership", tierLabel, Charcoal),
+        AccountItem(ArcanaIcons.Calendar, "Reservations", "", Moss, onClick = onOpenReservations),
         AccountItem(ArcanaIcons.Support, "Concierge", "", Moss, onClick = onOpenConcierge),
     )
 
@@ -253,7 +256,7 @@ fun ProfileScreen(
                 BodyText(
                     text = "No favorites yet",
                     size = 14,
-                    color = Ash,
+                    color = Charcoal,
                     modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
                 )
             }
@@ -317,7 +320,7 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Overline(text = "Delete account", size = 11, color = Ash)
+                Overline(text = "Delete account", size = 11, color = Charcoal)
             }
         }
 
@@ -330,8 +333,8 @@ fun ProfileScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AccentText(text = "Not for the casual.", size = 18, color = Ash)
-                Overline(text = "Arcana · v${appVersionName()}", size = 10, color = Ash)
+                AccentText(text = "Not for the casual.", size = 18, color = Charcoal)
+                Overline(text = "Arcana · v${appVersionName()}", size = 10, color = Charcoal)
             }
         }
         }

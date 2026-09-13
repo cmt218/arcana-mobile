@@ -15,11 +15,12 @@ final class ShellModel: ObservableObject {
 
     private(set) var homeVC: UIViewController?
     private(set) var scheduleVC: UIViewController?
+    private(set) var discoverVC: UIViewController?
     private(set) var profileVC: UIViewController?
     private(set) var authVC: UIViewController?
     private(set) var splashVC: UIViewController? = SplashHostKt.SplashViewController()
 
-    private var perTabAtRoot: [Int: Bool] = [0: true, 1: true, 2: true]
+    private var perTabAtRoot: [Int: Bool] = [0: true, 1: true, 2: true, 3: true]
     private var splashTimerStarted = false
     // The native TabView never calls the Compose TabBar's Kotlin selection
     // haptic, so the shell fires system selection feedback on a real switch.
@@ -60,6 +61,9 @@ final class ShellModel: ObservableObject {
         IosShellBridge.shared.observeMemberInitials { [weak self] initials in
             DispatchQueue.main.async { self?.memberInitials = initials }
         }
+        IosShellBridge.shared.onTabRequested = { [weak self] name in
+            DispatchQueue.main.async { self?.selectTab(named: name) }
+        }
     }
 
     /// Anchored to the splash view's first appearance (not model init) so the
@@ -89,7 +93,7 @@ final class ShellModel: ObservableObject {
         buildControllers(authenticated: authed)
         isAuthenticated = authed
         selectedTab = 0
-        perTabAtRoot = [0: true, 1: true, 2: true]
+        perTabAtRoot = [0: true, 1: true, 2: true, 3: true]
         tabBarHidden = false
     }
 
@@ -102,11 +106,14 @@ final class ShellModel: ObservableObject {
             scheduleVC = TabRootsKt.ScheduleTabViewController { [weak self] atRoot in
                 self?.rootChanged(tab: 1, atRoot: atRoot.boolValue)
             }
-            profileVC = TabRootsKt.ProfileTabViewController { [weak self] atRoot in
+            discoverVC = TabRootsKt.DiscoverTabViewController { [weak self] atRoot in
                 self?.rootChanged(tab: 2, atRoot: atRoot.boolValue)
             }
+            profileVC = TabRootsKt.ProfileTabViewController { [weak self] atRoot in
+                self?.rootChanged(tab: 3, atRoot: atRoot.boolValue)
+            }
         } else {
-            homeVC = nil; scheduleVC = nil; profileVC = nil
+            homeVC = nil; scheduleVC = nil; discoverVC = nil; profileVC = nil
             authVC = AuthFlowRootKt.AuthFlowViewController()
         }
     }
@@ -118,8 +125,19 @@ final class ShellModel: ObservableObject {
         }
     }
 
+    /// Compose content asking for a tab (the Reservations "Book a class"
+    /// action). Runs the same bookkeeping as a bar tap: telemetry, haptic,
+    /// $screen and bar visibility.
+    func selectTab(named name: String) {
+        let names = ["home", "schedule", "discover", "profile"]
+        guard let tab = names.firstIndex(of: name), tab != selectedTab else { return }
+        let previous = selectedTab
+        selectedTab = tab
+        tabSelected(from: previous, to: tab)
+    }
+
     func tabSelected(from previous: Int, to tab: Int) {
-        let names = ["home", "schedule", "profile"]
+        let names = ["home", "schedule", "discover", "profile"]
         IosShellBridge.shared.tabSelected(tab: names[tab], fromTab: names[previous])
         // $screen for the newly shown tab root — only on a real switch
         // (same-tab re-taps never re-fired $screen pre-shell either).
@@ -206,7 +224,14 @@ struct ArcanaShellView: View {
                                 .toolbar(shell.tabBarHidden ? .hidden : .visible, for: .tabBar)
                         }
                     }
-                    Tab(value: 2) {
+                    Tab("Discover", systemImage: "safari", value: 2) {
+                        if let vc = shell.discoverVC {
+                            ComposeVC(vc: vc)
+                                .ignoresSafeArea()
+                                .toolbar(shell.tabBarHidden ? .hidden : .visible, for: .tabBar)
+                        }
+                    }
+                    Tab(value: 3) {
                         if let vc = shell.profileVC {
                             ComposeVC(vc: vc)
                                 .ignoresSafeArea()

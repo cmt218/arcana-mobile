@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -63,6 +64,7 @@ import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.schedule.ClassRow
 import org.arcana.mobile.schedule.EndOfListMarker
 import org.arcana.mobile.schedule.sessionTimeZone
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
@@ -107,8 +109,13 @@ fun SearchScreen(
     val keyboard = LocalSoftwareKeyboardController.current
 
     val revealProgress = remember { Animatable(0f) }
+    val fieldFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         revealProgress.animateTo(1f, tween(SEARCH_REVEAL_MS, easing = SearchRevealEase))
+        // Focus once the reveal has landed so the keyboard rises over a
+        // settled page rather than fighting the container transform.
+        fieldFocus.requestFocus()
+        keyboard?.show()
     }
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
@@ -186,14 +193,12 @@ fun SearchScreen(
                         diameter = 38,
                         iconSize = 18,
                         background = Surface,
-                        borderColor = Ash,
+                        borderColor = Outline,
                         contentColor = Ink,
                         onClick = ::animatedClose,
                         contentDescription = "Close search",
                     )
                 }
-                // No auto-focus: the keyboard appears when the member taps the
-                // field, so the recents/results are never born half-covered.
                 ArcanaTextField(
                     label = "SEARCH",
                     value = query,
@@ -201,6 +206,7 @@ fun SearchScreen(
                     placeholder = "Classes, studios, instructors",
                     imeAction = ImeAction.Search,
                     onImeAction = { keyboard?.hide() },
+                    focusRequester = fieldFocus,
                     modifier = Modifier
                         .padding(horizontal = 24.dp)
                         .padding(top = 16.dp)
@@ -248,8 +254,10 @@ fun SearchScreen(
                     is SearchUiState.Results -> ResultsContent(
                         results = s,
                         query = query,
-                        onScope = viewModel::onScope,
-                        onRemoveScope = viewModel::onRemoveScope,
+                        // A chip tap is a decision, not typing: drop the keyboard
+                        // so the narrowed results have the screen.
+                        onScope = { keyboard?.hide(); viewModel.onScope(it) },
+                        onRemoveScope = { keyboard?.hide(); viewModel.onRemoveScope(it) },
                         onLoadMore = viewModel::loadMore,
                         onScrollStarted = { keyboard?.hide() },
                         onResultTapped = { position, id ->

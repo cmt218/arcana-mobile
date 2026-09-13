@@ -30,6 +30,7 @@ object NavTransitions {
     private fun isTabRoot(dest: NavDestination): Boolean =
         dest.hasRoute<ArcanaDestination.Home>() ||
             dest.hasRoute<ArcanaDestination.Schedule>() ||
+            dest.hasRoute<ArcanaDestination.Discover>() ||
             dest.hasRoute<ArcanaDestination.Profile>()
 
     private fun AnimatedContentTransitionScope<NavBackStackEntry>.tabToTab() =

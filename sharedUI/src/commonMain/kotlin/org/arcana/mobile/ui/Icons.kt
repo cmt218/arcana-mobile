@@ -14,6 +14,8 @@ import arcana.sharedui.generated.resources.icon_arrow_up_right
 import arcana.sharedui.generated.resources.icon_bell
 import arcana.sharedui.generated.resources.icon_bookmark
 import arcana.sharedui.generated.resources.icon_calendar
+import arcana.sharedui.generated.resources.icon_category
+import arcana.sharedui.generated.resources.icon_compass
 import arcana.sharedui.generated.resources.icon_card
 import arcana.sharedui.generated.resources.icon_check
 import arcana.sharedui.generated.resources.icon_chevron_down
@@ -68,6 +70,8 @@ object ArcanaIcons {
     val Support: DrawableResource get() = Res.drawable.icon_support
     val Swap: DrawableResource get() = Res.drawable.icon_swap
     val Expand: DrawableResource get() = Res.drawable.icon_fullscreen
+    val Compass: DrawableResource get() = Res.drawable.icon_compass
+    val Category: DrawableResource get() = Res.drawable.icon_category
 }
 
 /**

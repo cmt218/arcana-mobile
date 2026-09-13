@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
@@ -166,7 +167,7 @@ private fun EditingForm(
                 icon = ArcanaIcons.Close,
                 diameter = 38, iconSize = 18,
                 background = Surface,
-                borderColor = Ash,
+                borderColor = Outline,
                 contentColor = Ink,
                 onClick = onClose,
                 contentDescription = "Close without saving",
@@ -426,7 +427,7 @@ private fun LoadErrorState(
                 icon = ArcanaIcons.Close,
                 diameter = 38, iconSize = 18,
                 background = Surface,
-                borderColor = Ash,
+                borderColor = Outline,
                 contentColor = Ink,
                 onClick = onClose,
                 contentDescription = "Close without saving",

@@ -153,9 +153,18 @@ object IosShellBridge {
         tabScreenName(tab)?.let { KoinPlatform.getKoin().get<Telemetry>().screen(it) }
     }
 
+    /** Set by the Swift shell; Compose content asks for a tab by name
+     *  ("home" | "schedule" | "discover" | "profile") through [requestTab]. */
+    var onTabRequested: ((String) -> Unit)? = null
+
+    fun requestTab(tab: String) {
+        onTabRequested?.invoke(tab)
+    }
+
     private fun tabScreenName(tab: String): String? = when (tab) {
         "home" -> Telemetry.Screens.HOME
         "schedule" -> Telemetry.Screens.SCHEDULE
+        "discover" -> Telemetry.Screens.DISCOVER
         "profile" -> Telemetry.Screens.PROFILE
         else -> null
     }

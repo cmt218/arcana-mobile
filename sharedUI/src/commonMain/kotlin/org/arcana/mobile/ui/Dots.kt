@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
@@ -89,7 +90,7 @@ fun SectionRule(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Overline(text = label, color = if (accent) Moss else Ash)
+        Overline(text = label, color = if (accent) Moss else Charcoal)
         Spacer(Modifier.width(12.dp))
         Box(
             Modifier

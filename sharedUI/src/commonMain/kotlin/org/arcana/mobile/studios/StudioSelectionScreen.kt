@@ -31,7 +31,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Surface
@@ -89,7 +91,7 @@ fun StudioSelectionScreen(
                     diameter = 38,
                     iconSize = 18,
                     background = Surface,
-                    borderColor = Ash,
+                    borderColor = Outline,
                     contentColor = Ink,
                     onClick = onClose,
                     contentDescription = "Close studio selection",
@@ -162,7 +164,7 @@ private fun ReadyContent(
                 AccentText(
                     text = "Save the places you keep coming back to.",
                     size = 18,
-                    color = Ash,
+                    color = Charcoal,
                 )
                 AccentText(text = "Change anytime.", size = 18, color = Moss)
             }

@@ -98,9 +98,11 @@ import kotlinx.datetime.toLocalDateTime
 import org.arcana.mobile.data.LocationBriefDto
 import org.arcana.mobile.data.ScheduleSessionDto
 import org.arcana.mobile.data.isNotOpenYet
+import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.ArcanaShapes
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Dur
@@ -127,6 +129,12 @@ import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.DotMatrixLoader
 import org.arcana.mobile.ui.DotMatrixLoaderCompact
 import org.arcana.mobile.ui.FilterChip
+import org.arcana.mobile.ui.FilterDoneButton
+import org.arcana.mobile.ui.FilterPill
+import org.arcana.mobile.ui.FloatingFilterPanel
+import org.arcana.mobile.ui.filterPanelEnter
+import org.arcana.mobile.ui.filterPanelExit
+import org.arcana.mobile.ui.studioColorFor
 import org.arcana.mobile.ui.FlowChipRow
 import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Overline
@@ -149,7 +157,6 @@ import org.koin.compose.viewmodel.koinViewModel
 
 // ── Constants -----------------------------------------------------------------
 
-private val FALLBACK_STUDIO_COLOR = Moss
 
 /** Sessions with <= 2 remaining spots are visually marked as "scarce". */
 private const val SCARCE_THRESHOLD = 2
@@ -182,24 +189,6 @@ internal fun LocalDate.weekdayAbbr(): String = dayOfWeek.name.take(3)
 /** "06:15" from a LocalTime — commonMain-safe (no String.format dependency). */
 private fun LocalTime.hhmm(): String =
     "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
-
-/** Parse `#RRGGBB` (server payload format) → Compose Color. Returns null on
- *  empty/invalid input so the caller can fall back. */
-private fun parseHexColor(hex: String): Color? {
-    if (hex.length != 7 || !hex.startsWith("#")) return null
-    return try {
-        val r = hex.substring(1, 3).toInt(16)
-        val g = hex.substring(3, 5).toInt(16)
-        val b = hex.substring(5, 7).toInt(16)
-        Color(r, g, b)
-    } catch (_: NumberFormatException) {
-        null
-    }
-}
-
-private fun studioColorFor(primaryColor: String): Color =
-    parseHexColor(primaryColor) ?: FALLBACK_STUDIO_COLOR
-
 
 // ── Capacity tier -------------------------------------------------------------
 
@@ -519,7 +508,7 @@ private fun FavoritesNudge(visible: Boolean, onManageFavorites: () -> Unit, onDi
                     .cardShadow(cardShape)
                     .clip(cardShape)
                     .background(Surface)
-                    .border(1.dp, Ash, cardShape)
+                    .border(1.dp, Outline, cardShape)
                     // Keep both the top and bottom whitespace INSIDE the column
                     // (BodyText top pad + CTA bottom pad) so the column's vertical
                     // midpoint matches the card's — that's what keeps the dismiss
@@ -561,7 +550,7 @@ private fun FavoritesNudge(visible: Boolean, onManageFavorites: () -> Unit, onDi
                         .softShadow(CircleShape)
                         .clip(CircleShape)
                         .background(Surface)
-                        .border(1.dp, Ash, CircleShape)
+                        .border(1.dp, Outline, CircleShape)
                         .clickable(interactionSource = dismissSource, indication = null) { onDismiss() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -600,7 +589,7 @@ private fun SearchEntryPill(
                 .softShadow(CircleShape)
                 .clip(CircleShape)
                 .background(Surface)
-                .border(1.dp, Ash, CircleShape)
+                .border(1.dp, Outline, CircleShape)
                 .clickable(interactionSource = source, indication = null, onClick = onClick)
                 // A graphicsLayer scale update schedules no layout pass, so this
                 // stays accurate mid-press: onGloballyPositioned only re-fires on
@@ -645,74 +634,11 @@ internal fun EndOfListMarker(text: String, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Overline(text = text, size = 10, color = Ash)
+        Overline(text = text, size = 10, color = Charcoal)
     }
 }
 
 // ── Filter section (collapsed bar → expandable studio accordion) ─────────────
-
-// Shared expand/collapse for every filter panel. Exit is the true reverse of
-// enter — same Medium duration + Emphasized easing — so closing reads as smooth
-// as the downward unroll rather than snapping shut.
-private val filterPanelEnter =
-    expandVertically(tween(Dur.Medium, easing = Ease.Emphasized), expandFrom = Alignment.Top) +
-        fadeIn(tween(Dur.Short))
-private val filterPanelExit =
-    shrinkVertically(tween(Dur.Medium, easing = Ease.Emphasized), shrinkTowards = Alignment.Top) +
-        fadeOut(tween(Dur.Short))
-
-/** Wraps an expanded filter's content as the floating popover card: elevation,
- *  rounded on every corner (no pointer), a hairline, a capped height with its own
- *  scroll, and a 24.dp horizontal inset matching the controls' content width so
- *  the card is never wider than them (parent CLAUDE.md: width <= controls).
- *  [FilterPopoverOverlay] anchors it under the controls, over the schedule. */
-@Composable
-private fun FloatingFilterPanel(
-    maxHeight: Dp,
-    verticalArrangement: Arrangement.Vertical,
-    contentHorizontalPadding: Dp = 16.dp,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val cardSource = remember { MutableInteractionSource() }
-    val scroll = rememberScrollState()
-    val scrollScope = rememberCoroutineScope()
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, bottom = 12.dp)
-            .cardShadow(ArcanaShapes.Card)
-            .clip(ArcanaShapes.Card)
-            .background(Surface)
-            .border(1.dp, Mist, ArcanaShapes.Card)
-            // Swallow taps in the card's own gaps so the outside-tap catcher
-            // behind it doesn't close the popover.
-            .clickable(interactionSource = cardSource, indication = null) {},
-    ) {
-        Column(
-            modifier = Modifier
-                .heightIn(max = maxHeight)
-                .verticalScroll(scroll)
-                .padding(horizontal = contentHorizontalPadding, vertical = 14.dp),
-            verticalArrangement = verticalArrangement,
-            content = content,
-        )
-        // Jump-to-top / jump-to-bottom affordances, each fading in only when the
-        // list can still scroll that way; a tap snaps to that end. Only the tall
-        // panels (All Studios, Modalities) ever overflow enough to show them.
-        ScrollJumpChevron(
-            pointsDown = false,
-            visible = scroll.canScrollBackward,
-            onClick = { scrollScope.launch { scroll.animateScrollTo(0) } },
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
-        )
-        ScrollJumpChevron(
-            pointsDown = true,
-            visible = scroll.canScrollForward,
-            onClick = { scrollScope.launch { scroll.animateScrollTo(scroll.maxValue) } },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
-        )
-    }
-}
 
 /** A round scroll affordance in the search-well treatment (Surface fill + Ash
  *  outline). Fades in only when [visible]; a tap jumps the list to that end.
@@ -740,7 +666,7 @@ internal fun ScrollJumpChevron(
                 .softShadow(CircleShape)
                 .clip(CircleShape)
                 .background(Surface)
-                .border(1.dp, Ash, CircleShape)
+                .border(1.dp, Outline, CircleShape)
                 .clickable(interactionSource = source, indication = null, enabled = visible, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -822,9 +748,12 @@ private fun FilterControls(
         }
 
         // ── Chip rail: the active overlay filters as removable bubbles.
-        if (state.timeFilter != null || state.selectedModalitySlugs.isNotEmpty()) {
+        if (state.scopedBrand != null || state.timeFilter != null || state.selectedModalitySlugs.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             FlowChipRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+                state.scopedBrand?.let { brand ->
+                    FilterChip(label = brand.brandName, onRemove = { viewModel.clearBrandScope() })
+                }
                 state.timeFilter?.let { tf ->
                     FilterChip(label = tf.label, onRemove = { viewModel.clearTimeFilter() })
                 }
@@ -1154,7 +1083,7 @@ private fun ScopeToggle(
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .clip(CircleShape)
-            .border(1.dp, Ash, CircleShape),
+            .border(1.dp, Outline, CircleShape),
     ) {
         val halfPx = with(density) { maxWidth.toPx() } / 2f
         var dragging by remember { mutableStateOf(false) }
@@ -1402,7 +1331,7 @@ private fun SelectablePill(label: String, selected: Boolean, onClick: () -> Unit
         label = "presetPillFill",
     )
     val border by animateColorAsState(
-        targetValue = if (selected) Moss else Ash,
+        targetValue = if (selected) Moss else Outline,
         animationSpec = tween(Dur.Short),
         label = "presetPillBorder",
     )
@@ -1439,95 +1368,6 @@ private fun FavoriteEntryRow(name: String, detail: String) {
         )
         BodyText(text = name, size = 14, color = Ink, modifier = Modifier.weight(1f))
         Caption(text = detail, size = 11, color = Ash2)
-    }
-}
-
-/** The Time / Modalities overlay-filter buttons. Moss-filled when active, an Ash
- *  outline otherwise. Pass `Modifier.weight(1f)` to size two pills equally; the
- *  label centers. */
-@Composable
-private fun FilterPill(
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val source = remember { MutableInteractionSource() }
-    val fill by animateColorAsState(
-        targetValue = if (active) Moss else Surface,
-        animationSpec = tween(Dur.Short),
-        label = "filterPillFill",
-    )
-    val border by animateColorAsState(
-        targetValue = if (active) Moss else Ash,
-        animationSpec = tween(Dur.Short),
-        label = "filterPillBorder",
-    )
-    Row(
-        modifier = modifier
-            .pressable(source, pressedScale = 0.97f)
-            .then(if (active) Modifier.controlShadow(ArcanaShapes.Pill) else Modifier.softShadow(ArcanaShapes.Pill))
-            .clip(CircleShape)
-            .background(fill)
-            .border(1.dp, border, CircleShape)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.opticallyCentredCaps(FILTER_PILL_LABEL_SIZE, FILTER_PILL_LABEL_TRACKING_EM),
-            maxLines = 1, softWrap = false,
-            style = TextStyle(
-                fontFamily = Arcana.fonts.display,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = FILTER_PILL_LABEL_SIZE,
-                letterSpacing = FILTER_PILL_LABEL_TRACKING_EM.em,
-                color = if (active) Stone else Ink,
-            ),
-        )
-    }
-}
-
-private val FILTER_PILL_LABEL_SIZE = 12.sp
-private const val FILTER_PILL_LABEL_TRACKING_EM = 0.10f
-
-/** Moss-filled "DONE" button that collapses an expanded filter section — the
- *  same effect as tapping the active pill again, but reachable from the bottom
- *  of a long favorites list / studio accordion without scrolling back up. */
-@Composable
-private fun FilterDoneButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val source = remember { MutableInteractionSource() }
-    val pressed by rememberPressed(source)
-    val fill by animateColorAsState(
-        targetValue = if (pressed) Moss.pressedShade() else Moss,
-        animationSpec = tween(Dur.Quick),
-        label = "filterDoneFill",
-    )
-    Row(
-        modifier = modifier
-            .pressable(source, pressedScale = 0.97f)
-            .controlShadow(ArcanaShapes.Pill)
-            .clip(CircleShape)
-            .background(fill)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "DONE",
-            modifier = Modifier.opticallyCentredCaps(FILTER_PILL_LABEL_SIZE, FILTER_PILL_LABEL_TRACKING_EM),
-            maxLines = 1, softWrap = false,
-            style = TextStyle(
-                fontFamily = Arcana.fonts.display,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = FILTER_PILL_LABEL_SIZE,
-                letterSpacing = FILTER_PILL_LABEL_TRACKING_EM.em,
-                color = Stone,
-            ),
-        )
     }
 }
 
@@ -1604,7 +1444,7 @@ internal fun ClassRow(
                 ),
             )
             Spacer(Modifier.height(4.dp))
-            Overline(text = "${session.durationMinutes}min", size = 10, color = Ash)
+            Overline(text = "${session.durationMinutes}min", size = 10, color = Charcoal)
         }
         // Studio color bar
         Box(
@@ -1647,7 +1487,7 @@ internal fun ClassRow(
             // ran long; a dedicated line guarantees it always reads in full.
             if (instructorName.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Overline(text = "WITH $instructorName", size = 10, color = Ash)
+                Overline(text = "WITH $instructorName", size = 10, color = Charcoal)
             }
             Spacer(Modifier.height(8.dp))
             Row(
@@ -1688,7 +1528,7 @@ internal fun ClassRow(
                                 .background(
                                     when {
                                         isScarce -> Warning
-                                        isFull -> Ash2
+                                        isFull -> Ash
                                         else -> MossLight
                                     }
                                 )
@@ -1699,11 +1539,11 @@ internal fun ClassRow(
                     text = tier.label,
                     size = 10,
                     color = when (tier) {
-                        CapacityTier.NotOpen -> Ash
-                        CapacityTier.Full -> Ash
+                        CapacityTier.NotOpen -> Charcoal
+                        CapacityTier.Full -> Charcoal
                         CapacityTier.AlmostFull -> Warning
                         CapacityTier.FillingUp -> MossLight
-                        CapacityTier.Available -> Ash
+                        CapacityTier.Available -> Charcoal
                     },
                 )
             }

@@ -29,13 +29,14 @@ val Paper       = Color(0xFFFAF8F3) // lifted surface
 // ---- Ink / structure ----
 val Ink         = Color(0xFF161812) // primary text — warm near-black
 val Graphite    = Color(0xFF2A2C24)
-val Charcoal    = Color(0xFF3F4338)
+val Charcoal    = Color(0xFF3F4338) // secondary text ON THE ATMOSPHERE (Ash fails contrast there)
 
 // ---- Warm neutrals ----
-val Ash         = Color(0xFF6B6E5F) // secondary text
-val Ash2        = Color(0xFF9B9F8F) // tertiary / muted text
+val Ash         = Color(0xFF6B6E5F) // secondary text on lifted surfaces (Surface/Paper/sheets); hairlines and outlines
+val Ash2        = Color(0xFF9B9F8F) // tertiary / muted text on lifted surfaces only; never directly on the atmosphere
 val Mist        = Color(0xFFD8D7C7) // dividers, input hairlines
 val Mist2       = Color(0xFFEBEADA) // subtle fills
+val Outline     = Color(0x4A161812) // soft edge for Surface-filled controls on the atmosphere; Ash read too heavy there
 val Plate       = Color(0xFFFFFFFF) // the one pure white: a plate under content
                                     // whose own fills are too close to Stone
 

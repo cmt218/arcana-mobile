@@ -27,10 +27,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavHostController
 import androidx.navigation.toRoute
 import org.arcana.mobile.analytics.AppStartTracker
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.booking.MyBookingsScreen
+import org.arcana.mobile.discover.DiscoverScreen
+import org.arcana.mobile.discover.StudioPageScreen
 import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.currentScreenName
 import org.arcana.mobile.home.HomeScreen
@@ -68,15 +71,12 @@ fun HomeTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
         TabRoot(ArcanaDestination.Home, onRootChanged, firstContent = true, emitInitialRootScreen = true) { nav ->
             composable<ArcanaDestination.Home> {
                 HomeScreen(
-                    onSeeAllBookings = { nav.navigate(ArcanaDestination.MyBookings) },
+                    onSeeAllBookings = { nav.navigate(ArcanaDestination.MyBookings(source = "home")) },
                     onOpenClass = { id -> nav.navigate(ArcanaDestination.ClassDetail(id)) },
                 )
             }
-            composable<ArcanaDestination.MyBookings> {
-                MyBookingsScreen(
-                    onClose = { nav.popBackStack() },
-                    onOpenClass = { id -> nav.navigate(ArcanaDestination.ClassDetail(id)) },
-                )
+            composable<ArcanaDestination.MyBookings> { entry ->
+                ReservationsRoot(nav, entry.toRoute<ArcanaDestination.MyBookings>().source)
             }
             composable<ArcanaDestination.ClassDetail> { entry ->
                 val args = entry.toRoute<ArcanaDestination.ClassDetail>()
@@ -142,15 +142,42 @@ fun ScheduleTabViewController(onRootChanged: (Boolean) -> Unit): UIViewControlle
         }
     }
 
+fun DiscoverTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
+    shellHostingController {
+        TabRoot(ArcanaDestination.Discover, onRootChanged) { nav ->
+            composable<ArcanaDestination.Discover> {
+                DiscoverScreen(onOpenStudio = { slug -> nav.navigate(ArcanaDestination.StudioPage(slug)) })
+            }
+            composable<ArcanaDestination.StudioPage> { entry ->
+                val args = entry.toRoute<ArcanaDestination.StudioPage>()
+                StudioPageScreen(
+                    brandSlug = args.brandSlug,
+                    source = args.source,
+                    onClose = { nav.popBackStack() },
+                    // The page stays on this tab's stack; the shell just shows Book.
+                    onSeeSchedule = { IosShellBridge.requestTab("schedule") },
+                )
+            }
+        }
+    }
+
 fun ProfileTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
     shellHostingController {
         TabRoot(ArcanaDestination.Profile, onRootChanged) { nav ->
             composable<ArcanaDestination.Profile> {
                 ProfileScreen(
                     onManageStudios = { nav.navigate(ArcanaDestination.StudioSelection) },
+                    onOpenReservations = { nav.navigate(ArcanaDestination.MyBookings(source = "you")) },
                     onOpenConcierge = { nav.navigate(ArcanaDestination.ConciergeRequest) },
                     onOpenSettings = { nav.navigate(ArcanaDestination.EditProfile) },
                 )
+            }
+            composable<ArcanaDestination.MyBookings> { entry ->
+                ReservationsRoot(nav, entry.toRoute<ArcanaDestination.MyBookings>().source)
+            }
+            composable<ArcanaDestination.ClassDetail> { entry ->
+                val args = entry.toRoute<ArcanaDestination.ClassDetail>()
+                ClassDetailScreen(sessionId = args.id, onClose = { nav.popBackStack() })
             }
             composable<ArcanaDestination.StudioSelection> {
                 StudioSelectionScreen(onClose = { nav.popBackStack() })
@@ -163,6 +190,21 @@ fun ProfileTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController
             }
         }
     }
+
+/** Reservations inside a tab's own NavHost. "Book a class" pops back to the
+ *  tab root, then asks the native shell to select the Book tab. */
+@Composable
+private fun ReservationsRoot(nav: NavHostController, source: String) {
+    MyBookingsScreen(
+        source = source,
+        onClose = { nav.popBackStack() },
+        onOpenClass = { id -> nav.navigate(ArcanaDestination.ClassDetail(id)) },
+        onBookClass = {
+            nav.popBackStack()
+            IosShellBridge.requestTab("schedule")
+        },
+    )
+}
 
 @Composable
 private fun TabRoot(
@@ -198,10 +240,11 @@ private fun TabRoot(
         }
 
         // Native tab bar hides on pushed destinations (parity with the Compose
-        // bar, which only showed on the three tab roots).
+        // bar, which only shows on the four tab roots).
         val atRoot = backStackEntry?.destination?.let { dest ->
             currentScreenName(dest) in setOf(
-                Telemetry.Screens.HOME, Telemetry.Screens.SCHEDULE, Telemetry.Screens.PROFILE,
+                Telemetry.Screens.HOME, Telemetry.Screens.SCHEDULE,
+                Telemetry.Screens.DISCOVER, Telemetry.Screens.PROFILE,
             )
         } ?: true
         LaunchedEffect(atRoot) { onRootChanged(atRoot) }

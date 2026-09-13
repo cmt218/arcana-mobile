@@ -44,6 +44,7 @@ import org.arcana.mobile.data.BookingDto
 import org.arcana.mobile.schedule.wallClock
 import org.arcana.mobile.theme.Arcana
 import org.arcana.mobile.theme.Ash
+import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
@@ -57,6 +58,7 @@ import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
 import org.arcana.mobile.ui.LocalFloatingBarInset
+import org.arcana.mobile.ui.AddressLink
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
@@ -259,7 +261,7 @@ fun HomeScreen(
                         Caption(
                             text = "No upcoming classes.",
                             size = 13,
-                            color = Ash,
+                            color = Charcoal,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
                     }
@@ -273,9 +275,9 @@ fun HomeScreen(
                 if (rest.isEmpty() && hero == null) {
                     item {
                         Caption(
-                            text = "Nothing booked yet.",
+                            text = "Nothing reserved yet.",
                             size = 13,
-                            color = Ash,
+                            color = Charcoal,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
                     }
@@ -443,7 +445,7 @@ private fun HeroHeader(dateLabel: String, greeting: String, displayName: String?
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            AccentText(text = "Show up. Do the work.", size = 20, color = Ash)
+            AccentText(text = "Show up. Do the work.", size = 20, color = Charcoal)
             AccentText(text = "The rest takes care of itself.", size = 20, color = Moss)
         }
     }
@@ -544,6 +546,17 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
                         size = 12,
                         color = StoneAlpha65,
                     )
+                    session.locationAddress?.takeIf { it.isNotBlank() }?.let { address ->
+                        AddressLink(
+                            name = session.location?.takeIf { it.isNotBlank() } ?: session.studio,
+                            businessName = listOfNotNull(session.studio, session.location?.takeIf { it.isNotBlank() }).joinToString(" "),
+                            address = address,
+                            latitude = session.latitude,
+                            longitude = session.longitude,
+                            surface = "home_next_up",
+                            color = StoneAlpha65,
+                        )
+                    }
                 }
                 // decorative — the enclosing card is the tap target and is
                 // named by the class/studio text beside this well.
@@ -643,7 +656,7 @@ private fun UpcomingRow(
                 )
                 Spacer(Modifier.height(4.dp))
                 if (durationStr.isNotEmpty()) {
-                    Overline(text = durationStr, size = 10, color = Ash)
+                    Overline(text = durationStr, size = 10, color = Charcoal)
                 }
             }
             Box(Modifier.width(1.dp).height(40.dp).background(Mist))
@@ -654,20 +667,20 @@ private fun UpcomingRow(
                 ) {
                     Overline(text = session.studio, size = 10, color = Moss)
                     session.location?.takeIf { it.isNotBlank() }?.let { loc ->
-                        Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
+                        Box(Modifier.size(4.dp).clip(CircleShape).background(Ash))
                         // Studio stays full; the location flexes into the leftover
                         // space and ellipsizes rather than hard-clipping mid-word.
                         Overline(
                             text = loc,
                             size = 10,
-                            color = Ash,
+                            color = Charcoal,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false),
                         )
                     }
                     booking.spot?.let { spot ->
-                        Box(Modifier.size(4.dp).clip(CircleShape).background(Ash2))
-                        Overline(text = spot.label, size = 10, color = Ash)
+                        Box(Modifier.size(4.dp).clip(CircleShape).background(Ash))
+                        Overline(text = spot.label, size = 10, color = Charcoal)
                     }
                 }
                 Spacer(Modifier.height(4.dp))
