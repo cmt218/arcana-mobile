@@ -42,7 +42,7 @@ class DiscoverTelemetryTest {
     private class FakeFavorites : FavoritesApi {
         override suspend fun fetchStudios(): List<StudioDto> = emptyList()
         override suspend fun fetchFavorites() = FavoritesDto()
-        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>) = FavoritesDto()
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>) = FavoritesDto()
     }
 
     @Test fun `event names are stable`() {

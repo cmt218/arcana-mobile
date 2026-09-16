@@ -130,6 +130,8 @@ sealed interface ScheduleUiState {
         /** Non-null while a studio page's "See schedule" scope is active;
          *  renders as a removable brand chip. */
         val scopedBrand: ScheduleScopeRequest? = null,
+        /** location id -> brand name; a row shows the brand, not its site row. */
+        val brandNames: Map<Int, String> = emptyMap(),
     ) : ScheduleUiState
     data class Error(val type: ErrorType) : ScheduleUiState
 }
@@ -169,7 +171,9 @@ internal fun locationShortLabel(studioName: String, locationName: String): Strin
     return (raw.ifEmpty { locationName }).uppercase()
 }
 
-fun LocationBriefDto.shortLabel(): String = locationShortLabel(studio.name, name)
+/** [brandName] strips the brand instead of the site row's name when the
+ *  overview knows the location's brand ("ID Hot Yoga FiDi" under ID Hot Yoga → "FIDI"). */
+fun LocationBriefDto.shortLabel(brandName: String? = null): String = locationShortLabel(brandName ?: studio.name, name)
 
 @OptIn(FlowPreview::class)
 class ScheduleViewModel(
@@ -235,6 +239,9 @@ class ScheduleViewModel(
         }
     }
     private var overviewStudios: List<OverviewStudioDto> = emptyList()
+    /** location id -> brand name, from the overview's brands block; rows
+     *  render the brand where the site row's name used to appear. */
+    private var brandNameByLocationId: Map<Int, String> = emptyMap()
     private var availableModalities: List<ModalityOption> = emptyList()
     private var filters: ScheduleFilters = ScheduleFilters()
     private var selectedModalitySlugs: Set<String> = emptySet()
@@ -712,7 +719,12 @@ class ScheduleViewModel(
             // ── Atomic apply: no suspension below this line. ──
             days = newDays
             if (selectedDate !in newDays) selectedDate = today
-            overviewStudios = overview.studios
+            // One catalog entry per brand when the server sends brands; a site row
+            // never shows up as its own studio beside its brand.
+            overviewStudios = overview.brands.takeIf { it.isNotEmpty() }?.map { it.asCatalogEntry() } ?: overview.studios
+            brandNameByLocationId = overview.brands
+                .flatMap { brand -> brand.locations.map { it.id to brand.name } }
+                .toMap()
             availableModalities = overview.categories.map { ModalityOption(it.slug, it.name) }
             dayStates = mapOf(
                 targetDate to DayState(
@@ -877,7 +889,7 @@ class ScheduleViewModel(
         // studio with a location in the window regardless of the active
         // narrowing — studios never vanish as filters change.
         val filterStudios = overviewStudios
-            .sortedBy { it.name }
+            .sortedBy { it.name.trimStart { c -> !c.isLetterOrDigit() }.lowercase() }
             .map { studio ->
                 FilterStudio(
                     slug = studio.slug,
@@ -896,12 +908,24 @@ class ScheduleViewModel(
 
         val favorites = favoritesRepository.favorites.value
         // Read-only favorites list for Favorites mode: whole-studio favorites
-        // (every location) first, then specific location favorites.
+        // first (grouped by brand when the server groups them), then specific
+        // location favorites.
+        val catalogIds = catalog()
         val favoriteEntries = favorites?.let { f ->
-            f.studios.sortedBy { it.name }
-                .map { FavoriteEntry(name = it.name, detail = "All locations") } +
-                f.locations.sortedBy { it.studioName }
-                    .map { FavoriteEntry(name = it.studioName, detail = studioLocationLabel(it.studioName, it.name)) }
+            val whole = if (f.brands.isNotEmpty()) {
+                f.brands.sortedBy { it.name }.map { brand ->
+                    val all = catalogIds[brand.slug].orEmpty()
+                    val covered = all.isEmpty() || all.all { it in brand.locationIds }
+                    FavoriteEntry(
+                        name = brand.name,
+                        detail = if (covered) "All locations" else "${brand.locationIds.size} of ${all.size} locations",
+                    )
+                }
+            } else {
+                f.studios.sortedBy { it.name }.map { FavoriteEntry(name = it.name, detail = "All locations") }
+            }
+            whole + f.locations.sortedBy { it.studioName }
+                .map { FavoriteEntry(name = it.studioName, detail = studioLocationLabel(it.studioName, it.name)) }
         } ?: emptyList()
         _uiState.value = ScheduleUiState.Success(
             days = days,
@@ -921,6 +945,7 @@ class ScheduleViewModel(
             selectedModalitySlugs = selectedModalitySlugs,
             bookedSessions = bookedSessions,
             scopedBrand = scopedBrand,
+            brandNames = brandNameByLocationId,
         )
     }
 

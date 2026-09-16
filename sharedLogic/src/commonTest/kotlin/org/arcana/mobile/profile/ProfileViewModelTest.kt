@@ -29,7 +29,7 @@ class ProfileViewModelTest {
     private class FakeFavoritesApi : FavoritesApi {
         override suspend fun fetchStudios(): List<StudioDto> = emptyList()
         override suspend fun fetchFavorites(): FavoritesDto = FavoritesDto()
-        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto =
             FavoritesDto()
     }
 
@@ -52,7 +52,7 @@ class ProfileViewModelTest {
             if (failing) throw ApiHttpError(500)
             return FavoritesDto()
         }
-        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto =
             FavoritesDto()
     }
 

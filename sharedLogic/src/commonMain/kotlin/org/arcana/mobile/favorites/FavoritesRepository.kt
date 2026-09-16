@@ -48,8 +48,8 @@ class FavoritesRepository(private val api: FavoritesApi) {
 
     /** Replace-set write-through (PUT). Throws on failure — callers surface
      *  the error (the management screen shows a retry). */
-    suspend fun save(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
-        api.updateFavorites(studioSlugs, locationIds).also { _favorites.value = it }
+    suspend fun save(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String> = emptyList()): FavoritesDto =
+        api.updateFavorites(studioSlugs, locationIds, brandSlugs).also { _favorites.value = it }
 
     fun clear() {
         _favorites.value = null

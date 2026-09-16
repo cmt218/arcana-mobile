@@ -493,9 +493,10 @@ class ArcanaApiClient(
     override suspend fun updateFavorites(
         studioSlugs: List<String>,
         locationIds: List<Int>,
+        brandSlugs: List<String>,
     ): FavoritesDto = client.put(v1("users/me/favorites/")) {
         contentType(ContentType.Application.Json)
-        setBody(UpdateFavoritesRequest(studioSlugs, locationIds))
+        setBody(UpdateFavoritesRequest(studioSlugs, locationIds, brandSlugs))
     }.bodyOrThrow()
 
     /**

@@ -50,7 +50,7 @@ class StudioPageViewModelTest {
         )
         override suspend fun fetchStudios(): List<StudioDto> = emptyList()
         override suspend fun fetchFavorites(): FavoritesDto = current
-        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto {
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto {
             if (fail) throw ApiHttpError(500)
             saved = studioSlugs to locationIds
             current = current.copy(locations = current.locations + locationIds.filter { id -> current.locations.none { it.id == id } }

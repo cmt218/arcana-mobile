@@ -535,6 +535,7 @@ class Telemetry(
         locationCount: Int,
         studioSlugs: List<String>,
         locationIds: List<Int>,
+        brandSlugs: List<String> = emptyList(),
     ) = track(
         Events.FAVORITES_SAVED,
         mapOf(
@@ -542,6 +543,8 @@ class Telemetry(
             "location_count" to locationCount,
             "studio_slugs" to studioSlugs.joinToString(","),
             "location_ids" to locationIds.joinToString(","),
+            "brand_count" to brandSlugs.size,
+            "brand_slugs" to brandSlugs.joinToString(","),
         ),
     )
 
