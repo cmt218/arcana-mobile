@@ -10,6 +10,12 @@ import kotlinx.coroutines.test.setMain
 import org.arcana.mobile.data.FavoriteLocationDto
 import org.arcana.mobile.data.FavoriteStudioDto
 import org.arcana.mobile.data.FavoritesDto
+import org.arcana.mobile.data.FavoriteBrandDto
+import org.arcana.mobile.data.OverviewBrandDto
+import org.arcana.mobile.data.OverviewBrandLocationDto
+import org.arcana.mobile.data.ScheduleOverviewDto
+import org.arcana.mobile.networking.ScheduleApi
+import org.arcana.mobile.schedule.FakeScheduleApi
 import org.arcana.mobile.data.StudioDto
 import org.arcana.mobile.data.StudioLocationDto
 import org.arcana.mobile.favorites.FavoritesRepository
@@ -49,6 +55,7 @@ class StudioSelectionViewModelTest {
         var fetchError: Throwable = RuntimeException("network down"),
     ) : FavoritesApi {
         val updateCalls = mutableListOf<Pair<List<String>, List<Int>>>()
+        val brandCalls = mutableListOf<List<String>>()
         override suspend fun fetchStudios(): List<StudioDto> {
             if (failFetch) throw fetchError
             return studios
@@ -57,9 +64,10 @@ class StudioSelectionViewModelTest {
             if (failFetch) throw fetchError
             return favorites
         }
-        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto {
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto {
             if (failUpdate) throw RuntimeException("network down")
             updateCalls.add(studioSlugs to locationIds)
+            brandCalls.add(brandSlugs)
             return FavoritesDto(
                 studios = studioSlugs.map {
                     FavoriteStudioDto(id = it.hashCode(), slug = it, name = it, locationIds = emptyList())
@@ -237,5 +245,59 @@ class StudioSelectionViewModelTest {
         val s = ready(viewModel)
         assertEquals(setOf("solidcore"), s.selectedStudioSlugs)
         assertEquals(emptySet(), s.selectedLocationIds)
+    }
+
+    // ── Brand grouping (overview brands block) ───────────────────────────────
+
+    private val idFidi = StudioDto(id = 101, slug = "id-hot-yoga-fidi", name = "ID Hot Yoga FiDi", locations = listOf(StudioLocationDto(id = 1, name = "ID Hot Yoga FiDi")))
+    private val idHarlem = StudioDto(id = 102, slug = "id-hot-yoga-harlem", name = "ID Hot Yoga Harlem", locations = listOf(StudioLocationDto(id = 2, name = "ID Hot Yoga Harlem")))
+    private val idBrand = OverviewBrandDto(
+        id = 900, slug = "id-hot-yoga", name = "ID Hot Yoga",
+        locations = listOf(OverviewBrandLocationDto(1, "ID Hot Yoga FiDi", studioId = 101), OverviewBrandLocationDto(2, "ID Hot Yoga Harlem", studioId = 102)),
+    )
+
+    private fun schedule(brands: List<OverviewBrandDto>, fail: Boolean = false) = FakeScheduleApi().apply {
+        overviewResult = { if (fail) throw RuntimeException("overview down") else ScheduleOverviewDto(brands = brands) }
+    }
+
+    private fun brandVm(api: FakeApi, schedule: ScheduleApi) =
+        StudioSelectionViewModel(api, FavoritesRepository(api), scheduleApi = schedule)
+
+    @Test fun `site rows fold into one card per brand and the card is saved as a brand`() = runTest {
+        val api = FakeApi(studios = listOf(idFidi, idHarlem, yobk))
+        val vm = brandVm(api, schedule(listOf(idBrand)))
+        val s = ready(vm)
+        assertEquals(listOf("ID Hot Yoga", "YO BK"), s.studios.map { it.name })
+        assertEquals(listOf(1, 2), s.studios[0].locations.map { it.id })
+        assertEquals(setOf("id-hot-yoga"), s.brandSlugs)
+
+        vm.toggleStudio("id-hot-yoga")
+        vm.toggleStudio("yo-bk")
+        vm.save()
+        assertEquals(listOf("yo-bk") to emptyList(), api.updateCalls.single())
+        assertEquals(listOf("id-hot-yoga"), api.brandCalls.single())
+    }
+
+    @Test fun `a saved brand favorite comes back as a whole card and a partial one as picks`() = runTest {
+        val api = FakeApi(
+            studios = listOf(idFidi, idHarlem, yobk),
+            favorites = FavoritesDto(brands = listOf(FavoriteBrandDto(900, "id-hot-yoga", "ID Hot Yoga", locationIds = listOf(1)))),
+        )
+        val s = ready(brandVm(api, schedule(listOf(idBrand))))
+        assertEquals(emptySet(), s.selectedStudioSlugs)
+        assertEquals(setOf(1), s.selectedLocationIds)
+
+        val whole = FakeApi(
+            studios = listOf(idFidi, idHarlem, yobk),
+            favorites = FavoritesDto(brands = listOf(FavoriteBrandDto(900, "id-hot-yoga", "ID Hot Yoga", locationIds = listOf(1, 2)))),
+        )
+        assertEquals(setOf("id-hot-yoga"), ready(brandVm(whole, schedule(listOf(idBrand)))).selectedStudioSlugs)
+    }
+
+    @Test fun `an overview failure lists the rows ungrouped instead of failing the screen`() = runTest {
+        val api = FakeApi(studios = listOf(idFidi, idHarlem))
+        val s = ready(brandVm(api, schedule(emptyList(), fail = true)))
+        assertEquals(listOf("ID Hot Yoga FiDi", "ID Hot Yoga Harlem"), s.studios.map { it.name })
+        assertEquals(emptySet(), s.brandSlugs)
     }
 }

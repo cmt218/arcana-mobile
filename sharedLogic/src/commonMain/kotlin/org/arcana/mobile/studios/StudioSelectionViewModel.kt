@@ -9,6 +9,13 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.data.StudioDto
+import org.arcana.mobile.schedule.ScheduleViewModel
+import org.arcana.mobile.networking.ScheduleApi
+import org.arcana.mobile.data.OverviewBrandDto
+import kotlinx.datetime.todayIn
+import kotlinx.datetime.plus
+import kotlinx.datetime.DateTimeUnit
+import kotlin.time.Clock
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.ErrorType
@@ -22,6 +29,9 @@ sealed interface StudioSelectionUiState {
         val selectedStudioSlugs: Set<String>,
         val selectedLocationIds: Set<Int>,
         val expandedStudioSlugs: Set<String>,
+        /** Slugs in [studios] that are brands (saved as `brand_slugs`); the rest
+         *  are site rows the overview could not place, saved as `studio_slugs`. */
+        val brandSlugs: Set<String> = emptySet(),
         val saving: Boolean = false,
         val saved: Boolean = false,
         val error: String? = null,
@@ -33,6 +43,9 @@ class StudioSelectionViewModel(
     private val favoritesApi: FavoritesApi,
     private val repository: FavoritesRepository,
     private val telemetry: Telemetry = Telemetry.Noop,
+    /** Supplies the overview's brands block, which maps site rows onto brands.
+     *  Null (tests) lists rows as they come. */
+    private val scheduleApi: ScheduleApi? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<StudioSelectionUiState>(StudioSelectionUiState.Loading)
@@ -48,13 +61,16 @@ class StudioSelectionViewModel(
 
     private suspend fun load() {
         try {
-            val studios = favoritesApi.fetchStudios()
+            val rows = favoritesApi.fetchStudios()
             val favorites = repository.refresh()
+            val grouped = groupRowsByBrand(rows, fetchBrands())
+            val (whole, picks) = initialSelection(favorites, grouped)
             _uiState.value = StudioSelectionUiState.Ready(
-                studios = studios,
-                selectedStudioSlugs = favorites?.studios?.map { it.slug }?.toSet() ?: emptySet(),
-                selectedLocationIds = favorites?.locations?.map { it.id }?.toSet() ?: emptySet(),
+                studios = grouped.studios,
+                selectedStudioSlugs = whole,
+                selectedLocationIds = picks,
                 expandedStudioSlugs = emptySet(),
+                brandSlugs = grouped.brandSlugs,
             )
         } catch (e: CancellationException) {
             throw e
@@ -62,6 +78,75 @@ class StudioSelectionViewModel(
             logWarning("StudioSelectionViewModel", e.message ?: "load failed")
             _uiState.value = StudioSelectionUiState.Error(e.toErrorType())
         }
+    }
+
+    /** The overview's brands for the schedule window; a failure just means no
+     *  grouping this time, never a failed screen. */
+    private suspend fun fetchBrands(): List<OverviewBrandDto> {
+        val api = scheduleApi ?: return emptyList()
+        return try {
+            val today = Clock.System.todayIn(ScheduleViewModel.ScheduleTimeZone)
+            api.fetchOverview(from = today, to = today.plus(ScheduleViewModel.WINDOW_DAYS - 1, DateTimeUnit.DAY)).brands
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logWarning("StudioSelectionViewModel", "brands unavailable: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private class Grouped(val studios: List<StudioDto>, val brandSlugs: Set<String>)
+
+    /** One card per brand: its rows' locations under the brand's name. Rows the
+     *  overview does not place (no sessions in the window) stay their own card. */
+    private fun groupRowsByBrand(rows: List<StudioDto>, brands: List<OverviewBrandDto>): Grouped {
+        if (brands.isEmpty()) return Grouped(rows, emptySet())
+        val brandByRowId = brands.flatMap { b -> b.locations.map { it.studioId to b } }.toMap()
+        val out = LinkedHashMap<String, StudioDto>()
+        val brandSlugs = mutableSetOf<String>()
+        for (row in rows) {
+            val brand = brandByRowId[row.id]
+            if (brand == null) {
+                out[row.slug] = row
+                continue
+            }
+            brandSlugs += brand.slug
+            val existing = out[brand.slug]
+            out[brand.slug] = StudioDto(
+                id = brand.id,
+                slug = brand.slug,
+                name = brand.name,
+                logoUrl = brand.logoUrl.ifBlank { existing?.logoUrl ?: row.logoUrl },
+                heroImageUrl = existing?.heroImageUrl ?: row.heroImageUrl,
+                primaryColor = brand.primaryColor.ifBlank { existing?.primaryColor ?: row.primaryColor },
+                locations = (existing?.locations.orEmpty() + row.locations).distinctBy { it.id },
+            )
+        }
+        // Sort past a leading bracket or symbol so "[solidcore]" files under S.
+        return Grouped(out.values.sortedBy { it.name.trimStart { c -> !c.isLetterOrDigit() }.lowercase() }, brandSlugs)
+    }
+
+    /** Whole-card slugs and location picks from the saved favorites. A brand
+     *  favorite covering every location of its card is a whole card; a partial
+     *  one becomes location picks. */
+    private fun initialSelection(favorites: FavoritesDto?, grouped: Grouped): Pair<Set<String>, Set<Int>> {
+        if (favorites == null) return emptySet<String>() to emptySet()
+        val cards = grouped.studios.associateBy { it.slug }
+        val whole = mutableSetOf<String>()
+        val picks = favorites.locations.map { it.id }.toMutableSet()
+        if (favorites.brands.isNotEmpty()) {
+            for (brand in favorites.brands) {
+                val card = cards[brand.slug] ?: continue
+                val all = card.locations.map { it.id }
+                if (all.isNotEmpty() && all.all { it in brand.locationIds }) whole += brand.slug
+                else picks += brand.locationIds.filter { it in all }
+            }
+            // Rows the overview could not place keep their row-grain favorite.
+            favorites.studios.forEach { if (it.slug in cards && it.slug !in grouped.brandSlugs) whole += it.slug }
+        } else {
+            favorites.studios.forEach { if (it.slug in cards) whole += it.slug }
+        }
+        return whole to picks
     }
 
     fun retry() {
@@ -154,14 +239,16 @@ class StudioSelectionViewModel(
             update { it.copy(saving = true, error = null) }
             try {
                 repository.save(
-                    studioSlugs = current.selectedStudioSlugs.toList(),
+                    studioSlugs = (current.selectedStudioSlugs - current.brandSlugs).toList(),
                     locationIds = current.selectedLocationIds.toList(),
+                    brandSlugs = (current.selectedStudioSlugs intersect current.brandSlugs).toList(),
                 )
                 emitFavoriteDeltas(
                     previous = previous,
                     newStudioSlugs = current.selectedStudioSlugs,
                     newLocationIds = current.selectedLocationIds,
                     studios = current.studios,
+                    brandSlugs = current.brandSlugs,
                 )
                 update { it.copy(saving = false, saved = true) }
             } catch (e: CancellationException) {
@@ -182,6 +269,7 @@ class StudioSelectionViewModel(
         newStudioSlugs: Set<String>,
         newLocationIds: Set<Int>,
         studios: List<StudioDto>,
+        brandSlugs: Set<String> = emptySet(),
     ) {
         val bySlug = studios.associateBy { it.slug }
         // location id → (its studio, location name)
@@ -189,16 +277,20 @@ class StudioSelectionViewModel(
             studio.locations.map { loc -> loc.id to (studio to loc.name) }
         }.toMap()
 
-        val oldStudioSlugs = previous?.studios?.map { it.slug }?.toSet() ?: emptySet()
+        // Only slugs that are cards on this screen count; a brand favorite also
+        // lists its site rows, which are not cards here.
+        val oldStudioSlugs = (previous?.studios?.map { it.slug }.orEmpty() + previous?.brands?.map { it.slug }.orEmpty())
+            .filter { it in bySlug }.toSet()
         val oldLocationIds = previous?.locations?.map { it.id }?.toSet() ?: emptySet()
+        fun kind(slug: String) = if (slug in brandSlugs) "brand" else "studio"
 
         (newStudioSlugs - oldStudioSlugs).forEach { slug ->
             val s = bySlug[slug]
-            telemetry.favoriteAdded("studio", s?.id, slug, s?.name)
+            telemetry.favoriteAdded(kind(slug), s?.id, slug, s?.name)
         }
         (oldStudioSlugs - newStudioSlugs).forEach { slug ->
             val s = bySlug[slug]
-            telemetry.favoriteRemoved("studio", s?.id, slug, s?.name ?: previous?.studios?.firstOrNull { it.slug == slug }?.name)
+            telemetry.favoriteRemoved(kind(slug), s?.id, slug, s?.name ?: previous?.studios?.firstOrNull { it.slug == slug }?.name)
         }
         (newLocationIds - oldLocationIds).forEach { id ->
             val owner = locationOwner[id]
@@ -210,10 +302,11 @@ class StudioSelectionViewModel(
         }
 
         telemetry.favoritesSaved(
-            studioCount = newStudioSlugs.size,
+            studioCount = (newStudioSlugs - brandSlugs).size,
             locationCount = newLocationIds.size,
-            studioSlugs = newStudioSlugs.toList(),
+            studioSlugs = (newStudioSlugs - brandSlugs).toList(),
             locationIds = newLocationIds.toList(),
+            brandSlugs = (newStudioSlugs intersect brandSlugs).toList(),
         )
         telemetry.setFavoriteProfile(
             favoriteStudioCount = newStudioSlugs.size,

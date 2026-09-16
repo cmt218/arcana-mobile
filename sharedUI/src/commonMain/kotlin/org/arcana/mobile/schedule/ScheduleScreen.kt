@@ -460,6 +460,7 @@ private fun SuccessContent(
                     dayRetrying = state.dayRetrying,
                     refreshingFilters = state.refreshingFilters,
                     bookedSessions = state.bookedSessions,
+                    brandNames = state.brandNames,
                     isCurrent = isCurrent,
                     onOpenClassDetail = onOpenClassDetail,
                     onRetry = viewModel::retryDay,
@@ -1384,6 +1385,8 @@ internal fun ClassRow(
     /** Samples the host page's shared elapsed-ms clock for the capacity bar's
      *  first-draw fill; null (Search's rows) draws the bar at its final fill. */
     barClock: (() -> Float)? = null,
+    /** The location's brand from the overview; null falls back to the site row's name. */
+    brandName: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // Display the class's local wall-clock — the session's own location
@@ -1462,8 +1465,8 @@ internal fun ClassRow(
             // also flexes so neither alone consumes the row. Brand stays
             // intrinsic so we never lose studio identity.
             MetaLine(
-                brand = studio.name.uppercase(),
-                location = session.location.shortLabel(),
+                brand = (brandName ?: studio.name).uppercase(),
+                location = session.location.shortLabel(brandName),
                 studioColor = sc,
             )
             Spacer(Modifier.height(4.dp))

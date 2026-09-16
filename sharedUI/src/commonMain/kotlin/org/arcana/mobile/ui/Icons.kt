@@ -15,6 +15,17 @@ import arcana.sharedui.generated.resources.icon_bell
 import arcana.sharedui.generated.resources.icon_bookmark
 import arcana.sharedui.generated.resources.icon_calendar
 import arcana.sharedui.generated.resources.icon_category
+import arcana.sharedui.generated.resources.icon_cat_strength
+import arcana.sharedui.generated.resources.icon_cat_sculpt
+import arcana.sharedui.generated.resources.icon_cat_pilates
+import arcana.sharedui.generated.resources.icon_cat_reformer
+import arcana.sharedui.generated.resources.icon_cat_yoga
+import arcana.sharedui.generated.resources.icon_cat_barre
+import arcana.sharedui.generated.resources.icon_cat_hiit
+import arcana.sharedui.generated.resources.icon_cat_cycle
+import arcana.sharedui.generated.resources.icon_cat_dance
+import arcana.sharedui.generated.resources.icon_cat_run
+import arcana.sharedui.generated.resources.icon_cat_boxing
 import arcana.sharedui.generated.resources.icon_compass
 import arcana.sharedui.generated.resources.icon_card
 import arcana.sharedui.generated.resources.icon_check
@@ -72,6 +83,17 @@ object ArcanaIcons {
     val Expand: DrawableResource get() = Res.drawable.icon_fullscreen
     val Compass: DrawableResource get() = Res.drawable.icon_compass
     val Category: DrawableResource get() = Res.drawable.icon_category
+    val CatStrength: DrawableResource get() = Res.drawable.icon_cat_strength
+    val CatSculpt: DrawableResource get() = Res.drawable.icon_cat_sculpt
+    val CatPilates: DrawableResource get() = Res.drawable.icon_cat_pilates
+    val CatReformer: DrawableResource get() = Res.drawable.icon_cat_reformer
+    val CatYoga: DrawableResource get() = Res.drawable.icon_cat_yoga
+    val CatBarre: DrawableResource get() = Res.drawable.icon_cat_barre
+    val CatHiit: DrawableResource get() = Res.drawable.icon_cat_hiit
+    val CatCycle: DrawableResource get() = Res.drawable.icon_cat_cycle
+    val CatDance: DrawableResource get() = Res.drawable.icon_cat_dance
+    val CatRun: DrawableResource get() = Res.drawable.icon_cat_run
+    val CatBoxing: DrawableResource get() = Res.drawable.icon_cat_boxing
 }
 
 /**

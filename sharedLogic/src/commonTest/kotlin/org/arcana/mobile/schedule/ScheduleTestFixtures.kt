@@ -244,7 +244,7 @@ internal class FakeFavoritesApi(
         }
         return favoritesResult
     }
-    override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto =
+    override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto =
         favoritesResult
 }
 

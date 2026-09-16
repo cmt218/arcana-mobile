@@ -103,15 +103,17 @@ internal const val NO_CREDITS = "-"
  * brand prefix stripped from the location name (mirrors `shortLabel()` in
  * ScheduleViewModel).
  */
-private fun favoriteRowLabels(favorites: FavoritesDto): List<String> =
-    favorites.studios.map { it.name.uppercase() } +
-        favorites.locations.map { it.rowLabel().uppercase() }
+private fun favoriteRowLabels(favorites: FavoritesDto): List<String> {
+    val whole = if (favorites.brands.isNotEmpty()) favorites.brands.map { it.name } else favorites.studios.map { it.name }
+    return whole.map { it.uppercase() } + favorites.locations.map { it.rowLabel().uppercase() }
+}
 
 private fun FavoriteLocationDto.rowLabel(): String {
     val raw = name.removePrefix(studioName).trim()
         .removePrefix("·").trim()
         .removePrefix("-").trim()
-    return "$studioName · ${raw.ifEmpty { name }}"
+    // A location named exactly like its studio row (single-site rows) reads once.
+    return if (raw.isEmpty()) name else "$studioName · $raw"
 }
 
 private data class AccountItem(

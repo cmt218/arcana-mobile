@@ -8,5 +8,5 @@ import org.arcana.mobile.data.StudioDto
 interface FavoritesApi {
     suspend fun fetchStudios(): List<StudioDto>
     suspend fun fetchFavorites(): FavoritesDto
-    suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto
+    suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String> = emptyList()): FavoritesDto
 }

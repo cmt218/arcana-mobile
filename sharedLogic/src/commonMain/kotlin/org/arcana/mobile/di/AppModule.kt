@@ -125,7 +125,7 @@ val appModule = module {
     }
     single { RecentSearches.backedBy(get()) }
     viewModel { SearchViewModel(api = get(), recentSearches = get(), telemetry = get()) }
-    viewModel { StudioSelectionViewModel(get(), get(), get()) }
+    viewModel { StudioSelectionViewModel(get(), get(), get(), scheduleApi = get()) }
     viewModel { DeveloperSettingsViewModel(get()) }
     viewModel { (sessionId: Int) -> ClassDetailViewModel(get(), sessionId, get()) }
     viewModel { (token: String) -> SignupCompletionViewModel(token, get(), get()) }

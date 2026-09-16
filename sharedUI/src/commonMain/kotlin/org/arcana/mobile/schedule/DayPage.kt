@@ -73,6 +73,7 @@ internal fun DayPage(
     dayRetrying: Boolean,
     refreshingFilters: Boolean,
     bookedSessions: Map<Int, String>,
+    brandNames: Map<Int, String> = emptyMap(),
     isCurrent: Boolean,
     onOpenClassDetail: (Int) -> Unit,
     onRetry: () -> Unit,
@@ -208,6 +209,7 @@ internal fun DayPage(
                             session,
                             onClick = { onOpenClassDetail(session.id) },
                             bookedStatus = bookedSessions[session.id],
+                            brandName = brandNames[session.location.id],
                             // null clock ⇒ the capacity bar draws at its final fill.
                             barClock = null,
                         )

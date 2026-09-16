@@ -21,7 +21,7 @@ private class FakeFavoritesApi(
         if (shouldThrow) throw RuntimeException("network down")
         return favorites
     }
-    override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>): FavoritesDto {
+    override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto {
         updateCalls.add(studioSlugs to locationIds)
         favorites = FavoritesDto(
             studios = studioSlugs.map { FavoriteStudioDto(id = it.hashCode(), slug = it, name = it, locationIds = emptyList()) },

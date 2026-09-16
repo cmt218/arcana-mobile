@@ -10,6 +10,10 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ScheduleOverviewDto(
     val studios: List<OverviewStudioDto> = emptyList(),
+    /** One entry per brand with every location across its site rows. Empty
+     *  from a server that predates brands; the client then falls back to
+     *  [studios]. */
+    val brands: List<OverviewBrandDto> = emptyList(),
     /** Curated, member-facing class categories present in the window (ordered
      *  server-side), feeding the MODALITIES filter list. */
     val categories: List<ModalityCategoryDto> = emptyList(),
@@ -32,6 +36,34 @@ data class OverviewStudioDto(
 
 @Serializable
 data class OverviewLocationDto(val id: Int, val name: String, val timezone: String = "")
+
+@Serializable
+data class OverviewBrandDto(
+    val id: Int,
+    val slug: String,
+    val name: String,
+    @SerialName("logo_url") val logoUrl: String = "",
+    @SerialName("primary_color") val primaryColor: String = "",
+    @SerialName("publishes_capacity") val publishesCapacity: Boolean = true,
+    @SerialName("last_successful_sync_at") val lastSuccessfulSyncAt: String? = null,
+    val locations: List<OverviewBrandLocationDto> = emptyList(),
+) {
+    /** The brand in the studio-row shape the filter catalog is built from. */
+    fun asCatalogEntry() = OverviewStudioDto(
+        id = id, slug = slug, name = name, logoUrl = logoUrl, primaryColor = primaryColor,
+        publishesCapacity = publishesCapacity, lastSuccessfulSyncAt = lastSuccessfulSyncAt,
+        locations = locations.map { OverviewLocationDto(it.id, it.name, it.timezone) },
+    )
+}
+
+@Serializable
+data class OverviewBrandLocationDto(
+    val id: Int,
+    val name: String,
+    val timezone: String = "",
+    /** The site row this location belongs to; how rows map onto brands. */
+    @SerialName("studio_id") val studioId: Int,
+)
 
 /** `GET /api/v1/classes/sessions/` — one keyset page, normalized: sessions
  *  reference templates/locations/studios/instructors by id; the lookup maps
