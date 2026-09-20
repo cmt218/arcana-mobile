@@ -24,6 +24,11 @@ import org.arcana.mobile.profile.ProfileViewModel
 import org.arcana.mobile.networking.BaseUrlProvider
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.DiscoverApi
+import org.arcana.mobile.networking.ReviewApi
+import org.arcana.mobile.data.ReviewDto
+import org.arcana.mobile.review.FeedbackFeedViewModel
+import org.arcana.mobile.review.ReviewDrafts
+import org.arcana.mobile.review.ReviewViewModel
 import org.arcana.mobile.networking.ConciergeApi
 import org.arcana.mobile.networking.ProfileApi
 import org.arcana.mobile.networking.FavoritesApi
@@ -82,6 +87,7 @@ val appModule = module {
     single { ArcanaApiClient(get(), get(), get()) }
     single<BookingApi> { get<ArcanaApiClient>() }
     single<DiscoverApi> { get<ArcanaApiClient>() }
+    single<ReviewApi> { get<ArcanaApiClient>() }
     single<MembershipApi> { get<ArcanaApiClient>() }
     single<FavoritesApi> { get<ArcanaApiClient>() }
     single<ScheduleApi> { get<ArcanaApiClient>() }
@@ -95,6 +101,7 @@ val appModule = module {
         val favorites = get<FavoritesRepository>()
         val reviewerRedirect = get<ReviewerRedirect>()
         val recentSearches = get<RecentSearches>()
+        val reviewDrafts = get<ReviewDrafts>()
         AppSessionController(
             isAuthenticated = get<ArcanaApiClient>().isAuthenticated,
             loadKey = storage::load,
@@ -102,6 +109,7 @@ val appModule = module {
             onSessionCleared = {
                 favorites.clear()
                 recentSearches.clear()
+                reviewDrafts.clearAll()
                 reviewerRedirect.onSessionEnded()
             },
             pendingTokenProvider = { PendingTokenSource().consumePendingToken() },
@@ -111,11 +119,22 @@ val appModule = module {
     single<SignupSurveyCallable> { SignupSurveyApi(get()) }
     viewModel { AuthViewModel(get(), get(), get()) }
     viewModel { (initialEmail: String) -> PasswordResetRequestViewModel(get(), initialEmail) }
-    viewModel { HomeViewModel(bookingApi = get(), membershipApi = get()) }
+    viewModel { HomeViewModel(bookingApi = get(), membershipApi = get(), reviewApi = get(), telemetry = get()) }
     viewModel { ProfileViewModel(api = get(), favoritesRepository = get(), telemetry = get()) }
     viewModel { EditProfileViewModel(api = get()) }
     viewModel { DeleteAccountViewModel(conciergeApi = get()) }
     viewModel { MyBookingsViewModel(api = get(), telemetry = get()) }
+    // The review card is keyed by booking; `initial` (the member's existing
+    // review) may be null, so it is read by type rather than destructured.
+    viewModel { params ->
+        ReviewViewModel(
+            bookingId = params.get(), surface = params.get(), initial = params.getOrNull<ReviewDto>(),
+            api = get(), telemetry = get(), drafts = get(),
+        )
+    }
+    viewModel { (scopeType: String, scopeValue: String, source: String) ->
+        FeedbackFeedViewModel(scopeType, scopeValue, source, api = get(), telemetry = get())
+    }
     viewModel { ConciergeRequestViewModel(conciergeApi = get(), telemetry = get()) }
     single { ScheduleScopeRequests() }
     viewModel { ScheduleViewModel(get(), get(), get(), get(), scopeRequests = get()) }
@@ -124,6 +143,7 @@ val appModule = module {
         StudioPageViewModel(brandSlug, source, api = get(), favoritesRepository = get(), scopeRequests = get(), telemetry = get())
     }
     single { RecentSearches.backedBy(get()) }
+    single { ReviewDrafts.backedBy(get()) }
     viewModel { SearchViewModel(api = get(), recentSearches = get(), telemetry = get()) }
     viewModel { StudioSelectionViewModel(get(), get(), get(), scheduleApi = get()) }
     viewModel { DeveloperSettingsViewModel(get()) }

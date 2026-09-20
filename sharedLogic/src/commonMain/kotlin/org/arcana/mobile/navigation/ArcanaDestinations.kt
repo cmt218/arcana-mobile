@@ -11,6 +11,17 @@ sealed interface ArcanaDestination {
     // Discover studio page. `source` is the entry point for telemetry.
     @Serializable data class StudioPage(val brandSlug: String, val source: String = "directory") : ArcanaDestination
 
+    // Member feedback feed. One screen for every scope: `scopeType` is
+    // all | brand | location | class_type | instructor, `scopeValue` its id or
+    // slug ("" for all), `label` the header while the page loads, `source` the
+    // entry point for telemetry.
+    @Serializable data class FeedbackFeed(
+        val scopeType: String = "all",
+        val scopeValue: String = "",
+        val label: String = "",
+        val source: String = "discover",
+    ) : ArcanaDestination
+
     @Serializable data object StudioSelection : ArcanaDestination
 
     // Origin = the Book-tab search pill's bounds in root px, so the Search

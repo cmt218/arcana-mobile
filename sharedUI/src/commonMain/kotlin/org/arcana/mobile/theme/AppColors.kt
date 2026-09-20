@@ -48,6 +48,12 @@ val ClayDeep    = Color(0xFF8F3D2F) // destructive-action red, gentle not alarm 
 val Success     = Lime
 val Info        = MossLight
 
+// ---- Review marks: emoji colours, not brand colours. They sit beside the
+// system check and flame emoji and have to read as the same kind of thing. ----
+val MarkAmber   = Color(0xFFF8C332)
+val MarkRed     = Color(0xFFE2443A)
+val MarkBang    = Color(0xFF2B2204) // the warning mark's exclamation
+
 // ---- Translucent helpers (Stone over dark surfaces) ----
 val InkAlpha10   = Color(0x1A161812)
 val InkAlpha08   = Color(0x14161812)

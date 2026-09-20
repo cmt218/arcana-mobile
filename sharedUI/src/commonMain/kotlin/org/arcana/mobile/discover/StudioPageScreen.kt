@@ -42,6 +42,9 @@ import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.AddressRow
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaSheet
+import org.arcana.mobile.ui.InstructorSheet
+import org.arcana.mobile.review.FeedbackScope
+import org.arcana.mobile.review.whatMembersSayLabel
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.CategoryIcons
@@ -78,6 +81,8 @@ fun StudioPageScreen(
     source: String,
     onClose: () -> Unit,
     onSeeSchedule: () -> Unit,
+    /** Opens the member feedback feed; the string is the telemetry source. */
+    onOpenFeedback: (FeedbackScope, String) -> Unit = { _, _ -> },
 ) {
     val vm = koinViewModel<StudioPageViewModel> { parametersOf(brandSlug, source) }
     val state by vm.uiState.collectAsState()
@@ -120,6 +125,7 @@ fun StudioPageScreen(
                         vm.onInstructorTapped(picked.profileId)
                         instructor = picked
                     },
+                    onOpenFeedback = onOpenFeedback,
                 )
                 // Floats over the list like class detail's CTA: no fade behind it.
                 Box(
@@ -151,7 +157,18 @@ fun StudioPageScreen(
             }
         }
     }
-    instructor?.let { picked -> InstructorSheet(instructor = picked, onDismiss = { instructor = null }) }
+    instructor?.let { picked ->
+        InstructorSheet(
+            name = picked.name,
+            bio = picked.bio,
+            reviewCount = picked.reviewCount,
+            onSeeFeedback = {
+                instructor = null
+                onOpenFeedback(FeedbackScope.instructor(picked.profileId, picked.name), "instructor_sheet")
+            },
+            onDismiss = { instructor = null },
+        )
+    }
 }
 
 @Composable
@@ -174,6 +191,7 @@ private fun StudioPageContent(
     onClose: () -> Unit,
     onFavorite: () -> Unit,
     onInstructor: (StudioInstructorDto) -> Unit,
+    onOpenFeedback: (FeedbackScope, String) -> Unit,
 ) {
     val page = state.page
     val color = studioColorFor(page.primaryColor)
@@ -189,6 +207,18 @@ private fun StudioPageContent(
         item {
             Spacer(Modifier.height(20.dp))
             Header(page = page, color = color, state = state, onFavorite = onFavorite)
+        }
+        // Only once someone has said something. No inline averages.
+        if (page.reviewCount > 0) {
+            item {
+                Spacer(Modifier.height(16.dp))
+                TextLink(
+                    label = whatMembersSayLabel(page.reviewCount),
+                    onClick = { onOpenFeedback(FeedbackScope.brand(page.slug, page.name), "studio_page") },
+                    color = Moss,
+                    underline = false,
+                )
+            }
         }
         if (page.bio.isNotBlank()) {
             item {
@@ -243,6 +273,20 @@ private fun StudioPageContent(
                     overline = location.neighborhood.takeIf { it.isNotBlank() },
                     modifier = Modifier.padding(vertical = 10.dp),
                 )
+                if (location.reviewCount > 0) {
+                    TextLink(
+                        label = whatMembersSayLabel(location.reviewCount),
+                        onClick = {
+                            onOpenFeedback(
+                                FeedbackScope.location(location.id, "${page.name} · ${location.name}"),
+                                "studio_location",
+                            )
+                        },
+                        color = Moss,
+                        underline = false,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
             }
         }
     }
@@ -396,28 +440,6 @@ private fun InstructorRow(person: StudioInstructorDto, color: Color, onClick: ()
     }
 }
 
-/** Name, monogram and bio. Feedback links arrive with the reviews phase. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InstructorSheet(instructor: StudioInstructorDto, onDismiss: () -> Unit) {
-    ArcanaSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(
-                    modifier = Modifier.size(52.dp).clip(CircleShape).background(Mist2),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircleMonogram(text = monogramFor(instructor.name), fontSize = 16, color = Moss)
-                }
-                Heading3(text = instructor.name, size = 20, color = Ink)
-            }
-            Spacer(Modifier.height(16.dp))
-            if (instructor.bio.isNotBlank()) BodyText(text = instructor.bio, size = 14, color = Graphite)
-            else Caption(text = "No bio yet.", size = 13, color = Ash)
-        }
-    }
-}
-
 /** Multi-location brands: pick the locations to add. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -502,3 +524,5 @@ private fun FavoriteLocationsSheet(
         }
     }
 }
+
+/** "What members say · 6 reviews" */

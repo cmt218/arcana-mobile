@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.BookingDto
+import org.arcana.mobile.data.ReviewDto
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.toErrorType
@@ -209,6 +210,39 @@ class MyBookingsViewModel(
         loadMore()
     }
 
+    /** Rows whose review card is open: step one is saved, the member may still
+     *  be answering the rest, so the row keeps its card until it is closed. */
+    private val _openReviews = MutableStateFlow<Set<Int>>(emptySet())
+    val openReviews: StateFlow<Set<Int>> = _openReviews
+
+    /** Step one landed on [booking]'s row. Every sibling of the same combination
+     *  flips to reviewed at once; the server's page confirms on the next read. */
+    fun reviewStarted(booking: BookingDto, review: ReviewDto) {
+        _openReviews.value = _openReviews.value + booking.id
+        val current = _past.value as? PastUiState.Success ?: return
+        _past.value = current.copy(
+            bookings = current.bookings.map { row ->
+                when {
+                    row.id == booking.id -> row
+                    row.id == review.bookingId -> row.copy(reviewState = "reviewed_here")
+                    row.sameCombinationAs(booking) && row.canReview -> row.copy(reviewState = "reviewed_elsewhere")
+                    else -> row
+                }
+            },
+        )
+    }
+
+    /** The member closed the card: the row now just says it was reviewed. */
+    fun reviewFinished(bookingId: Int) {
+        _openReviews.value = _openReviews.value - bookingId
+        val current = _past.value as? PastUiState.Success ?: return
+        _past.value = current.copy(
+            bookings = current.bookings.map { row ->
+                if (row.id == bookingId && row.canReview) row.copy(reviewState = "reviewed_here") else row
+            },
+        )
+    }
+
     fun openCancel(booking: BookingDto) {
         _cancelTarget.value = booking
         _cancelState.value = CancelState.Idle
@@ -256,3 +290,9 @@ class MyBookingsViewModel(
         }
     }
 }
+
+/** The review combination as the row can see it: brand, class type, instructor. */
+internal fun BookingDto.sameCombinationAs(other: BookingDto): Boolean =
+    session.brandSlug == other.session.brandSlug &&
+        session.classTypeKey == other.session.classTypeKey &&
+        session.instructorProfileId == other.session.instructorProfileId

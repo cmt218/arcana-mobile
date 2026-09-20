@@ -342,4 +342,106 @@ class HomeViewModelTest {
         // Dismiss only clears the flag; it must not itself trigger a re-fetch.
         assertTrue(vm.uiState.value is HomeUiState.Success)
     }
+
+    // ---- Review prompt (spec 6.4) ------------------------------------------
+
+    private fun promptFor(id: Int) = org.arcana.mobile.review.prompt(id)
+
+    private class PromptApi(val me: MembershipMeDto, var dto: MyUpcomingDto) : BookingApi, MembershipApi {
+        var failUpcoming: Throwable? = null
+        override suspend fun membershipMe() = me
+        override suspend fun myBookings(): MyBookingsDto = throw AssertionError("Home reads the scoped list")
+        override suspend fun myUpcoming(): MyUpcomingDto = failUpcoming?.let { throw it } ?: dto
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(emptyList(), null)
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
+        override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+    }
+
+    @Test fun `home reads the scoped list keeps the prompt and drops studio cancelled rows`() = runTest {
+        val cancelled = booking(3).copy(status = "cancelled", cancelledBy = "studio")
+        val api = PromptApi(meDto, MyUpcomingDto(listOf(cancelled, booking(1)), reviewPrompt = promptFor(9)))
+        val vm = HomeViewModel(api, api, TestTimeSource())
+        vm.load()
+        val s = vm.uiState.value as HomeUiState.Success
+        assertEquals(listOf(1), s.upcoming.map { it.id })
+        assertEquals(9, s.reviewPrompt?.bookingId)
+    }
+
+    // The server quiets Home for a day after "Not now" (arcana-server
+    // reviews/prompting.py), so its answer is normally no prompt at all; the
+    // client still shows whatever it is told, so that rule lives in one place.
+    @Test fun `not now hides the card at once and shows only what the server answers`() = runTest {
+        val api = PromptApi(meDto, MyUpcomingDto(emptyList(), reviewPrompt = promptFor(9)))
+        val reviews = org.arcana.mobile.review.FakeReviewApi().apply { nextPrompt = promptFor(8) }
+        val (telemetry, fake, _) = org.arcana.mobile.analytics.fakeTelemetry()
+        val vm = HomeViewModel(api, api, TestTimeSource(), reviewApi = reviews, telemetry = telemetry)
+        vm.load()
+        vm.dismissReviewPrompt()
+        assertEquals(listOf(9), reviews.dismissed)
+        assertEquals(8, (vm.uiState.value as HomeUiState.Success).reviewPrompt?.bookingId)
+        assertEquals(listOf("review_dismissed"), fake.names())
+        reviews.nextPrompt = null
+        vm.dismissReviewPrompt()
+        assertNull((vm.uiState.value as HomeUiState.Success).reviewPrompt)
+        vm.dismissReviewPrompt()
+        assertEquals(listOf(9, 8), reviews.dismissed)
+    }
+
+    // Swallowed, a failed reservations read rendered as "No upcoming classes":
+    // a server fault dressed as an empty state. It is a failed fetch like any other.
+    @Test fun `a failed reservations read is an error and never an empty home`() = runTest {
+        val api = PromptApi(meDto, MyUpcomingDto(listOf(booking(1))))
+        api.failUpcoming = org.arcana.mobile.networking.ApiHttpError(502)
+        val vm = HomeViewModel(api, api, TestTimeSource())
+        vm.load()
+        assertEquals(HomeUiState.Error(org.arcana.mobile.networking.ErrorType.SERVER), vm.uiState.value)
+        api.failUpcoming = null
+        vm.retry()
+        assertEquals(listOf(1), (vm.uiState.value as HomeUiState.Success).upcoming.map { it.id })
+        // Warm: the reservations already on screen stay, and the notice is raised.
+        api.failUpcoming = Exception("no route to host")
+        vm.refresh()
+        assertEquals(listOf(1), (vm.uiState.value as HomeUiState.Success).upcoming.map { it.id })
+        assertTrue(vm.refreshFailed.value)
+    }
+
+    // Offline, the dismissal never reaches the server, so the next read offers
+    // the same class again. The member already said "Not now".
+    @Test fun `not now holds for the session when its request is lost`() = runTest {
+        val api = PromptApi(meDto, MyUpcomingDto(emptyList(), reviewPrompt = promptFor(9)))
+        val reviews = org.arcana.mobile.review.FakeReviewApi().apply { failWith = Exception("offline") }
+        val vm = HomeViewModel(api, api, TestTimeSource(), reviewApi = reviews)
+        vm.load()
+        vm.dismissReviewPrompt()
+        assertNull((vm.uiState.value as HomeUiState.Success).reviewPrompt)
+        vm.refresh()
+        assertNull((vm.uiState.value as HomeUiState.Success).reviewPrompt)
+    }
+
+    // Step one creates the review, so the very next read carries no prompt
+    // (or, before the quiet day existed, the NEXT class). Either would pull
+    // the card out from under a member who is still answering it.
+    @Test fun `a card being answered survives a refresh until it is closed`() = runTest {
+        val api = PromptApi(meDto, MyUpcomingDto(emptyList(), reviewPrompt = promptFor(9)))
+        val vm = HomeViewModel(api, api, TestTimeSource())
+        vm.load()
+        vm.reviewStarted()
+        api.dto = MyUpcomingDto(emptyList(), reviewPrompt = null)
+        vm.refresh()
+        assertEquals(9, (vm.uiState.value as HomeUiState.Success).reviewPrompt?.bookingId)
+        vm.clearReviewPrompt()
+        assertNull((vm.uiState.value as HomeUiState.Success).reviewPrompt)
+        vm.refresh()
+        assertNull((vm.uiState.value as HomeUiState.Success).reviewPrompt)
+    }
+
+    @Test fun `a finished card clears the prompt without a request`() = runTest {
+        val api = PromptApi(meDto, MyUpcomingDto(emptyList(), reviewPrompt = promptFor(9)))
+        val reviews = org.arcana.mobile.review.FakeReviewApi()
+        val vm = HomeViewModel(api, api, TestTimeSource(), reviewApi = reviews)
+        vm.load()
+        vm.clearReviewPrompt()
+        assertNull((vm.uiState.value as HomeUiState.Success).reviewPrompt)
+        assertTrue(reviews.dismissed.isEmpty())
+    }
 }

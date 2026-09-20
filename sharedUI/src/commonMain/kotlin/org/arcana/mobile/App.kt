@@ -44,6 +44,8 @@ import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.booking.MyBookingsScreen
 import org.arcana.mobile.discover.DiscoverScreen
 import org.arcana.mobile.discover.StudioPageScreen
+import org.arcana.mobile.review.FeedbackScope
+import org.arcana.mobile.review.FeedbackFeedScreen
 import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.home.HomeScreen
 import org.arcana.mobile.navigation.ArcanaDestination
@@ -376,6 +378,7 @@ private fun MainScaffold() {
             composable<ArcanaDestination.Discover> {
                 DiscoverScreen(
                     onOpenStudio = { slug -> navController.navigate(ArcanaDestination.StudioPage(slug)) },
+                    onOpenFeedback = { navController.navigate(feedbackRoute(FeedbackScope.All, "discover")) },
                 )
             }
             composable<ArcanaDestination.StudioPage> { entry ->
@@ -385,6 +388,19 @@ private fun MainScaffold() {
                     source = args.source,
                     onClose = { navController.popBackStack() },
                     onSeeSchedule = { navController.navigateToTab(ArcanaTab.Schedule) },
+                    onOpenFeedback = { scope, source -> navController.navigate(feedbackRoute(scope, source)) },
+                )
+            }
+            composable<ArcanaDestination.FeedbackFeed> { entry ->
+                val args = entry.toRoute<ArcanaDestination.FeedbackFeed>()
+                FeedbackFeedScreen(
+                    scopeType = args.scopeType,
+                    scopeValue = args.scopeValue,
+                    label = args.label,
+                    source = args.source,
+                    onClose = { navController.popBackStack() },
+                    onOpenStudio = { slug -> navController.navigate(ArcanaDestination.StudioPage(slug, source = "feed")) },
+                    onOpenFeed = { scope -> navController.navigate(feedbackRoute(scope, source = "feed")) },
                 )
             }
             composable<ArcanaDestination.Profile> {
@@ -418,6 +434,7 @@ private fun MainScaffold() {
                 ClassDetailScreen(
                     sessionId = args.id,
                     onClose = { navController.popBackStack() },
+                    onOpenFeedback = { scope, source -> navController.navigate(feedbackRoute(scope, source)) },
                 )
             }
         }
@@ -461,6 +478,7 @@ internal fun currentScreenName(dest: NavDestination?): String? = when {
     dest.hasRoute<ArcanaDestination.MyBookings>() -> Telemetry.Screens.MY_BOOKINGS
     dest.hasRoute<ArcanaDestination.Discover>() -> Telemetry.Screens.DISCOVER
     dest.hasRoute<ArcanaDestination.StudioPage>() -> Telemetry.Screens.STUDIO_PAGE
+    dest.hasRoute<ArcanaDestination.FeedbackFeed>() -> Telemetry.Screens.FEEDBACK_FEED
     dest.hasRoute<ArcanaDestination.ConciergeRequest>() -> Telemetry.Screens.CONCIERGE_REQUEST
     dest.hasRoute<ArcanaDestination.EditProfile>() -> Telemetry.Screens.EDIT_PROFILE
     dest.hasRoute<ArcanaDestination.ClassDetail>() -> Telemetry.Screens.CLASS_DETAIL
@@ -481,3 +499,7 @@ private fun NavController.navigateToTab(tab: ArcanaTab) {
         restoreState = true
     }
 }
+
+/** The feed route for a scope; shared by every entry point on both shells. */
+internal fun feedbackRoute(scope: FeedbackScope, source: String) =
+    ArcanaDestination.FeedbackFeed(scope.type, scope.value, scope.label, source)

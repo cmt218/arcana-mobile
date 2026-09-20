@@ -2,6 +2,36 @@ import SwiftUI
 import UIKit
 import ComposeApp
 
+/// UIKit builds its text-input system inside the first tap on any field and
+/// blocks the main thread while it does (measured: docs/perf/README.md, "First
+/// keyboard focus"). Pay that once under the splash instead.
+enum KeyboardPrewarm {
+    private static var done = false
+
+    static func run() {
+        guard !done,
+              let window = UIApplication.shared.connectedScenes
+                  .compactMap({ $0 as? UIWindowScene })
+                  .flatMap(\.windows)
+                  .first(where: \.isKeyWindow)
+        else { return }
+        done = true
+        let field = UITextField(frame: .zero)
+        field.alpha = 0
+        // An empty input view: UIKit still builds its text-input system, but is
+        // never asked to present the system keyboard, so nothing can flash.
+        field.inputView = UIView(frame: .zero)
+        field.inputAssistantItem.leadingBarButtonGroups = []
+        field.inputAssistantItem.trailingBarButtonGroups = []
+        window.addSubview(field)
+        UIView.performWithoutAnimation {
+            field.becomeFirstResponder()
+            field.resignFirstResponder()
+        }
+        field.removeFromSuperview()
+    }
+}
+
 /// The SwiftUI Liquid Glass shell: native TabView (system Liquid Glass tab
 /// bar on iOS 26) hosting per-tab Compose content, with the auth flow and the
 /// dot-matrix splash as Compose controllers. Kotlin drives session state via
@@ -73,6 +103,8 @@ final class ShellModel: ObservableObject {
     func splashDidAppear() {
         guard !splashTimerStarted else { return }
         splashTimerStarted = true
+        // Before the timer, so the splash's minimum is measured after the stall.
+        KeyboardPrewarm.run()
         let ms = IosShellBridge.shared.splashMinDisplayMs()
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(ms))) { [weak self] in
             withAnimation(.easeOut(duration: 0.3)) { self?.splashVisible = false }

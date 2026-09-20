@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -613,28 +615,20 @@ private fun SearchEntryPill(
     }
 }
 
-/** End-of-list footer for a fully-loaded list: three dots (center lit) over a
- *  caption. The dot is the brand's repeating gesture — a centered triad reads
- *  as a deliberate full-stop. Shared with Search's end-of-results. */
+/** End-of-list footer for a fully loaded list: one quiet caps line, centred.
+ *  Shared by the day lists, Search and the feedback feed. */
 @Composable
-internal fun EndOfListMarker(text: String, modifier: Modifier = Modifier) {
-    Column(
+internal fun EndOfListMarker(
+    text: String,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(top = 28.dp, bottom = 12.dp),
+) {
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 28.dp, bottom = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(contentPadding),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            repeat(3) { i ->
-                Box(
-                    Modifier
-                        .size(4.dp)
-                        .clip(CircleShape)
-                        .background(if (i == 1) Lime else Mist)
-                )
-            }
-        }
         Overline(text = text, size = 10, color = Charcoal)
     }
 }
@@ -680,6 +674,19 @@ internal fun ScrollJumpChevron(
             )
         }
     }
+}
+
+/** The Book tab's jump-to-top arrow for any list: fades in at the top of the
+ *  list's box once [listState] has scrolled, and a tap returns to the start. */
+@Composable
+internal fun BoxScope.JumpToTop(listState: LazyListState) {
+    val scope = rememberCoroutineScope()
+    ScrollJumpChevron(
+        pointsDown = false,
+        visible = listState.canScrollBackward,
+        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+    )
 }
 
 /** The always-visible filter controls (in the layout flow): the scope toggle,

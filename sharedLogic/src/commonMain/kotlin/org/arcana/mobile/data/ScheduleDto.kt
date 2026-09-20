@@ -42,6 +42,15 @@ data class ScheduleSessionDto(
     // booking; the client renders "NOT OPEN" (see [isNotOpenYet]). Defaulted so
     // older/again-shared payloads keep deserializing.
     @SerialName("bookable_at") val bookableAt: String? = null,
+    // Reviews (detail only). `myReview` is the member's review of this
+    // class's combination, whichever booking carries it; `reviewBookingId`
+    // is the member's eligible booking on this session, where step one posts.
+    @SerialName("class_type_review_count") val classTypeReviewCount: Int = 0,
+    @SerialName("location_review_count") val locationReviewCount: Int = 0,
+    @SerialName("brand_review_count") val brandReviewCount: Int = 0,
+    @SerialName("my_review") val myReview: ReviewDto? = null,
+    @SerialName("review_prompt_eligible") val reviewPromptEligible: Boolean = false,
+    @SerialName("review_booking_id") val reviewBookingId: Int? = null,
 )
 
 /**
@@ -78,6 +87,8 @@ data class TemplateBriefDto(
     // booking as free text. Defaulted so payloads without them deserialize.
     @SerialName("spot_preference_options") val spotPreferenceOptions: List<String> = emptyList(),
     @SerialName("spot_preference_label") val spotPreferenceLabel: String? = null,
+    // Detail only: the brand-level class type this template belongs to.
+    @SerialName("class_type_key") val classTypeKey: String? = null,
 )
 
 @Serializable
@@ -85,6 +96,11 @@ data class InstructorBriefDto(
     val id: Int,
     val name: String,
     @SerialName("photo_url") val photoUrl: String,
+    // The person across studios (detail and list); null until linked.
+    @SerialName("profile_id") val profileId: Int? = null,
+    // Detail only.
+    val bio: String = "",
+    @SerialName("review_count") val reviewCount: Int = 0,
 )
 
 @Serializable
@@ -96,6 +112,8 @@ data class LocationBriefDto(
     val address: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
+    // Detail only.
+    val brand: ReviewBrandDto? = null,
 )
 
 @Serializable

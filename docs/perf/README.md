@@ -148,3 +148,52 @@ turns per-row cost into O(total) work on every append.
   comparison can manufacture a result in either direction. Don't over-read single windows.
 - The severe-stall count (>2.5×) tracks pagination/data-layer work; the small-hitch
   count (1.5–2.5×) tracks per-row render cost.
+
+## First keyboard focus (iOS), measured 2026-09-19
+
+**Symptom.** The first tap on ANY text field in a process (a review's comment,
+Concierge, login) hung for up to a second before the field even showed focus;
+every later tap, on any screen, was instant.
+
+**Cause.** Not Compose and not our fields. UIKit builds its whole text-input
+system lazily, the first time anything becomes first responder, synchronously
+on the main thread inside that tap: `UIKeyboardImpl` init, the input view set,
+and a run of soft-linked framework loads (`_sl_dlopen`). Compose cannot draw
+the cursor or the focused rule until `becomeFirstResponder` returns.
+
+**Numbers.** `sample <pid> 8 1` around the tap, iPhone 17 Pro simulator, Debug
+build launched without a debugger, software keyboard visible, main-thread time
+under `-[UIApplication sendEvent:]` for the first field tap in a process:
+
+| Build | First tap | Later taps |
+|---|---|---|
+| No prewarm | 244ms (249 and 263ms with the software keyboard suppressed) | 3ms |
+| Prewarm with a plain `UITextField` | 16ms | 3ms |
+| Prewarm with an empty `inputView` (what ships) | 26 to 30ms | 3ms |
+
+Of the ~250ms: ~90ms `-[UIKeyboardImpl initWithFrame:forCustomInputView:]`,
+~100ms `_sl_dlopen`. On a physical phone attached to Xcode it is several times
+slower (every dylib load notifies the debugger), which is the "entire second"
+seen on device; launched from the home screen it is far less, which is why
+most native apps never show it.
+
+**Fix.** `KeyboardPrewarm.run()` in `iosApp/iosApp/ArcanaShell.swift`, called
+from `ShellModel.splashDidAppear()` before the splash timer starts: an
+invisible `UITextField` becomes first responder and resigns in the same
+run-loop turn, so the cost lands under the splash, which still runs its full
+minimum. The field carries an EMPTY `inputView` (and an empty input assistant,
+for iPad): UIKit still builds everything that was slow, but is never asked to
+present the system keyboard, so there is nothing that could flash at launch
+even in principle, and no keyboard-height notification reaches Compose. That
+costs ~10ms of the first real tap against the plain form. Checked anyway: a
+60fps capture of the launch, with the software keyboard enabled, shows the
+keyboard region at 27 to 54 brightness for the whole splash (a keyboard reads
+~220). Android has no equivalent stall.
+
+**To re-measure.** Cold launch from the home screen (not from Xcode), open
+You → Concierge, start `sample`, tap the field, read the `sendEvent` line.
+`xctrace` cannot attach to a simulator process, and launching under it stalls
+the app; `sample` on the host pid works. A simulator only shows its software
+keyboard (needed to see a flash at all) after
+`xcrun simctl spawn <udid> defaults write com.apple.keyboard.preferences AutomaticMinimizationEnabled -bool NO`
+and a reboot; on iOS 26 the older `com.apple.Preferences` domain does nothing.

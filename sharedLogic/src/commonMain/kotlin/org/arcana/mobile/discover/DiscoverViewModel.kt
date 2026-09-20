@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.DiscoverCategoryDto
 import org.arcana.mobile.data.DiscoverStudioDto
+import org.arcana.mobile.data.DiscoverFeedbackDto
 import org.arcana.mobile.networking.DiscoverApi
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.toErrorType
@@ -30,6 +31,8 @@ sealed interface DiscoverUiState {
         val selectedNeighborhoods: Set<String>,
         /** A filter change is being applied; the stale list dims. */
         val refreshingFilters: Boolean = false,
+        /** The "Member feedback" row above the list; hidden at zero reviews. */
+        val feedback: DiscoverFeedbackDto = DiscoverFeedbackDto(),
     ) : DiscoverUiState
     data class Error(val type: ErrorType) : DiscoverUiState
 }
@@ -55,6 +58,7 @@ class DiscoverViewModel(
     private var selectedCategories: Set<String> = emptySet()
     private var selectedNeighborhoods: Set<String> = emptySet()
     private var studios: List<DiscoverStudioDto> = emptyList()
+    private var feedback = DiscoverFeedbackDto()
     private var catalogLoaded = false
     private var opened = false
     private var generation = 0
@@ -132,6 +136,7 @@ class DiscoverViewModel(
             val directory = api.fetchDirectory(selectedCategories, selectedNeighborhoods)
             if (myGeneration != generation) return
             studios = directory.studios
+            feedback = directory.feedback
             if (!catalogLoaded || (selectedCategories.isEmpty() && selectedNeighborhoods.isEmpty())) {
                 categories = directory.studios.flatMap { it.categories }.distinctBy { it.slug }.sortedBy { it.name }
                 neighborhoods = directory.studios.flatMap { it.neighborhoods }.distinct().sorted()
@@ -160,6 +165,7 @@ class DiscoverViewModel(
             selectedCategories = selectedCategories,
             selectedNeighborhoods = selectedNeighborhoods,
             refreshingFilters = refreshing,
+            feedback = feedback,
         )
     }
 

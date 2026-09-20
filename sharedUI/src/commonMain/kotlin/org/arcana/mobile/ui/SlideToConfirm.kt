@@ -149,7 +149,7 @@ fun SlideToConfirm(
         // lime/moss seam. While the booking call is in flight, a soft highlight
         // sweeps the track so it doesn't sit inert.
         if (submitting && !completed) {
-            SlideSubmitShimmer(Modifier.matchParentSize())
+            SubmitSweep(Modifier.matchParentSize())
         }
         Column(
             Modifier
@@ -199,10 +199,10 @@ fun SlideToConfirm(
     }
 }
 
-/** An indeterminate highlight sweeping along the filled bar while the booking
- *  request is in flight — the slide is done but the confirm check hasn't landed. */
+/** An indeterminate highlight sweeping along a filled pill while its request is
+ *  in flight: the gesture is done but the confirm check hasn't landed. */
 @Composable
-private fun SlideSubmitShimmer(modifier: Modifier) {
+internal fun SubmitSweep(modifier: Modifier) {
     val transition = rememberInfiniteTransition(label = "slideSubmit")
     val x by transition.animateFloat(
         initialValue = 0f,

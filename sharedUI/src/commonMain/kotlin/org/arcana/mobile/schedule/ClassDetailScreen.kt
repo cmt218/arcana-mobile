@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -129,6 +130,16 @@ import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
 import org.arcana.mobile.ui.softShadow
 import org.koin.compose.viewmodel.koinViewModel
+import org.arcana.mobile.review.FeedbackScope
+import org.arcana.mobile.review.ReviewCard
+import org.arcana.mobile.review.ReviewSubjects
+import org.arcana.mobile.review.rememberReviewSaveNotice
+import org.arcana.mobile.review.ReviewSaveNoticeHost
+import org.arcana.mobile.review.whatMembersSayLabel
+import org.arcana.mobile.ui.InstructorSheet
+import org.arcana.mobile.analytics.Telemetry
+import org.koin.compose.koinInject
+import org.arcana.mobile.ui.TextLink
 import org.koin.core.parameter.parametersOf
 
 // ── Constants -----------------------------------------------------------------
@@ -235,6 +246,8 @@ fun ClassDetailScreen(
     sessionId: Int,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the member feedback feed; the string is the telemetry source. */
+    onOpenFeedback: (FeedbackScope, String) -> Unit = { _, _ -> },
     viewModel: ClassDetailViewModel = koinViewModel { parametersOf(sessionId) },
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -259,6 +272,7 @@ fun ClassDetailScreen(
                 onClose = onClose,
                 isRefreshing = refreshing,
                 onRefresh = viewModel::refresh,
+                onOpenFeedback = onOpenFeedback,
             )
         }
     }
@@ -319,6 +333,7 @@ private fun SuccessBlock(
     onClose: () -> Unit,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
+    onOpenFeedback: (FeedbackScope, String) -> Unit,
 ) {
     // The studio's clock, not the device's — a traveller must see the same
     // time the schedule list and the studio's own site show.
@@ -417,11 +432,19 @@ private fun SuccessBlock(
             holdForConfirm = false
         }
     }
+    var instructorSheetOpen by remember { mutableStateOf(false) }
+    val reviewNotice = rememberReviewSaveNotice()
+    val telemetry = koinInject<Telemetry>()
+    // The review card replaces the reserve control on a completed booking
+    // (spec 5.4): the member's own review in edit mode, or step one when the
+    // booking is eligible and unreviewed.
+    val reviewBookingId = session.myReview?.bookingId ?: session.reviewBookingId
+    val showReviewCard = reviewBookingId != null && (session.myReview != null || session.reviewPromptEligible)
 
     // Route the system back gesture through onClose so it plays the X's
     // push-down (popExit) on both platforms, not the platform interactive-pop.
     // Disabled while a sheet is up so back dismisses the sheet first.
-    BackHandler(enabled = !(sheetOpen || cancelSheetOpen || holdForConfirm)) { onClose() }
+    BackHandler(enabled = !(sheetOpen || cancelSheetOpen || holdForConfirm || instructorSheetOpen)) { onClose() }
 
     // Scrollable list under a sticky CTA. The LazyColumn pads its bottom by
     // ~140dp so the last content can scroll out from behind the CTA without
@@ -462,6 +485,17 @@ private fun SuccessBlock(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
             }
+            // Each feed hint sits under the thing it is about (class, instructor,
+            // location), and only when that thing has reviews of its own.
+            val classTypeKey = session.template.classTypeKey
+            if (session.classTypeReviewCount > 0 && classTypeKey != null) {
+                item("class-type-feedback") {
+                    val brandSlug = session.location.brand?.slug ?: studio.slug
+                    FeedbackHint(session.classTypeReviewCount, topGap = 4.dp) {
+                        onOpenFeedback(FeedbackScope.classType(brandSlug, classTypeKey, session.template.name), "class_detail")
+                    }
+                }
+            }
             item("summary") {
                 Spacer(Modifier.height(16.dp))
                 SummaryStrip(
@@ -486,6 +520,37 @@ private fun SuccessBlock(
                     InstructorRow(
                         name = instructor.name,
                         studioColor = sc,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        onClick = instructor.profileId?.let {
+                            {
+                                telemetry.instructorTapped(it, "class_detail")
+                                instructorSheetOpen = true
+                            }
+                        },
+                    )
+                    val profileId = instructor.profileId
+                    if (profileId != null && instructor.reviewCount > 0) {
+                        FeedbackHint(instructor.reviewCount, topGap = 12.dp) {
+                            onOpenFeedback(FeedbackScope.instructor(profileId, instructor.name), "class_detail")
+                        }
+                    }
+                }
+            }
+            if (showReviewCard) {
+                item("review") {
+                    Spacer(Modifier.height(24.dp))
+                    ReviewCard(
+                        bookingId = reviewBookingId!!,
+                        surface = "detail",
+                        initialReview = session.myReview,
+                        subjects = ReviewSubjects(
+                            instructor = session.instructors.firstOrNull()?.name,
+                            classType = session.myReview?.classType?.label ?: session.template.name,
+                            brand = session.location.brand?.name ?: studio.name,
+                        ),
+                        eyebrow = "Your feedback",
+                        onSaveFailed = reviewNotice::show,
+                        onDone = {},
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
                 }
@@ -540,13 +605,37 @@ private fun SuccessBlock(
                     studioColor = sc,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
+                // This location's feedback when it has any; while it has none, the
+                // brand's, so the way in does not vanish while reviews are few.
+                val brand = session.location.brand
+                when {
+                    session.locationReviewCount > 0 -> FeedbackHint(session.locationReviewCount, topGap = 12.dp) {
+                        val label = listOf(brand?.name ?: studio.name, session.location.name).filter { it.isNotBlank() }.joinToString(" · ")
+                        onOpenFeedback(FeedbackScope.location(session.location.id, label), "class_detail")
+                    }
+                    session.brandReviewCount > 0 && brand != null -> FeedbackHint(session.brandReviewCount, topGap = 12.dp) {
+                        onOpenFeedback(FeedbackScope.brand(brand.slug, brand.name), "class_detail")
+                    }
+                }
             }
         }
         }
+        // The review card stands where the CTA would, so its notice takes the CTA's place.
+        if (showReviewCard) {
+            ReviewSaveNoticeHost(
+                notice = reviewNotice,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(2f)
+                    .safeHorizontalPadding()
+                    .safeBottomBarPadding()
+                    .padding(bottom = 16.dp),
+            )
+        }
         // Sticky reserve CTA — pinned to bottom safe inset. Capped fade above
         // it so scrolling list content feathers out instead of butting hard
-        // against the pill.
-        if (!isCancelled) {
+        // against the pill. The review card takes its place on a completed booking.
+        if (!isCancelled && !showReviewCard) {
             val ctaLabel = classDetailCtaLabel(
                 isPast = isPast,
                 justBooked = submit is BookingSubmit.Booked,
@@ -623,6 +712,21 @@ private fun SuccessBlock(
         }
     }
 
+    if (instructorSheetOpen) {
+        val instructor = session.instructors.first()
+        InstructorSheet(
+            name = instructor.name,
+            bio = instructor.bio,
+            reviewCount = instructor.reviewCount,
+            onSeeFeedback = instructor.profileId?.let { profileId ->
+                {
+                    instructorSheetOpen = false
+                    onOpenFeedback(FeedbackScope.instructor(profileId, instructor.name), "instructor_sheet")
+                }
+            },
+            onDismiss = { instructorSheetOpen = false },
+        )
+    }
     if (sheetOpen || holdForConfirm) {
         // A failed attempt renders inside the sheet (replacing the confirm UI)
         // rather than as a top banner that collides with the camera punch-out.
@@ -880,17 +984,25 @@ private fun VerticalHairline() {
 // ── Instructor row ------------------------------------------------------------
 
 /** Single-instructor row with avatar circle (initials) and a "TAUGHT BY / NAME"
- *  block. Lineage and years are intentionally omitted — those fields don't
- *  exist on [org.arcana.mobile.data.InstructorBriefDto] today. Instructor
- *  profiles are a post-beta follow-up, so the row is non-interactive for now. */
+ *  block. Tappable once the row is linked to a profile: opens the instructor
+ *  sheet (bio, and what members said). */
 @Composable
 private fun InstructorRow(
     name: String,
     studioColor: Color,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
+    val source = remember { MutableInteractionSource() }
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) Modifier
+                    .pressable(source, pressedScale = 0.99f)
+                    .clickable(interactionSource = source, indication = null, onClick = onClick)
+                else Modifier
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -913,6 +1025,10 @@ private fun InstructorRow(
             Overline(text = "TAUGHT BY", size = 10, color = Charcoal)
             Spacer(Modifier.height(4.dp))
             Display(text = name, size = 18, color = Ink)
+        }
+        if (onClick != null) {
+            // decorative — the row is the control and the name labels it.
+            StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
         }
     }
 }
@@ -1036,6 +1152,19 @@ private fun CapacityPips(
 
 /** The class's location as an [AddressRow]: Pin avatar, "LOCATION" overline,
  *  name and address. Tapping opens the maps sheet. */
+/** "What members say · N": the way into a feed, placed under its subject. */
+@Composable
+private fun FeedbackHint(count: Int, topGap: Dp, onClick: () -> Unit) {
+    Spacer(Modifier.height(topGap))
+    TextLink(
+        label = whatMembersSayLabel(count),
+        onClick = onClick,
+        color = Moss,
+        underline = false,
+        modifier = Modifier.padding(horizontal = 24.dp),
+    )
+}
+
 @Composable
 private fun LocationRow(
     studioName: String,
