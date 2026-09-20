@@ -65,6 +65,9 @@ enum TelemetryBootstrap {
 
         let dsn = TelemetryKeys.sentryDsn
         if !dsn.isEmpty {
+            // A report SentryCrash failed to finish writing crash-loops the launch
+            // inside sentry-cocoa, so it has to be gone before the SDK reads it.
+            SentryReportPreflight.run()
             SentrySDK.start { options in
                 options.dsn = dsn
                 // Reports from every build on purpose, so alert rules scope on this.
