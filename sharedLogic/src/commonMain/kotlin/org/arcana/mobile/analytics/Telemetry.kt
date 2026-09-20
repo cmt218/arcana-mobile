@@ -490,6 +490,41 @@ class Telemetry(
     fun instructorTapped(profileId: Int, source: String) =
         track(Events.INSTRUCTOR_TAPPED, mapOf("profile_id" to profileId, "source" to source))
 
+    // ---- Reviews -----------------------------------------------------------
+
+    /** [surface]: home | past | detail. */
+    fun reviewPromptShown(surface: String, bookingId: Int) =
+        track(Events.REVIEW_PROMPT_SHOWN, mapOf("surface" to surface, "booking_id" to bookingId))
+
+    /** One PATCH landed. [step]: again | intensity | recommend | comment;
+     *  [scoresSet] counts the 1-to-5 answers given so far. */
+    fun reviewStepSaved(step: String, again: String, intensity: Int?, scoresSet: Int, hasComment: Boolean) =
+        track(
+            Events.REVIEW_STEP_SAVED,
+            mapOf(
+                "step" to step, "again" to again, "intensity" to intensity,
+                "scores_set" to scoresSet, "has_comment" to hasComment,
+            ),
+        )
+
+    /** "Not now" on the Home card. [surface] is always home today. */
+    fun reviewDismissed(surface: String) = track(Events.REVIEW_DISMISSED, mapOf("surface" to surface))
+
+    /** The card closed on Done after a new review; [steps] answered. */
+    fun reviewCompleted(durationMs: Long, steps: Int) =
+        track(Events.REVIEW_COMPLETED, mapOf("duration_ms" to durationMs, "steps" to steps))
+
+    fun reviewEdited() = track(Events.REVIEW_EDITED)
+
+    /** [scopeType]: all | brand | location | class_type | instructor;
+     *  [source]: discover | studio_page | studio_location | instructor_sheet | class_detail. */
+    fun feedbackFeedOpened(scopeType: String, source: String) =
+        track(Events.FEEDBACK_FEED_OPENED, mapOf("scope_type" to scopeType, "source" to source))
+
+    /** [target]: studio_page. */
+    fun feedbackItemTapped(scopeType: String, target: String) =
+        track(Events.FEEDBACK_ITEM_TAPPED, mapOf("scope_type" to scopeType, "target" to target))
+
     // ---- Favorites (broken down by studio & location) --------------------
 
     fun favoriteAdded(
@@ -666,6 +701,14 @@ class Telemetry(
         const val STUDIO_FAVORITE_TAPPED = "studio_favorite_tapped"
         const val INSTRUCTOR_TAPPED = "instructor_tapped"
 
+        const val REVIEW_PROMPT_SHOWN = "review_prompt_shown"
+        const val REVIEW_STEP_SAVED = "review_step_saved"
+        const val REVIEW_DISMISSED = "review_dismissed"
+        const val REVIEW_COMPLETED = "review_completed"
+        const val REVIEW_EDITED = "review_edited"
+        const val FEEDBACK_FEED_OPENED = "feedback_feed_opened"
+        const val FEEDBACK_ITEM_TAPPED = "feedback_item_tapped"
+
         const val CONCIERGE_SUBMITTED = "concierge_request_submitted"
         const val CONCIERGE_FAILED = "concierge_request_failed"
     }
@@ -679,6 +722,7 @@ class Telemetry(
         const val MY_BOOKINGS = "MyBookings"
         const val DISCOVER = "Discover"
         const val STUDIO_PAGE = "StudioPage"
+        const val FEEDBACK_FEED = "FeedbackFeed"
         const val CONCIERGE_REQUEST = "ConciergeRequest"
         const val EDIT_PROFILE = "EditProfile"
         const val CLASS_DETAIL = "ClassDetail"

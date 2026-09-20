@@ -34,6 +34,12 @@ import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.auth.SecureStorageDiagnostics
 import org.arcana.mobile.auth.TokenStorage
 import org.arcana.mobile.data.BookingDto
+import io.ktor.client.statement.HttpResponse
+import org.arcana.mobile.data.ReviewPromptDto
+import org.arcana.mobile.data.ReviewDto
+import org.arcana.mobile.data.FeedbackFeedDto
+import org.arcana.mobile.data.DismissReviewPromptResponse
+import org.arcana.mobile.data.CreateReviewRequest
 import org.arcana.mobile.data.CancelBookingResponse
 import org.arcana.mobile.data.CompleteSignupRequest
 import org.arcana.mobile.data.SignupProfile
@@ -121,7 +127,7 @@ class ArcanaApiClient(
     // bodyOrThrow, the lot) against MockEngine. Production passes nothing and
     // Ktor picks the platform engine off the classpath.
     engine: HttpClientEngine? = null,
-) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, SearchApi, ConciergeApi, ProfileApi, PasswordResetApi, DiscoverApi {
+) : BookingApi, MembershipApi, FavoritesApi, ScheduleApi, SearchApi, ConciergeApi, ProfileApi, PasswordResetApi, DiscoverApi, ReviewApi {
 
     private val _isAuthenticated = MutableStateFlow(tokenStorage.isLoggedIn)
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
@@ -538,6 +544,42 @@ class ArcanaApiClient(
 
     override suspend fun fetchStudioPage(brandSlug: String): StudioPageDto =
         client.get(v1("discover/studios/$brandSlug/")).bodyOrThrow()
+
+    override suspend fun createReview(bookingId: Int, again: String, promptSurface: String): ReviewDto {
+        val response = client.post(v1("bookings/$bookingId/review/")) {
+            contentType(ContentType.Application.Json)
+            setBody(CreateReviewRequest(again, promptSurface))
+        }
+        return reviewOrThrow(response)
+    }
+
+    override suspend fun updateReview(bookingId: Int, fields: JsonObject): ReviewDto {
+        val response = client.patch(v1("bookings/$bookingId/review/")) {
+            contentType(ContentType.Application.Json)
+            setBody(fields)
+        }
+        return reviewOrThrow(response)
+    }
+
+    // A named refusal (409 not_eligible, 404 review_not_found) beats the status;
+    // anything else routes through ApiHttpError so toErrorType() classifies it.
+    private suspend fun reviewOrThrow(response: HttpResponse): ReviewDto {
+        if (response.status == HttpStatusCode.Created || response.status == HttpStatusCode.OK) {
+            return response.body()
+        }
+        response.parsedErrorCode()?.let { throw ReviewError(it) }
+        throw ApiHttpError(response.status.value)
+    }
+
+    override suspend fun dismissReviewPrompt(bookingId: Int): ReviewPromptDto? =
+        client.post(v1("bookings/$bookingId/review/dismiss/")).bodyOrThrow<DismissReviewPromptResponse>().reviewPrompt
+
+    override suspend fun fetchFeedback(scopeType: String, scopeValue: String, cursor: String?, limit: Int): FeedbackFeedDto =
+        client.get(v1("reviews/")) {
+            if (scopeType != "all" && scopeValue.isNotBlank()) parameter(scopeType, scopeValue)
+            parameter("limit", limit)
+            if (cursor != null) parameter("cursor", cursor)
+        }.bodyOrThrow()
 
     override suspend fun myUpcoming(): MyUpcomingDto =
         client.get(v1("bookings/me/")) { parameter("scope", "upcoming") }.bodyOrThrow()

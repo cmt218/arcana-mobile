@@ -1,9 +1,14 @@
 package org.arcana.mobile.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,8 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +37,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -46,6 +56,7 @@ import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Moss
 import org.arcana.mobile.theme.Springs
 import org.arcana.mobile.theme.Stone
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.DrawableResource
 
 /** Brings a bare trailing slot up to the label's 24dp inset (Row adds 8dp). */
@@ -53,6 +64,8 @@ private val TRAILING_SLOT_END_INSET = 16.dp
 
 private val CTA_LABEL_SIZE = 14.sp
 private const val CTA_LABEL_TRACKING_EM = 0.14f
+// A save that lands sooner than this shows no progress at all.
+private const val BUSY_SWEEP_DELAY_MS = 220L
 
 /** Shared by [TextLink]'s style and its optical nudge, which is derived from the
  *  type size: separate literals would drift and silently un-centre the label. */
@@ -133,6 +146,103 @@ fun PrimaryCta(
             ) {
                 // decorative — the CTA's own label is the accessible name.
                 StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 18.dp, tint = Ink)
+            }
+        }
+    }
+}
+
+/**
+ * A [PrimaryCta] for an action that finishes in place (a save, not a move).
+ * Once [settled] it keeps its full look, reads [settledLabel] with a check
+ * popped into the well, and takes no taps until [settled] flips back. While
+ * [busy] outlasts a beat, a highlight sweeps the pill. It never greys: grey
+ * says "unavailable", this says "working" and then "done".
+ */
+@Composable
+fun SettlingCta(
+    label: String,
+    settledLabel: String,
+    settled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    busy: Boolean = false,
+) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(source)
+    val fill by animateColorAsState(
+        targetValue = if (pressed) Moss.pressedShade() else Moss,
+        animationSpec = tween(Dur.Quick),
+        label = "settlingFill",
+    )
+    val kick by animateDpAsState(
+        targetValue = if (pressed) 2.dp else 0.dp,
+        animationSpec = Springs.kick(),
+        label = "settlingKick",
+    )
+    // The slide-to-book knob's bump: up and back as the check lands.
+    val pop by animateFloatAsState(if (settled) 1f else 0f, Springs.Kick, label = "settledPop")
+    // Most saves land inside the delay and never show it.
+    var sweeping by remember { mutableStateOf(false) }
+    LaunchedEffect(busy) {
+        if (busy) delay(BUSY_SWEEP_DELAY_MS)
+        sweeping = busy
+    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            // Never keyed to [settled]: pressable restarts when its flag flips, and a
+            // flip mid-tap strands the pill scaled down.
+            .pressable(source)
+            .controlShadow(ArcanaShapes.Pill)
+            .clip(ArcanaShapes.Pill)
+            .background(fill)
+            .innerHighlight(ArcanaShapes.Pill)
+            .clickable(enabled = !settled && !busy, interactionSource = source, indication = null, onClick = onClick)
+            .semantics { if (settled) disabled() },
+    ) {
+        if (sweeping) SubmitSweep(Modifier.matchParentSize())
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            AnimatedContent(
+                targetState = settled,
+                // Out, then in: both labels start at the same edge, so an overlap reads as a smear.
+                transitionSpec = {
+                    fadeIn(tween(Dur.Short, delayMillis = Dur.Quick)) togetherWith fadeOut(tween(Dur.Quick)) using
+                        SizeTransform(clip = false)
+                },
+                contentAlignment = Alignment.CenterStart,
+                label = "settlingLabel",
+            ) { done ->
+                Text(
+                    text = (if (done) settledLabel else label).uppercase(),
+                    maxLines = 1,
+                    modifier = Modifier.opticallyCentredCaps(
+                        fontSize = CTA_LABEL_SIZE,
+                        letterSpacingEm = CTA_LABEL_TRACKING_EM,
+                    ),
+                    style = TextStyle(
+                        fontFamily = Arcana.fonts.display,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = CTA_LABEL_SIZE,
+                        letterSpacing = CTA_LABEL_TRACKING_EM.em,
+                        color = Stone,
+                    ),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(kick.roundToPx(), 0) }
+                    .graphicsLayer { val s = 1f + 0.18f * pop * (1f - pop) * 4f; scaleX = s; scaleY = s }
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Lime),
+                contentAlignment = Alignment.Center,
+            ) {
+                // decorative — the CTA's own label is the accessible name.
+                StrokeIcon(icon = if (settled) ArcanaIcons.Check else ArcanaIcons.ArrowRight, size = 18.dp, tint = Ink)
             }
         }
     }

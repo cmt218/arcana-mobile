@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,9 +35,14 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -220,23 +224,41 @@ fun RetryLink(
 
 // ---- Surfaces ----------------------------------------------------------------
 
-/** Cold-load failure, nothing cached. iOS: bottom-bounded by its own 44dp
- *  padding + trailing `weight(1f)` spacer so retry clears the floating tab
- *  bar — a caller must NOT also apply `LocalFloatingBarInset` here, or it double-pads. */
+private val FULL_SCREEN_MIN_TOP = 56.dp
+private val FULL_SCREEN_MIN_BOTTOM = 44.dp
+private val CHROME_GAP = 24.dp
+
+/**
+ * Cold-load failure, nothing cached. Centres in the box it is given, so give it
+ * the WHOLE screen and overlay any chrome (a close button, a title, a segmented
+ * control): stacked under chrome it centres in what is left and sits lower than
+ * the same error on Home. [topInset] is the bottom edge of that chrome
+ * ([chromeBottom]); the block stays centred on the screen and only drops when it
+ * would otherwise ride under it (landscape, a short phone, large type).
+ *
+ * iOS: bottom-bounded by its own 44dp so retry clears the floating tab bar; a
+ * caller must NOT also apply `LocalFloatingBarInset` here, or it double-pads.
+ */
 @Composable
 fun FullScreenError(
     type: ErrorType,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     retrying: Boolean = false,
+    topInset: Dp = 0.dp,
 ) {
     val copy = ErrorCopy.fullScreen(type)
-    // heightIn(min) + Arrangement.Center rather than weight(1f) spacers: weights
-    // cannot go negative, so a short viewport (landscape) clipped the retry
-    // button. Centres while there is room, scrolls once there isn't.
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val viewport = maxHeight
-        Column(
+        val viewport = constraints.maxHeight
+        val density = LocalDensity.current
+        val minTop = with(density) { maxOf(FULL_SCREEN_MIN_TOP, topInset + CHROME_GAP).roundToPx() }
+        val restTop = with(density) { FULL_SCREEN_MIN_TOP.roundToPx() }
+        val minBottom = with(density) { FULL_SCREEN_MIN_BOTTOM.roundToPx() }
+        // A Layout, not padding plus Arrangement.Center: top padding to clear chrome
+        // moves the centre down by half of it. Centres while there is room, scrolls
+        // once there isn't (weighted spacers clipped the retry button in landscape).
+        Layout(
+            content = { FullScreenErrorBlock(copy, type, onRetry, retrying) },
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
@@ -244,34 +266,54 @@ fun FullScreenError(
                 // while no glyph lands under a landscape cutout. Consumes, so it is
                 // a no-op where a caller already applied it.
                 .safeHorizontalPadding()
-                .heightIn(min = viewport)
-                .padding(start = 32.dp, end = 32.dp, top = 56.dp, bottom = 44.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-        Column(modifier = Modifier.widthIn(max = 252.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(accentFor(type)),
-                )
-                Spacer(Modifier.width(8.dp))
-                Overline(text = copy.overline, size = 12, color = overlineColorFor(type))
-            }
-            Spacer(Modifier.height(16.dp))
-            Heading2(text = copy.headline, size = 36, color = Ink)
-            Spacer(Modifier.height(16.dp))
-            BodyText(
-                text = copy.body,
-                size = 15,
-                color = Charcoal,
-                modifier = Modifier.widthIn(max = 232.dp),
+                .padding(horizontal = 32.dp),
+        ) { measurables, constraints ->
+            val block = measurables.single().measure(
+                constraints.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity),
             )
-            Spacer(Modifier.height(32.dp))
-            RetryButton(onClick = onRetry, retrying = retrying)
+            val centred = restTop + (viewport - restTop - minBottom - block.height) / 2
+            val top = maxOf(minTop, centred)
+            layout(constraints.maxWidth, maxOf(viewport, top + block.height + minBottom)) {
+                block.place(0, top)
+            }
         }
+    }
+}
+
+@Composable
+private fun FullScreenErrorBlock(copy: ErrorStateCopy, type: ErrorType, onRetry: () -> Unit, retrying: Boolean) {
+    Column(modifier = Modifier.widthIn(max = 252.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(accentFor(type)),
+            )
+            Spacer(Modifier.width(8.dp))
+            Overline(text = copy.overline, size = 12, color = overlineColorFor(type))
         }
+        Spacer(Modifier.height(16.dp))
+        Heading2(text = copy.headline, size = 36, color = Ink)
+        Spacer(Modifier.height(16.dp))
+        BodyText(
+            text = copy.body,
+            size = 15,
+            color = Charcoal,
+            modifier = Modifier.widthIn(max = 232.dp),
+        )
+        Spacer(Modifier.height(32.dp))
+        RetryButton(onClick = onRetry, retrying = retrying)
+    }
+}
+
+/** Reports this chrome's bottom edge from the top of the screen, for
+ *  [FullScreenError]'s `topInset`. */
+@Composable
+fun Modifier.chromeBottom(onBottom: (Dp) -> Unit): Modifier {
+    val density = LocalDensity.current
+    return onGloballyPositioned { coords ->
+        onBottom(with(density) { (coords.positionInRoot().y + coords.size.height).toDp() })
     }
 }
 

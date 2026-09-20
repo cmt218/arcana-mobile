@@ -22,6 +22,7 @@ data class DiscoverStudioDto(
 @Serializable
 data class DiscoverDirectoryDto(
     val studios: List<DiscoverStudioDto> = emptyList(),
+    val feedback: DiscoverFeedbackDto = DiscoverFeedbackDto(),
 )
 
 @Serializable
@@ -39,6 +40,7 @@ data class StudioPageLocationDto(
     val address: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
+    @SerialName("review_count") val reviewCount: Int = 0,
 )
 
 @Serializable
@@ -47,6 +49,7 @@ data class StudioClassTypeDto(
     val label: String,
     val description: String = "",
     val categories: List<String> = emptyList(),
+    @SerialName("review_count") val reviewCount: Int = 0,
 )
 
 @Serializable
@@ -55,6 +58,7 @@ data class StudioInstructorDto(
     val name: String,
     val bio: String = "",
     @SerialName("photo_url") val photoUrl: String = "",
+    @SerialName("review_count") val reviewCount: Int = 0,
 )
 
 /** `GET /api/v1/discover/studios/<slug>/`. `bio` already falls back to the
@@ -75,6 +79,7 @@ data class StudioPageDto(
     val instagram: String = "",
     val amenities: List<AmenityDto> = emptyList(),
     @SerialName("cancellation_cutoff_minutes") val cancellationCutoffMinutes: Int? = null,
+    @SerialName("review_count") val reviewCount: Int = 0,
     val locations: List<StudioPageLocationDto> = emptyList(),
     @SerialName("class_types") val classTypes: List<StudioClassTypeDto> = emptyList(),
     val instructors: List<StudioInstructorDto> = emptyList(),

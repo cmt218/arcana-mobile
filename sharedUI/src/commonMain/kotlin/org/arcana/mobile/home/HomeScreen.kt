@@ -49,8 +49,8 @@ import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Lime
-import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
+import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.theme.StoneAlpha65
@@ -75,6 +75,13 @@ import org.arcana.mobile.ui.StatusPill
 import org.arcana.mobile.ui.StatusPillFitted
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.schedule.ScheduleViewModel
+import org.arcana.mobile.review.classWithInstructor
+import org.arcana.mobile.review.reviewPromptEyebrow
+import org.arcana.mobile.review.ReviewSubjects
+import org.arcana.mobile.review.ReviewCard
+import org.arcana.mobile.review.ReviewSaveNoticeHost
+import org.arcana.mobile.review.rememberReviewSaveNotice
 import org.arcana.mobile.ui.TransientSurface
 import org.arcana.mobile.ui.cardShadow
 import org.arcana.mobile.ui.innerHighlight
@@ -114,6 +121,7 @@ fun HomeScreen(
     val refreshing by vm.isRefreshing.collectAsState()
     val retrying by vm.retrying.collectAsState()
     val refreshFailed by vm.refreshFailed.collectAsState()
+    val reviewNotice = rememberReviewSaveNotice()
 
     val tz = remember { TimeZone.currentSystemDefault() }
     val today = remember(tz) { Clock.System.todayIn(tz) }
@@ -267,6 +275,27 @@ fun HomeScreen(
                     }
                 }
 
+                // ── Review prompt (spec 5.4): at most one card, under Next up ──
+                s.reviewPrompt?.let { prompt ->
+                    item(key = "review-${prompt.bookingId}") {
+                        Spacer(Modifier.height(24.dp))
+                        val today = remember { Clock.System.todayIn(ScheduleViewModel.ScheduleTimeZone) }
+                        ReviewCard(
+                            bookingId = prompt.bookingId,
+                            surface = "home",
+                            initialReview = null,
+                            subjects = ReviewSubjects(prompt.instructor?.name, prompt.classType.label, prompt.brand.name),
+                            eyebrow = reviewPromptEyebrow(prompt, today),
+                            title = classWithInstructor(prompt.classType.label, prompt.instructor?.name),
+                            onStarted = { vm.reviewStarted() },
+                            onSaveFailed = reviewNotice::show,
+                            onDone = vm::clearReviewPrompt,
+                            onNotNow = vm::dismissReviewPrompt,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    }
+                }
+
                 item { Spacer(Modifier.height(32.dp)) }
 
                 // ── Upcoming preview rows (items after the hero) ──────────────
@@ -328,6 +357,13 @@ fun HomeScreen(
         }
     }
     }
+    ReviewSaveNoticeHost(
+        notice = reviewNotice,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .safeHorizontalPadding()
+            .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+    )
     TransientSurface(
         visible = refreshFailed,
         modifier = Modifier
@@ -624,7 +660,7 @@ private fun UpcomingRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Overline(text = dayLabel, size = 10, color = Moss)
-                Box(Modifier.weight(1f).height(1.dp).background(Mist))
+                Box(Modifier.weight(1f).height(1.dp).background(MossLight))
             }
         }
         Row(
@@ -659,7 +695,7 @@ private fun UpcomingRow(
                     Overline(text = durationStr, size = 10, color = Charcoal)
                 }
             }
-            Box(Modifier.width(1.dp).height(40.dp).background(Mist))
+            Box(Modifier.width(1.dp).height(40.dp).background(MossLight))
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -696,7 +732,7 @@ private fun UpcomingRow(
         // Bottom hairline between rows of the same day; suppressed on a day's
         // last row so the next day header's rule is the only separator.
         if (showBottomDivider) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Mist))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(MossLight))
         }
     }
 }

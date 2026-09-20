@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
@@ -41,10 +42,14 @@ import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioLocationRow
 import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.data.DiscoverFeedbackDto
 import org.arcana.mobile.ui.TransientSurface
 import org.arcana.mobile.ui.filterPanelEnter
 import org.arcana.mobile.ui.filterPanelExit
+import org.arcana.mobile.schedule.JumpToTop
+import org.arcana.mobile.ui.chromeBottom
 import org.arcana.mobile.ui.pressable
+import org.arcana.mobile.ui.tonalWell
 import org.arcana.mobile.ui.rememberHaptics
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
@@ -59,7 +64,7 @@ private const val POPOVER_HEIGHT_FRACTION = 0.62f
 
 /** The Discover tab: every studio, A to Z, narrowed by modality and neighborhood. */
 @Composable
-fun DiscoverScreen(onOpenStudio: (String) -> Unit) {
+fun DiscoverScreen(onOpenStudio: (String) -> Unit, onOpenFeedback: () -> Unit = {}) {
     val vm = koinViewModel<DiscoverViewModel>()
     LaunchedEffect(Unit) { vm.onOpened() }
     val state by vm.uiState.collectAsState()
@@ -69,14 +74,22 @@ fun DiscoverScreen(onOpenStudio: (String) -> Unit) {
     var expandedSection by remember { mutableStateOf("") }
     val haptics = rememberHaptics()
 
+    var headerBottom by remember { mutableStateOf(0.dp) }
     Box(modifier = Modifier.fillMaxSize()) {
         Atmosphere()
+        // Under the title, on the whole screen (as on Home and Book): see FullScreenError.
+        (state as? DiscoverUiState.Error)?.let {
+            FullScreenError(type = it.type, onRetry = vm::retry, retrying = retrying, topInset = headerBottom)
+        }
         Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
-            Heading2("Discover", size = 26, color = Wood, modifier = Modifier.padding(horizontal = 24.dp).padding(top = 16.dp))
+            Heading2(
+                "Discover", size = 26, color = Wood,
+                modifier = Modifier.padding(horizontal = 24.dp).padding(top = 16.dp).chromeBottom { headerBottom = it },
+            )
             Spacer(Modifier.height(16.dp))
             when (val s = state) {
                 DiscoverUiState.Loading -> SkeletonList()
-                is DiscoverUiState.Error -> FullScreenError(type = s.type, onRetry = vm::retry, retrying = retrying)
+                is DiscoverUiState.Error -> Unit // drawn full screen above
                 is DiscoverUiState.Success -> {
                     FilterControls(
                         state = s,
@@ -93,7 +106,12 @@ fun DiscoverScreen(onOpenStudio: (String) -> Unit) {
                             onRefresh = vm::refresh,
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            StudioList(state = s, onOpenStudio = onOpenStudio, onClearFilters = vm::clearFilters)
+                            StudioList(
+                                state = s,
+                                onOpenStudio = onOpenStudio,
+                                onOpenFeedback = onOpenFeedback,
+                                onClearFilters = vm::clearFilters,
+                            )
                         }
                         FilterPopover(
                             state = s,
@@ -247,6 +265,7 @@ private fun BoxScope.FilterPopover(
 private fun StudioList(
     state: DiscoverUiState.Success,
     onOpenStudio: (String) -> Unit,
+    onOpenFeedback: () -> Unit,
     onClearFilters: () -> Unit,
 ) {
     val dim by animateFloatAsState(
@@ -254,7 +273,10 @@ private fun StudioList(
         animationSpec = tween(Dur.Short),
         label = "discoverDim",
     )
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = dim },
         contentPadding = PaddingValues(bottom = 24.dp + LocalFloatingBarInset.current),
     ) {
@@ -271,8 +293,49 @@ private fun StudioList(
             }
             return@LazyColumn
         }
+        // Once any review exists, the latest comment leads the list
+        // and opens the unscoped feed.
+        if (state.feedback.reviewCount > 0) {
+            item(key = "member-feedback") {
+                MemberFeedbackRow(feedback = state.feedback, onClick = onOpenFeedback)
+            }
+        }
         items(state.studios, key = { it.slug }) { studio ->
             StudioCard(studio = studio, onClick = { onOpenStudio(studio.slug) })
+        }
+    }
+    JumpToTop(listState)
+    }
+}
+
+@Composable
+private fun MemberFeedbackRow(feedback: DiscoverFeedbackDto, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val latest = feedback.latest
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 8.dp)
+            .pressable(source, pressedScale = 0.99f)
+            .tonalWell()
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Overline(text = "Member feedback", size = 10, color = Moss, modifier = Modifier.weight(1f))
+            Caption(
+                text = if (feedback.reviewCount == 1) "1 review" else "${feedback.reviewCount} reviews",
+                size = 12, color = Charcoal,
+            )
+            Spacer(Modifier.width(8.dp))
+            StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 14.dp, tint = Moss) // decorative
+        }
+        if (latest != null) {
+            Spacer(Modifier.height(8.dp))
+            BodyText(text = latest.comment, size = 14, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Caption(text = "${latest.classType.label} at ${latest.brand.name}", size = 12, color = Charcoal, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

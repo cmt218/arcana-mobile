@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.arcana.mobile.theme.Arcana
@@ -50,6 +52,9 @@ import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Moss
+
+private val FIELD_TEXT_SIZE = 18.sp
+private val HINT_SIZE = 14.sp
 
 /**
  * Hairline-underline text field — the design's gateway input. No boxed fill:
@@ -226,13 +231,18 @@ fun ArcanaMultilineTextField(
     placeholder: String = "",
     minLines: Int = 4,
     maxLines: Int = 8,
+    /** Label, hairline and counter at rest. Charcoal on a tinted surface, where Ash fades. */
+    idleColor: Color = Ash,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val accent = if (focused) Moss else Ash
+    val accent = if (focused) Moss else idleColor
+    // A field that starts at one line is its own rule line: the hint reads as a
+    // hint (smaller than what gets typed) and sits on the rule, not above it.
+    val growsFromOneLine = minLines == 1
 
     Column(modifier = modifier) {
-        Overline(text = label, color = if (focused) Moss else Ash)
+        Overline(text = label, color = accent)
         Spacer(Modifier.height(12.dp))
         BasicTextField(
             // Enforce the cap at the edit boundary; truncate so a long paste
@@ -257,9 +267,12 @@ fun ArcanaMultilineTextField(
             ),
             decorationBox = { inner ->
                 Column {
-                    Box(modifier = Modifier.padding(bottom = 12.dp)) {
+                    Box(
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        contentAlignment = if (growsFromOneLine) Alignment.BottomStart else Alignment.TopStart,
+                    ) {
                         if (value.isEmpty() && placeholder.isNotEmpty()) {
-                            BodyTextPlaceholder(placeholder)
+                            BodyTextPlaceholder(placeholder, size = if (growsFromOneLine) HINT_SIZE else FIELD_TEXT_SIZE)
                         }
                         inner()
                     }
@@ -274,7 +287,7 @@ fun ArcanaMultilineTextField(
         )
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Overline(text = "${value.length}/$maxLength", size = 10, color = Ash)
+            Overline(text = "${value.length}/$maxLength", size = 10, color = idleColor)
         }
     }
 }
@@ -371,13 +384,13 @@ fun ArcanaDropdownField(
 }
 
 @Composable
-private fun BodyTextPlaceholder(text: String) {
+private fun BodyTextPlaceholder(text: String, size: TextUnit = FIELD_TEXT_SIZE) {
     androidx.compose.material3.Text(
         text = text,
         style = TextStyle(
             fontFamily = Arcana.fonts.body,
             fontWeight = FontWeight.Normal,
-            fontSize = 18.sp,
+            fontSize = size,
             // Charcoal: the placeholder has to clear the atmosphere while still
             // reading as a placeholder against Ink input text.
             color = Charcoal,

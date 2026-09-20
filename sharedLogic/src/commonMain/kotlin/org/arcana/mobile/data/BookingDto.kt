@@ -57,8 +57,13 @@ data class BookingDto(
     // "studio" when the studio cancelled the class; "" otherwise. Only the
     // scoped upcoming list surfaces studio-cancelled rows.
     @SerialName("cancelled_by") val cancelledBy: String = "",
+    // none | reviewed_here | reviewed_elsewhere | ineligible. "none" means
+    // this booking can take a review and its combination has none yet.
+    @SerialName("review_state") val reviewState: String = "ineligible",
 ) {
     val cancelledByStudio: Boolean get() = status == "cancelled" && cancelledBy == "studio"
+    val canReview: Boolean get() = reviewState == "none"
+    val reviewed: Boolean get() = reviewState == "reviewed_here" || reviewState == "reviewed_elsewhere"
 }
 
 @Serializable
@@ -72,6 +77,7 @@ data class MyBookingsDto(
 @Serializable
 data class MyUpcomingDto(
     val upcoming: List<BookingDto>,
+    @SerialName("review_prompt") val reviewPrompt: ReviewPromptDto? = null,
 )
 
 /** `GET bookings/me/?scope=past`: one keyset page, newest first. */

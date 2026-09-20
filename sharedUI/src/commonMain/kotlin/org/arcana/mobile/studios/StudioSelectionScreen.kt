@@ -76,6 +76,19 @@ fun StudioSelectionScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         Atmosphere()
+        // The loader and the cold failure centre on the WHOLE screen, under the
+        // close button: stacked below it they sat lower than on every other screen.
+        when (val s = state) {
+            is StudioSelectionUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                DotMatrixLoader()
+            }
+            is StudioSelectionUiState.Error -> FullScreenError(
+                type = s.type,
+                onRetry = viewModel::retry,
+                retrying = retrying,
+            )
+            is StudioSelectionUiState.Ready -> Unit
+        }
         Column(
             modifier = Modifier.fillMaxSize().safeContentPadding(),
         ) {
@@ -98,24 +111,7 @@ fun StudioSelectionScreen(
                 )
             }
 
-            when (val s = state) {
-                is StudioSelectionUiState.Loading -> Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    DotMatrixLoader()
-                }
-                is StudioSelectionUiState.Error -> FullScreenError(
-                    type = s.type,
-                    onRetry = viewModel::retry,
-                    retrying = retrying,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                )
-                is StudioSelectionUiState.Ready -> ReadyContent(
-                    state = s,
-                    viewModel = viewModel,
-                )
-            }
+            (state as? StudioSelectionUiState.Ready)?.let { ReadyContent(state = it, viewModel = viewModel) }
         }
 
         // Sticky CTA over the atmosphere — no scrim (a Stone fade read as a white

@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -43,6 +46,7 @@ import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
+import org.arcana.mobile.ui.SettlingCta
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.safeBottomBarPadding
 import org.arcana.mobile.ui.safeContentPadding
@@ -61,6 +65,8 @@ fun ConciergeRequestScreen(
     val vm = koinViewModel<ConciergeRequestViewModel>()
     val message by vm.message.collectAsState()
     val submit by vm.submitState.collectAsState()
+    val messageFocus = remember { FocusRequester() }
+    val focus = LocalFocusManager.current
 
     if (submit is ConciergeSubmit.Sent) {
         SentConfirmation(onClose = onClose, modifier = modifier)
@@ -100,13 +106,18 @@ fun ConciergeRequestScreen(
         )
 
         Spacer(Modifier.height(28.dp))
+        // One line with the words on the rule, growing to three, then scrolling:
+        // the same field as a review's comment.
         ArcanaMultilineTextField(
             label = "Your message",
             value = message,
             onValueChange = vm::updateMessage,
             maxLength = ConciergeRequestViewModel.MESSAGE_MAX_LENGTH,
-            placeholder = "What would you like to get in touch about?",
-            modifier = Modifier.fillMaxWidth(),
+            placeholder = "What's going on?",
+            minLines = 1,
+            maxLines = 3,
+            idleColor = Charcoal,
+            modifier = Modifier.fillMaxWidth().focusRequester(messageFocus),
         )
 
         val failed = submit as? ConciergeSubmit.Failed
@@ -122,15 +133,22 @@ fun ConciergeRequestScreen(
         }
 
         Spacer(Modifier.height(28.dp))
-        if (submit is ConciergeSubmit.Submitting) {
-            LoadingPill()
-        } else {
-            PrimaryCta(
-                label = "Send",
-                onClick = vm::submit,
-                enabled = vm.canSubmit,
-            )
-        }
+        // Always Moss, never greyed: with nothing written a tap goes to the field,
+        // and a slow send sweeps the pill instead of swapping it for a spinner.
+        SettlingCta(
+            label = "Send",
+            settledLabel = "Sent",
+            settled = false,
+            busy = submit is ConciergeSubmit.Submitting,
+            onClick = {
+                if (message.isBlank()) {
+                    messageFocus.requestFocus()
+                } else {
+                    focus.clearFocus()
+                    vm.submit()
+                }
+            },
+        )
     }
     }
 }
@@ -188,24 +206,5 @@ private fun SentConfirmation(onClose: () -> Unit, modifier: Modifier = Modifier)
         Spacer(Modifier.weight(1f))
         PrimaryCta(label = "Done", onClick = onClose)
     }
-    }
-}
-
-/** Moss pill + Lime spinner — the in-flight CTA treatment (mirrors signup). */
-@Composable
-private fun LoadingPill() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(CircleShape)
-            .background(Moss),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator(
-            color = Lime,
-            strokeWidth = 2.dp,
-            modifier = Modifier.size(24.dp),
-        )
     }
 }

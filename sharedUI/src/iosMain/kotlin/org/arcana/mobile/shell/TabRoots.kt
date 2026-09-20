@@ -34,6 +34,10 @@ import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.booking.MyBookingsScreen
 import org.arcana.mobile.discover.DiscoverScreen
 import org.arcana.mobile.discover.StudioPageScreen
+import androidx.navigation.NavGraphBuilder
+import org.arcana.mobile.feedbackRoute
+import org.arcana.mobile.review.FeedbackScope
+import org.arcana.mobile.review.FeedbackFeedScreen
 import org.arcana.mobile.concierge.ConciergeRequestScreen
 import org.arcana.mobile.currentScreenName
 import org.arcana.mobile.home.HomeScreen
@@ -80,8 +84,13 @@ fun HomeTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
             }
             composable<ArcanaDestination.ClassDetail> { entry ->
                 val args = entry.toRoute<ArcanaDestination.ClassDetail>()
-                ClassDetailScreen(sessionId = args.id, onClose = { nav.popBackStack() })
+                ClassDetailScreen(
+                    sessionId = args.id,
+                    onClose = { nav.popBackStack() },
+                    onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+                )
             }
+            feedbackDestinations(nav)
         }
     }
 
@@ -134,8 +143,13 @@ fun ScheduleTabViewController(onRootChanged: (Boolean) -> Unit): UIViewControlle
             }
             composable<ArcanaDestination.ClassDetail> { entry ->
                 val args = entry.toRoute<ArcanaDestination.ClassDetail>()
-                ClassDetailScreen(sessionId = args.id, onClose = { nav.popBackStack() })
+                ClassDetailScreen(
+                    sessionId = args.id,
+                    onClose = { nav.popBackStack() },
+                    onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+                )
             }
+            feedbackDestinations(nav)
             composable<ArcanaDestination.StudioSelection> {
                 StudioSelectionScreen(onClose = { nav.popBackStack() })
             }
@@ -146,18 +160,12 @@ fun DiscoverTabViewController(onRootChanged: (Boolean) -> Unit): UIViewControlle
     shellHostingController {
         TabRoot(ArcanaDestination.Discover, onRootChanged) { nav ->
             composable<ArcanaDestination.Discover> {
-                DiscoverScreen(onOpenStudio = { slug -> nav.navigate(ArcanaDestination.StudioPage(slug)) })
-            }
-            composable<ArcanaDestination.StudioPage> { entry ->
-                val args = entry.toRoute<ArcanaDestination.StudioPage>()
-                StudioPageScreen(
-                    brandSlug = args.brandSlug,
-                    source = args.source,
-                    onClose = { nav.popBackStack() },
-                    // The page stays on this tab's stack; the shell just shows Book.
-                    onSeeSchedule = { IosShellBridge.requestTab("schedule") },
+                DiscoverScreen(
+                    onOpenStudio = { slug -> nav.navigate(ArcanaDestination.StudioPage(slug)) },
+                    onOpenFeedback = { nav.navigate(feedbackRoute(FeedbackScope.All, "discover")) },
                 )
             }
+            feedbackDestinations(nav)
         }
     }
 
@@ -177,8 +185,13 @@ fun ProfileTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController
             }
             composable<ArcanaDestination.ClassDetail> { entry ->
                 val args = entry.toRoute<ArcanaDestination.ClassDetail>()
-                ClassDetailScreen(sessionId = args.id, onClose = { nav.popBackStack() })
+                ClassDetailScreen(
+                    sessionId = args.id,
+                    onClose = { nav.popBackStack() },
+                    onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+                )
             }
+            feedbackDestinations(nav)
             composable<ArcanaDestination.StudioSelection> {
                 StudioSelectionScreen(onClose = { nav.popBackStack() })
             }
@@ -190,6 +203,34 @@ fun ProfileTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController
             }
         }
     }
+
+/** The feed and the studio page, reachable from every tab: class detail links
+ *  to a class type's feedback, a feed item opens its studio page. The studio
+ *  page stays on the current tab's stack; "See schedule" just shows Book. */
+private fun NavGraphBuilder.feedbackDestinations(nav: NavHostController) {
+    composable<ArcanaDestination.FeedbackFeed> { entry ->
+        val args = entry.toRoute<ArcanaDestination.FeedbackFeed>()
+        FeedbackFeedScreen(
+            scopeType = args.scopeType,
+            scopeValue = args.scopeValue,
+            label = args.label,
+            source = args.source,
+            onClose = { nav.popBackStack() },
+            onOpenStudio = { slug -> nav.navigate(ArcanaDestination.StudioPage(slug, source = "feed")) },
+            onOpenFeed = { scope -> nav.navigate(feedbackRoute(scope, source = "feed")) },
+        )
+    }
+    composable<ArcanaDestination.StudioPage> { entry ->
+        val args = entry.toRoute<ArcanaDestination.StudioPage>()
+        StudioPageScreen(
+            brandSlug = args.brandSlug,
+            source = args.source,
+            onClose = { nav.popBackStack() },
+            onSeeSchedule = { IosShellBridge.requestTab("schedule") },
+            onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+        )
+    }
+}
 
 /** Reservations inside a tab's own NavHost. "Book a class" pops back to the
  *  tab root, then asks the native shell to select the Book tab. */

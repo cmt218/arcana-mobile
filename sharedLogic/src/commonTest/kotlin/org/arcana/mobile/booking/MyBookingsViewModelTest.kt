@@ -195,4 +195,65 @@ class MyBookingsViewModelTest {
         assertNull(vm.cancelTarget.value)
         assertEquals(CancelState.Idle, vm.cancelState.value)
     }
+
+    // ---- The review card on past rows (spec 5.4) -----------------------------
+    // The card owns the requests (ReviewViewModel). This view model only keeps
+    // the list honest around it: which row has its card open, and which rows
+    // of the same combination no longer need asking.
+
+    private fun pastRow(id: Int, key: String = "sculpt-50", profileId: Int? = 7, state: String = "none") = BookingDto(
+        id = id, status = "completed", spot = null,
+        session = SessionBriefDto(
+            id, "2026-07-07T10:00:00Z", "2026-07-07T10:50:00Z", "Sculpt 50", "Soto Method",
+            brandSlug = "soto-method", classTypeKey = key, instructorProfileId = profileId,
+        ),
+        cancelPolicy = CancelPolicyDto(false, null),
+        reviewState = state,
+    )
+
+    private fun states(vm: MyBookingsViewModel) =
+        (vm.past.value as PastUiState.Success).bookings.associate { it.id to it.reviewState }
+
+    @Test fun `a started review keeps its row open and closes its combination`() = runTest {
+        val api = FakeApi(pastPages = { MyPastDto(listOf(pastRow(9), pastRow(8), pastRow(7, key = "flow"), pastRow(6, state = "ineligible")), null) })
+        val vm = MyBookingsViewModel(api)
+        vm.selectSegment(ReservationSegment.Past)
+        vm.reviewStarted(pastRow(9), org.arcana.mobile.review.review(id = 1, bookingId = 9))
+        // Row 9 still reads "none": its card is mid flow and must not collapse
+        // into "Reviewed" until the member closes it.
+        assertEquals(mapOf(9 to "none", 8 to "reviewed_elsewhere", 7 to "none", 6 to "ineligible"), states(vm))
+        assertEquals(setOf(9), vm.openReviews.value)
+    }
+
+    @Test fun `closing the card marks the row reviewed`() = runTest {
+        val api = FakeApi(pastPages = { MyPastDto(listOf(pastRow(9), pastRow(8)), null) })
+        val vm = MyBookingsViewModel(api)
+        vm.selectSegment(ReservationSegment.Past)
+        vm.reviewStarted(pastRow(9), org.arcana.mobile.review.review(id = 1, bookingId = 9))
+        vm.reviewFinished(9)
+        assertEquals(mapOf(9 to "reviewed_here", 8 to "reviewed_elsewhere"), states(vm))
+        assertTrue(vm.openReviews.value.isEmpty())
+    }
+
+    @Test fun `a review that lands on another booking marks that one as the carrier`() = runTest {
+        val api = FakeApi(pastPages = { MyPastDto(listOf(pastRow(9), pastRow(8)), null) })
+        val vm = MyBookingsViewModel(api)
+        vm.selectSegment(ReservationSegment.Past)
+        vm.reviewStarted(pastRow(9), org.arcana.mobile.review.review(id = 1, bookingId = 8))
+        assertEquals(mapOf(9 to "none", 8 to "reviewed_here"), states(vm))
+    }
+
+    @Test fun `a refresh mid flow keeps the card open`() = runTest {
+        var reviewed = false
+        val api = FakeApi(pastPages = { MyPastDto(listOf(pastRow(9, state = if (reviewed) "reviewed_here" else "none")), null) })
+        val vm = MyBookingsViewModel(api)
+        vm.selectSegment(ReservationSegment.Past)
+        vm.reviewStarted(pastRow(9), org.arcana.mobile.review.review(id = 1, bookingId = 9))
+        reviewed = true
+        vm.refresh()
+        assertEquals(mapOf(9 to "reviewed_here"), states(vm))
+        assertEquals(setOf(9), vm.openReviews.value)
+        vm.reviewFinished(9)
+        assertTrue(vm.openReviews.value.isEmpty())
+    }
 }

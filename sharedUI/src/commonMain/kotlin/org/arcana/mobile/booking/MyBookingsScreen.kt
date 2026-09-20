@@ -21,8 +21,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.time.Clock
 import kotlinx.datetime.todayIn
 import org.arcana.mobile.data.BookingDto
-import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.schedule.LOAD_MORE_LOOKAHEAD
+import org.arcana.mobile.schedule.JumpToTop
 import org.arcana.mobile.schedule.ScheduleViewModel
 import org.arcana.mobile.schedule.wallClock
 import org.arcana.mobile.theme.*
@@ -34,6 +34,7 @@ import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.ErrorCopy
 import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.FullScreenError
+import org.arcana.mobile.ui.chromeBottom
 import org.arcana.mobile.ui.GhostCta
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
@@ -43,6 +44,12 @@ import org.arcana.mobile.ui.SegmentedControl
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StatusPill
 import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.data.ReviewDto
+import org.arcana.mobile.review.ReviewCard
+import org.arcana.mobile.review.ReviewCardStyle
+import org.arcana.mobile.review.ReviewSaveNoticeHost
+import org.arcana.mobile.review.ReviewSubjects
+import org.arcana.mobile.review.rememberReviewSaveNotice
 import org.arcana.mobile.ui.TransientSurface
 import org.arcana.mobile.ui.pressable
 import org.arcana.mobile.ui.recedeBehindSheet
@@ -55,6 +62,7 @@ private const val EMPTY_UPCOMING_TITLE = "Nothing reserved yet."
 private const val EMPTY_UPCOMING_BODY = "Your week is open."
 private const val EMPTY_PAST = "Your first class will show here."
 private const val BOOK_A_CLASS = "Book a class"
+private const val REVIEWED = "Reviewed"
 
 /** Reservations: Upcoming and Past segments. The route is still `MyBookings`. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +86,8 @@ fun MyBookingsScreen(
     val retrying by vm.retrying.collectAsState()
     val cancelTarget by vm.cancelTarget.collectAsState()
     val cancelState by vm.cancelState.collectAsState()
+    val openReviews by vm.openReviews.collectAsState()
+    val reviewNotice = rememberReviewSaveNotice()
     val haptics = rememberHaptics()
 
     BackHandler(enabled = cancelTarget == null) { onClose() }
@@ -85,14 +95,26 @@ fun MyBookingsScreen(
     // Off the sheet's target, not the VM value, so the page tracks the sheet down.
     val cancelReceding = cancelTarget != null && cancelSheetState.targetValue != SheetValue.Hidden
 
+    // A cold failure of the segment on screen. It is drawn UNDER the header on the
+    // whole screen, not in the list below it: see FullScreenError.
+    val coldError = when (segment) {
+        ReservationSegment.Upcoming -> (upcoming as? UpcomingUiState.Error)?.type
+        ReservationSegment.Past -> (past as? PastUiState.Error)?.type
+    }
+    var headerBottom by remember { mutableStateOf(0.dp) }
+
     Box(modifier = Modifier.fillMaxSize().recedeBehindSheet(open = cancelReceding)) {
         Atmosphere()
+        coldError?.let {
+            FullScreenError(type = it, onRetry = vm::retry, retrying = retrying, topInset = headerBottom)
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .safeContentPadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
+            Column(modifier = Modifier.chromeBottom { headerBottom = it }) {
             IconCircle(
                 icon = ArcanaIcons.Close,
                 diameter = 38,
@@ -117,6 +139,8 @@ fun MyBookingsScreen(
                     }
                 },
             )
+            }
+            if (coldError == null) {
             Spacer(Modifier.height(8.dp))
             ArcanaPullToRefreshBox(
                 isRefreshing = isRefreshing,
@@ -126,23 +150,31 @@ fun MyBookingsScreen(
                 when (segment) {
                     ReservationSegment.Upcoming -> UpcomingList(
                         state = upcoming,
-                        retrying = retrying,
-                        onRetry = vm::retry,
                         onOpenClass = onOpenClass,
                         onCancel = vm::openCancel,
                         onBookClass = onBookClass,
                     )
                     ReservationSegment.Past -> PastList(
                         state = past,
-                        retrying = retrying,
-                        onRetry = vm::retry,
+                        openReviews = openReviews,
+                        onReviewStarted = vm::reviewStarted,
+                        onReviewFinished = vm::reviewFinished,
+                        onReviewSaveFailed = reviewNotice::show,
                         onOpenClass = onOpenClass,
                         onLoadMore = vm::loadMore,
                         onRetryPage = vm::retryLoadMore,
                     )
                 }
             }
+            }
         }
+        ReviewSaveNoticeHost(
+            notice = reviewNotice,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .safeHorizontalPadding()
+                .padding(bottom = 16.dp),
+        )
         TransientSurface(
             visible = refreshFailed,
             modifier = Modifier
@@ -179,15 +211,15 @@ fun MyBookingsScreen(
 @Composable
 private fun UpcomingList(
     state: UpcomingUiState,
-    retrying: Boolean,
-    onRetry: () -> Unit,
     onOpenClass: (Int) -> Unit,
     onCancel: (BookingDto) -> Unit,
     onBookClass: () -> Unit,
 ) {
     when (state) {
         UpcomingUiState.Loading -> SkeletonList()
-        is UpcomingUiState.Error -> ErrorList(state.type, retrying, onRetry)
+        // Unreachable: the screen draws a cold failure full screen and does not
+        // compose this list. Explicit so a new state still fails to compile.
+        is UpcomingUiState.Error -> Unit
         is UpcomingUiState.Success -> {
             val today = remember { Clock.System.todayIn(ScheduleViewModel.ScheduleTimeZone) }
             val groups = remember(state.bookings) { groupReservationsByDay(state.bookings, today) }
@@ -222,15 +254,17 @@ private fun UpcomingList(
 @Composable
 private fun PastList(
     state: PastUiState,
-    retrying: Boolean,
-    onRetry: () -> Unit,
+    openReviews: Set<Int>,
+    onReviewStarted: (BookingDto, ReviewDto) -> Unit,
+    onReviewFinished: (Int) -> Unit,
+    onReviewSaveFailed: (String) -> Unit,
     onOpenClass: (Int) -> Unit,
     onLoadMore: () -> Unit,
     onRetryPage: () -> Unit,
 ) {
     when (state) {
         PastUiState.Loading -> SkeletonList()
-        is PastUiState.Error -> ErrorList(state.type, retrying, onRetry)
+        is PastUiState.Error -> Unit // unreachable, as in UpcomingList
         is PastUiState.Success -> {
             val listState = rememberLazyListState()
             val loadMore by rememberUpdatedState(onLoadMore)
@@ -244,6 +278,7 @@ private fun PastList(
                         if (lastVisible != null && lastVisible >= totalCount - LOAD_MORE_LOOKAHEAD) loadMore()
                     }
             }
+            Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = listPadding()) {
                 if (state.bookings.isEmpty()) {
                     item { EmptyState(title = EMPTY_PAST) }
@@ -251,6 +286,22 @@ private fun PastList(
                 }
                 items(state.bookings, key = { "b-${it.id}" }) { b ->
                     ReservationRow(b = b, onCancel = null, onClick = { onOpenClass(b.session.id) })
+                    // The same card as Home, inline (spec 5.4): it stays open until the
+                    // member closes it; a reviewed combination says so and nothing else.
+                    when {
+                        b.canReview || b.id in openReviews -> ReviewCard(
+                            bookingId = b.id,
+                            surface = "past",
+                            initialReview = null,
+                            subjects = ReviewSubjects(b.session.instructor, b.session.name, b.session.studio),
+                            style = ReviewCardStyle.Inline,
+                            onStarted = { onReviewStarted(b, it) },
+                            onSaveFailed = onReviewSaveFailed,
+                            onDone = { onReviewFinished(b.id) },
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
+                        b.reviewed -> Caption(REVIEWED, size = 12, color = Moss, modifier = Modifier.padding(bottom = 8.dp))
+                    }
                 }
                 if (state.loadingMore) {
                     item(key = "more") { SkeletonRow() }
@@ -260,6 +311,8 @@ private fun PastList(
                         InlineError(type = type, onRetry = onRetryPage, modifier = Modifier.padding(vertical = 8.dp))
                     }
                 }
+            }
+            JumpToTop(listState)
             }
         }
     }
@@ -292,17 +345,6 @@ private fun SkeletonRow() {
             .height(64.dp),
         shape = ArcanaShapes.Chip,
     )
-}
-
-@Composable
-private fun ErrorList(type: ErrorType, retrying: Boolean, onRetry: () -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-            Box(modifier = Modifier.fillParentMaxSize()) {
-                FullScreenError(type = type, onRetry = onRetry, retrying = retrying)
-            }
-        }
-    }
 }
 
 @Composable
@@ -339,7 +381,7 @@ private fun DayHeader(label: String) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Overline(text = label, size = 10, color = Moss)
-        Box(Modifier.weight(1f).height(1.dp).background(Mist))
+        Box(Modifier.weight(1f).height(1.dp).background(MossLight))
     }
 }
 
