@@ -59,8 +59,12 @@ class StudioPageViewModelTest {
         }
     }
 
-    private fun vm(page: StudioPageDto, favorites: FakeFavorites = FakeFavorites(), requests: ScheduleScopeRequests = ScheduleScopeRequests()) =
-        StudioPageViewModel("solidcore", "directory", FakeDiscover(page), FavoritesRepository(favorites), requests)
+    private fun vm(
+        page: StudioPageDto,
+        favorites: FakeFavorites = FakeFavorites(),
+        requests: ScheduleScopeRequests = ScheduleScopeRequests(),
+        fromLocationId: Int? = null,
+    ) = StudioPageViewModel("solidcore", "directory", fromLocationId, FakeDiscover(page), FavoritesRepository(favorites), requests)
 
     @Test fun `one location favorites on the tap and merges into the existing set`() = runTest {
         val favorites = FakeFavorites()
@@ -103,7 +107,30 @@ class StudioPageViewModelTest {
         val r = requests.pending.value!!
         assertEquals("solidcore", r.brandSlug)
         assertEquals(listOf(1, 2, 3), r.locationIds)
+        assertEquals("[solidcore]", r.label)
         assertEquals(r, requests.consume())
         assertNull(requests.pending.value)
+    }
+
+    @Test fun `reached from a map pin the page leads with that location and see schedule opens on it`() = runTest {
+        val requests = ScheduleScopeRequests()
+        val vm = vm(page(3), requests = requests, fromLocationId = 2)
+        assertEquals(2, (vm.uiState.value as StudioPageUiState.Success).fromLocation?.id)
+        vm.requestSchedule()
+        val r = requests.pending.value!!
+        assertEquals(listOf(2), r.locationIds)
+        assertEquals("[solidcore] · Loc 2", r.label)
+    }
+
+    @Test fun `a one-location brand and an unknown location have nothing to narrow`() = runTest {
+        val requests = ScheduleScopeRequests()
+        val single = vm(page(1), requests = requests, fromLocationId = 1)
+        assertNull((single.uiState.value as StudioPageUiState.Success).fromLocation)
+        single.requestSchedule()
+        assertEquals(listOf(1), requests.consume()!!.locationIds)
+        val unknown = vm(page(3), requests = requests, fromLocationId = 99)
+        assertNull((unknown.uiState.value as StudioPageUiState.Success).fromLocation)
+        unknown.requestSchedule()
+        assertEquals(listOf(1, 2, 3), requests.consume()!!.locationIds)
     }
 }

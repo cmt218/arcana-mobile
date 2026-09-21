@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.discover.monogramFor
-import org.arcana.mobile.review.whatMembersSayLabel
+import org.arcana.mobile.review.MembersSayRow
 import org.arcana.mobile.theme.Ash
 import org.arcana.mobile.theme.Graphite
 import org.arcana.mobile.theme.Ink
@@ -52,12 +52,7 @@ fun InstructorSheet(
             else Caption(text = "No bio yet.", size = 13, color = Ash)
             if (reviewCount > 0 && onSeeFeedback != null) {
                 Spacer(Modifier.height(20.dp))
-                TextLink(
-                    label = whatMembersSayLabel(reviewCount),
-                    onClick = onSeeFeedback,
-                    color = Moss,
-                    underline = false,
-                )
+                MembersSayRow(count = reviewCount, onClick = onSeeFeedback)
             }
         }
     }

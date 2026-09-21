@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import org.arcana.mobile.data.FeedbackScopeDto
@@ -42,7 +43,6 @@ import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Charcoal
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.Moss
-import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Outline
 import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.theme.Wood
@@ -59,6 +59,7 @@ import org.arcana.mobile.ui.InlineError
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.TextLink
+import org.arcana.mobile.ui.TonalWellRule
 import org.arcana.mobile.ui.TonalWellShape
 import org.arcana.mobile.ui.TransientSurface
 import org.arcana.mobile.ui.chromeBottom
@@ -73,7 +74,6 @@ private const val LOAD_MORE_LOOKAHEAD = 10
 private const val EMPTY = "No feedback here yet."
 private const val ATTRIBUTION = "Arcana member"
 private const val END_OF_FEED = "That's every review"
-private val WellRule = MossLight.copy(alpha = 0.42f)
 
 private fun allLocationsLabel(count: Int) = "All locations · $count reviews"
 
@@ -147,10 +147,11 @@ fun FeedbackFeedScreen(
             Spacer(Modifier.height(12.dp))
             ArcanaPullToRefreshBox(isRefreshing = isRefreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 when (val s = state) {
-                    FeedbackFeedUiState.Loading -> SkeletonList()
+                    FeedbackFeedUiState.Loading -> SkeletonList(listPadding())
                     is FeedbackFeedUiState.Error -> Unit // drawn full screen above
                     is FeedbackFeedUiState.Success -> ItemList(
                         state = s,
+                        contentPadding = listPadding(),
                         onLoadMore = vm::loadMore,
                         onRetryPage = vm::retryLoadMore,
                         onOpen = { item ->
@@ -182,9 +183,55 @@ private val END_MARKER_PADDING = PaddingValues(top = 8.dp)
 private fun listPadding(): PaddingValues =
     PaddingValues(bottom = 8.dp + WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding())
 
+/**
+ * The all-studios feed as a panel inside another screen (Discover's third
+ * lens): no header and no back handling of its own. A cold-load failure draws
+ * nothing here; the host shows it full screen from [vm], centred on the screen
+ * rather than in the space under its own header.
+ */
+@Composable
+fun FeedbackFeedPanel(
+    vm: FeedbackFeedViewModel,
+    onOpenStudio: (String) -> Unit,
+    bottomPadding: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val state by vm.uiState.collectAsState()
+    val isRefreshing by vm.isRefreshing.collectAsState()
+    LaunchedEffect(vm) { vm.onOpened() }
+    if (state is FeedbackFeedUiState.Error) return
+    val padding = PaddingValues(bottom = bottomPadding)
+    ArcanaPullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = vm::refresh,
+        modifier = modifier.fillMaxSize().padding(horizontal = 20.dp),
+    ) {
+        when (val s = state) {
+            FeedbackFeedUiState.Loading -> SkeletonList(padding)
+            is FeedbackFeedUiState.Error -> Unit
+            is FeedbackFeedUiState.Success -> ItemList(
+                state = s,
+                contentPadding = padding,
+                onLoadMore = vm::loadMore,
+                onRetryPage = vm::retryLoadMore,
+                onOpen = { item ->
+                    vm.onItemTapped()
+                    onOpenStudio(item.brand.slug)
+                },
+            )
+        }
+    }
+}
+
+/** The all-studios feed's view model, for a host that embeds [FeedbackFeedPanel]. */
+@Composable
+fun allFeedbackViewModel(source: String): FeedbackFeedViewModel =
+    koinViewModel(key = "feed-panel-${FeedbackScope.All.type}") { parametersOf(FeedbackScope.All.type, "", source) }
+
 @Composable
 private fun ItemList(
     state: FeedbackFeedUiState.Success,
+    contentPadding: PaddingValues,
     onLoadMore: () -> Unit,
     onRetryPage: () -> Unit,
     onOpen: (ReviewDto) -> Unit,
@@ -201,7 +248,7 @@ private fun ItemList(
             }
     }
     Box(modifier = Modifier.fillMaxSize()) {
-    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = listPadding()) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
         if (state.items.isEmpty()) {
             item {
                 Column(
@@ -271,15 +318,15 @@ private fun FeedbackCard(item: ReviewDto, onClick: () -> Unit) {
             BodyText(item.comment, size = 15, color = Ink)
         }
         Spacer(Modifier.height(14.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(WellRule))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(TonalWellRule))
         Spacer(Modifier.height(12.dp))
         ReviewStatStrip(item)
     }
 }
 
 @Composable
-private fun SkeletonList() {
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = listPadding()) {
+private fun SkeletonList(contentPadding: PaddingValues) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item { Spacer(Modifier.height(12.dp)) }
         repeat(5) { item { SkeletonRow() } }
     }

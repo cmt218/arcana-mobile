@@ -116,16 +116,12 @@ class ReviewDtoTest {
         assertEquals(6, location.scope.brand?.count)
     }
 
-    @Test fun `directory feedback row defaults to nothing`() {
-        val without = json.decodeFromString(DiscoverDirectoryDto.serializer(), """{"studios": []}""")
-        assertEquals(0, without.feedback.reviewCount)
-        assertNull(without.feedback.latest)
-        val with = json.decodeFromString(
+    @Test fun `an older server's directory feedback block is ignored`() {
+        // Servers still send it for the 1.3.0 app; this build has no row to feed.
+        val directory = json.decodeFromString(
             DiscoverDirectoryDto.serializer(),
-            """{"studios": [], "feedback": {"review_count": 3, "latest": {"id": 1, "created_at": "2026-09-12T14:00:00Z",
-               "comment": "Solid.", "brand": {"slug": "y7", "name": "Y7"}, "class_type": {"key": "flow", "label": "Flow"}}}}""",
+            """{"studios": [], "feedback": {"review_count": 3, "latest": null}}""",
         )
-        assertEquals(3, with.feedback.reviewCount)
-        assertEquals("Solid.", with.feedback.latest?.comment)
+        assertEquals(emptyList(), directory.studios)
     }
 }

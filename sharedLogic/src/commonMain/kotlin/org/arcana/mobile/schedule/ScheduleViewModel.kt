@@ -127,9 +127,11 @@ sealed interface ScheduleUiState {
          *  surfaces here only after the next refresh, never blocking or
          *  breaking the schedule itself. */
         val bookedSessions: Map<Int, String> = emptyMap(),
-        /** Non-null while a studio page's "See schedule" scope is active;
+        /** Non-null while a scope set by a studio page's Book button is active;
          *  renders as a removable brand chip. */
         val scopedBrand: ScheduleScopeRequest? = null,
+        /** The studio picks under All Studios, one chip per brand; see [studioChips]. */
+        val studioChips: List<StudioChip> = emptyList(),
         /** location id -> brand name; a row shows the brand, not its site row. */
         val brandNames: Map<Int, String> = emptyMap(),
     ) : ScheduleUiState
@@ -147,6 +149,28 @@ data class FilterStudio(
 /** A selectable location row in the accordion. [label] is Title-Case,
  *  studio-prefix-stripped (see [org.arcana.mobile.ui.studioLocationLabel]). */
 data class FilterLocation(val id: Int, val label: String)
+
+/** One studio pick as its chip reads. [slug] is what the chip's × removes. */
+data class StudioChip(val slug: String, val label: String)
+
+/**
+ * The studio picks as chips, in catalog order. A whole brand reads as its name;
+ * part of one names the location ("Barry's · Chelsea") or counts them
+ * ("Barry's · 3 of 11"), so a whole brand and a slice of it never look alike.
+ * However the picks were made (the accordion, a studio page's Book button),
+ * they read the same way.
+ */
+fun studioChips(catalog: List<FilterStudio>, filters: ScheduleFilters): List<StudioChip> =
+    catalog.mapNotNull { studio ->
+        val picked = studio.locations.filter { it.id in filters.locationIds }
+        when {
+            studio.slug in filters.studioSlugs -> StudioChip(studio.slug, studio.name)
+            picked.isEmpty() -> null
+            picked.size == studio.locations.size -> StudioChip(studio.slug, studio.name)
+            picked.size == 1 -> StudioChip(studio.slug, "${studio.name} · ${picked.single().label}")
+            else -> StudioChip(studio.slug, "${studio.name} · ${picked.size} of ${studio.locations.size}")
+        }
+    }
 
 /** A favorited studio or location, shown read-only in the schedule filter panel
  *  when Favorites mode is active. Whole-studio favorites read "All locations";
@@ -278,7 +302,7 @@ class ScheduleViewModel(
      *  made elsewhere (the favorites manager saving a new set). */
     private var lastAppliedFavorites: FavoritesDto? = null
 
-    /** A studio page's "See schedule" scope, shown as a removable chip. */
+    /** The scope a studio page's Book button set, shown as a removable chip. */
     private var scopedBrand: ScheduleScopeRequest? = null
     private var scopeBeforeBrand: Pair<ScopeMode, ScheduleFilters>? = null
 
@@ -628,8 +652,20 @@ class ScheduleViewModel(
         onFiltersChanged()
     }
 
-    /** Any manual studio or location pick, or a scope switch, ends the brand
-     *  chip: the member has taken over the selection. */
+    /** A studio chip's ×: drops that brand's picks. The chip a studio page's
+     *  Book button put there restores what was active before it instead. */
+    fun removeStudioChip(slug: String) {
+        if (scopedBrand?.brandSlug == slug) return clearBrandScope()
+        val locationIds = catalog()[slug].orEmpty().toSet()
+        val next = filters.copy(studioSlugs = filters.studioSlugs - slug, locationIds = filters.locationIds - locationIds)
+        if (next == filters) return
+        dropBrandScope()
+        filters = next
+        onFiltersChanged()
+    }
+
+    /** Any manual studio or location pick, or a scope switch, ends the restore:
+     *  the member has taken over the selection. */
     private fun dropBrandScope() {
         scopedBrand = null
         scopeBeforeBrand = null
@@ -945,8 +981,18 @@ class ScheduleViewModel(
             selectedModalitySlugs = selectedModalitySlugs,
             bookedSessions = bookedSessions,
             scopedBrand = scopedBrand,
+            studioChips = chipsFor(filterStudios),
             brandNames = brandNameByLocationId,
         )
+    }
+
+    /** A studio page's scope can name a brand with no class in the window, which
+     *  the catalog then lacks: its chip comes from the request itself. */
+    private fun chipsFor(catalog: List<FilterStudio>): List<StudioChip> {
+        if (scope != ScopeMode.AllStudios) return emptyList()
+        val chips = studioChips(catalog, filters)
+        val scoped = scopedBrand ?: return chips
+        return if (chips.any { it.slug == scoped.brandSlug }) chips else listOf(StudioChip(scoped.brandSlug, scoped.label)) + chips
     }
 
     /** Fire-once when the favorites list is revealed in the filter panel. */

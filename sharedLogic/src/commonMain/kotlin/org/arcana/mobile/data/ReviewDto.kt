@@ -93,19 +93,3 @@ data class CreateReviewRequest(
     val again: String,
     @SerialName("prompt_surface") val promptSurface: String,
 )
-
-/** The directory's "Member feedback" row. */
-@Serializable
-data class DiscoverFeedbackDto(
-    @SerialName("review_count") val reviewCount: Int = 0,
-    val latest: DiscoverLatestFeedbackDto? = null,
-)
-
-@Serializable
-data class DiscoverLatestFeedbackDto(
-    val id: Int = 0,
-    @SerialName("created_at") val createdAt: String = "",
-    val comment: String = "",
-    val brand: ReviewBrandDto = ReviewBrandDto(),
-    @SerialName("class_type") val classType: ReviewClassTypeDto = ReviewClassTypeDto(),
-)

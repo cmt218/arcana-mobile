@@ -58,7 +58,6 @@ import org.arcana.mobile.theme.WordmarkLogo
 import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
 import org.arcana.mobile.ui.LocalFloatingBarInset
-import org.arcana.mobile.ui.AddressLink
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
@@ -583,15 +582,7 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
                         color = StoneAlpha65,
                     )
                     session.locationAddress?.takeIf { it.isNotBlank() }?.let { address ->
-                        AddressLink(
-                            name = session.location?.takeIf { it.isNotBlank() } ?: session.studio,
-                            businessName = listOfNotNull(session.studio, session.location?.takeIf { it.isNotBlank() }).joinToString(" "),
-                            address = address,
-                            latitude = session.latitude,
-                            longitude = session.longitude,
-                            surface = "home_next_up",
-                            color = StoneAlpha65,
-                        )
+                        Caption(text = address, size = 12, color = StoneAlpha65)
                     }
                 }
                 // decorative — the enclosing card is the tap target and is

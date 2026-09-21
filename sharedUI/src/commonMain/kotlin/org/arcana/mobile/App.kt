@@ -73,6 +73,7 @@ import org.arcana.mobile.ui.ArcanaTab
 import org.arcana.mobile.ui.ArcanaTabBar
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.floatingBarInset
+import org.arcana.mobile.discover.DiscoverMapRequests
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -309,6 +310,16 @@ private fun MainScaffold() {
         else -> null
     }
 
+    // "Show on map" from a class or studio page. The Discover tab is RESTORED and
+    // then popped to its root: a Discover visited earlier keeps its ViewModel alive
+    // in the saved stack, and that one takes the request, so it must be the one shown.
+    val mapRequests = koinInject<DiscoverMapRequests>()
+    val showOnMap: (Int) -> Unit = { locationId ->
+        mapRequests.request(locationId)
+        navController.navigateToTab(ArcanaTab.Discover)
+        navController.popBackStack(ArcanaDestination.Discover, inclusive = false)
+    }
+
     CompositionLocalProvider(LocalFloatingBarInset provides floatingBarInset) {
     Box(Modifier.fillMaxSize().background(Stone)) {
         NavHost(
@@ -377,8 +388,9 @@ private fun MainScaffold() {
             }
             composable<ArcanaDestination.Discover> {
                 DiscoverScreen(
-                    onOpenStudio = { slug -> navController.navigate(ArcanaDestination.StudioPage(slug)) },
-                    onOpenFeedback = { navController.navigate(feedbackRoute(FeedbackScope.All, "discover")) },
+                    onOpenStudio = { slug, source, locationId ->
+                        navController.navigate(ArcanaDestination.StudioPage(slug, source, locationId ?: 0))
+                    },
                 )
             }
             composable<ArcanaDestination.StudioPage> { entry ->
@@ -386,9 +398,11 @@ private fun MainScaffold() {
                 StudioPageScreen(
                     brandSlug = args.brandSlug,
                     source = args.source,
+                    fromLocationId = args.locationId.takeIf { it > 0 },
                     onClose = { navController.popBackStack() },
                     onSeeSchedule = { navController.navigateToTab(ArcanaTab.Schedule) },
                     onOpenFeedback = { scope, source -> navController.navigate(feedbackRoute(scope, source)) },
+                    onShowOnMap = showOnMap,
                 )
             }
             composable<ArcanaDestination.FeedbackFeed> { entry ->
@@ -435,6 +449,7 @@ private fun MainScaffold() {
                     sessionId = args.id,
                     onClose = { navController.popBackStack() },
                     onOpenFeedback = { scope, source -> navController.navigate(feedbackRoute(scope, source)) },
+                    onShowOnMap = showOnMap,
                 )
             }
         }

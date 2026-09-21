@@ -63,6 +63,21 @@ val sentryAuthToken: String? =
 val hasReleaseKeystore: Boolean =
     signingProp("storeFile", "ARCANA_UPLOAD_STORE_FILE") != null
 
+// Google Maps SDK key for the Discover map. Client-safe (it ships in the APK and
+// is locked to this package and signing certificate in the Cloud console) but
+// not committed: sharedUI/analytics.properties, a -P flag or an env var. Blank
+// = the map still draws pins, over an empty basemap.
+val googleMapsApiKey: String = run {
+    val local = Properties().apply {
+        rootProject.file("sharedUI/analytics.properties").takeIf { it.exists() }
+            ?.let { FileInputStream(it).use(::load) }
+    }
+    local.getProperty("ARCANA_GOOGLE_MAPS_API_KEY")
+        ?: (project.findProperty("ARCANA_GOOGLE_MAPS_API_KEY") as String?)
+        ?: System.getenv("ARCANA_GOOGLE_MAPS_API_KEY")
+        ?: ""
+}
+
 android {
     namespace = "org.arcana.mobile.app"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -73,6 +88,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 14
         versionName = "1.3.0"
+        manifestPlaceholders["googleMapsApiKey"] = googleMapsApiKey
     }
     packaging {
         resources {

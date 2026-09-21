@@ -3,12 +3,17 @@ package org.arcana.mobile.schedule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** "See schedule" from a studio page: the brand and the location ids the Book
- *  tab should scope to. */
+/**
+ * A studio page's Book button: the brand and the location ids the Book
+ * tab should scope to. Every location of the brand, or the one the member came
+ * to the page from (a map pin). [label] is the chip's words when the Book tab's
+ * own catalog cannot supply them.
+ */
 data class ScheduleScopeRequest(
     val brandSlug: String,
     val brandName: String,
     val locationIds: List<Int>,
+    val label: String = brandName,
 )
 
 /**

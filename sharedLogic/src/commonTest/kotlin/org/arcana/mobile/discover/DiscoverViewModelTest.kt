@@ -13,6 +13,7 @@ import org.arcana.mobile.data.DiscoverCategoryDto
 import org.arcana.mobile.data.DiscoverDirectoryDto
 import org.arcana.mobile.data.DiscoverStudioDto
 import org.arcana.mobile.data.StudioPageDto
+import org.arcana.mobile.data.StudioPageLocationDto
 import org.arcana.mobile.networking.ApiHttpError
 import org.arcana.mobile.networking.DiscoverApi
 import org.arcana.mobile.networking.ErrorType
@@ -99,6 +100,97 @@ class DiscoverViewModelTest {
         vm.clearFilters()
         advanceTimeBy(300); advanceUntilIdle()
         assertEquals(2, (vm.uiState.value as DiscoverUiState.Success).studios.size)
+    }
+
+    // ── Map ──────────────────────────────────────────────────────────────────
+
+    private val located = listOf(
+        DiscoverStudioDto(
+            "a-yoga", "A Yoga", categories = listOf(yoga), neighborhoods = listOf("Harlem"), locationCount = 1,
+            locations = listOf(StudioPageLocationDto(1, "Harlem", "Harlem", "1 Lenox Ave", 40.8040, -73.9480)),
+        ),
+        DiscoverStudioDto(
+            "b-pilates", "B Pilates", categories = listOf(pilates), neighborhoods = listOf("Tribeca", "Flatiron"), locationCount = 2,
+            locations = listOf(
+                StudioPageLocationDto(2, "Tribeca", "Tribeca", "1 White St", 40.7190, -74.0060),
+                StudioPageLocationDto(3, "Flatiron", "Flatiron", "12 W 21st St", 40.7410, -73.9920),
+            ),
+        ),
+    )
+
+    @Test fun `the first load opens on the default frame and a filter reframes the pins`() = runTest(dispatcher) {
+        val vm = DiscoverViewModel(FakeApi().also { it.studios = located })
+        advanceUntilIdle()
+        val opened = vm.uiState.value as DiscoverUiState.Success
+        assertEquals(listOf(1, 2, 3), opened.pins.map { it.locationId })
+        assertEquals(0, opened.pinsEpoch, "the opening frame is the map's own, not a fit to the pins")
+        vm.toggleNeighborhood("Tribeca")
+        advanceTimeBy(300); advanceUntilIdle()
+        val narrowed = vm.uiState.value as DiscoverUiState.Success
+        assertEquals(listOf(2), narrowed.pins.map { it.locationId }, "Tribeca's pin, not every pin of a brand that has one there")
+        assertEquals(1, narrowed.pinsEpoch)
+        vm.refresh(); advanceUntilIdle()
+        assertEquals(1, (vm.uiState.value as DiscoverUiState.Success).pinsEpoch, "the same pins again leave the camera alone")
+    }
+
+    @Test fun `a selected pin clears when a filter removes it or the lens changes`() = runTest(dispatcher) {
+        val vm = DiscoverViewModel(FakeApi().also { it.studios = located })
+        advanceUntilIdle()
+        vm.setMode(DiscoverMode.Map)
+        vm.selectPin(3)
+        assertEquals(3, vm.selectedPinId.value)
+        vm.selectPin(99)
+        assertEquals(3, vm.selectedPinId.value, "an unknown pin changes nothing")
+        vm.toggleNeighborhood("Tribeca")
+        advanceTimeBy(300); advanceUntilIdle()
+        assertEquals(null, vm.selectedPinId.value)
+        vm.selectPin(2)
+        vm.setMode(DiscoverMode.Studios)
+        assertEquals(null, vm.selectedPinId.value)
+        assertEquals(DiscoverMode.Studios, vm.mode.value)
+    }
+
+    // ── "Show on the map" from a class page ──────────────────────────────────
+
+    @Test fun `a map request waiting for the first load opens the map on that pin`() = runTest(dispatcher) {
+        val requests = DiscoverMapRequests().apply { request(3) }
+        val vm = DiscoverViewModel(FakeApi().also { it.studios = located }, mapRequests = requests)
+        advanceUntilIdle()
+        val s = vm.uiState.value as DiscoverUiState.Success
+        assertEquals(DiscoverMode.Map, vm.mode.value)
+        assertEquals(3, vm.selectedPinId.value)
+        assertEquals(1, s.focusEpoch)
+        assertEquals(null, requests.pending.value, "consumed once taken")
+        // A map not built yet opens on the pin rather than on lower Manhattan.
+        assertEquals(40.7410, vm.mapCamera.latitude)
+        assertEquals(-73.9920, vm.mapCamera.longitude)
+    }
+
+    @Test fun `a map request drops the filters that would hide the pin`() = runTest(dispatcher) {
+        val requests = DiscoverMapRequests()
+        val api = FakeApi().also { it.studios = located }
+        val vm = DiscoverViewModel(api, mapRequests = requests)
+        advanceUntilIdle()
+        vm.toggleNeighborhood("Harlem")
+        advanceTimeBy(300); advanceUntilIdle()
+        assertEquals(listOf(1), (vm.uiState.value as DiscoverUiState.Success).pins.map { it.locationId })
+        requests.request(2)
+        advanceTimeBy(300); advanceUntilIdle()
+        val s = vm.uiState.value as DiscoverUiState.Success
+        assertEquals(emptySet(), s.selectedNeighborhoods)
+        assertEquals(2, vm.selectedPinId.value)
+        assertEquals(1, s.focusEpoch)
+    }
+
+    @Test fun `a map request for a place with no pin still opens the map and selects nothing`() = runTest(dispatcher) {
+        val requests = DiscoverMapRequests()
+        val vm = DiscoverViewModel(FakeApi().also { it.studios = located }, mapRequests = requests)
+        advanceUntilIdle()
+        requests.request(99)
+        advanceUntilIdle()
+        assertEquals(DiscoverMode.Map, vm.mode.value)
+        assertEquals(null, vm.selectedPinId.value)
+        assertEquals(0, (vm.uiState.value as DiscoverUiState.Success).focusEpoch)
     }
 
     @Test fun `a failed cold load classifies and retry recovers`() = runTest(dispatcher) {

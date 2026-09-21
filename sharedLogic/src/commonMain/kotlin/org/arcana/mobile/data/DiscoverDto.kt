@@ -17,12 +17,14 @@ data class DiscoverStudioDto(
     val categories: List<DiscoverCategoryDto> = emptyList(),
     val neighborhoods: List<String> = emptyList(),
     @SerialName("location_count") val locationCount: Int = 0,
+    /** Every active location, for the map. Coordinates are null when the server
+     *  has none it trusts: such a location counts but never draws a pin. */
+    val locations: List<StudioPageLocationDto> = emptyList(),
 )
 
 @Serializable
 data class DiscoverDirectoryDto(
     val studios: List<DiscoverStudioDto> = emptyList(),
-    val feedback: DiscoverFeedbackDto = DiscoverFeedbackDto(),
 )
 
 @Serializable
@@ -40,6 +42,8 @@ data class StudioPageLocationDto(
     val address: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
+    /** Studio page only: Discover's map draws a pin here, so "Show on map" can land on it. */
+    @SerialName("on_map") val onMap: Boolean = false,
     @SerialName("review_count") val reviewCount: Int = 0,
 )
 

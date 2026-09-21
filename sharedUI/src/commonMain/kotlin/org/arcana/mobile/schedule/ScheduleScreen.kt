@@ -175,6 +175,8 @@ internal val SCHEDULE_TIME_COL_WIDTH = 64.dp
 
 /** Absolute ceiling for the filter popover card, regardless of device. */
 private val FILTER_PANEL_MAX = 340.dp
+// Tall enough that the 5dp dots sit clear of the pills above and the list below.
+private val FILTER_LOADER_SLOT = 20.dp
 
 /** Slice of the schedule kept visible below the popover, so it reads as an
  *  overlay and clears Android's floating tab bar. */
@@ -251,9 +253,7 @@ fun ScheduleScreen(
     ) {
         Atmosphere()
         when (val s = state) {
-            is ScheduleUiState.Loading -> Box(Modifier.fillMaxSize().safeContentPadding()) {
-                LoadingPlaceholder()
-            }
+            is ScheduleUiState.Loading -> LoadingPlaceholder()
             is ScheduleUiState.Error -> FullScreenError(
                 type = s.type,
                 onRetry = viewModel::reload,
@@ -295,20 +295,19 @@ private fun LoadingPlaceholder() {
     // Same anchor tz as the VM so the month header can't disagree with the
     // day rail that replaces it (device tz could differ near a month flip).
     val today = remember { Clock.System.todayIn(ScheduleViewModel.ScheduleTimeZone) }
-    Column(modifier = Modifier.fillMaxSize()) {
+    // The title overlays rather than stacks, and the insets pad the title alone:
+    // stacked, the loader centres in what is left and sits low of every other screen's.
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            DotMatrixLoader()
+        }
         Display(
             text = "${titleCase(today.month.name)}.",
             size = 56, color = Ink,
-            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
+            modifier = Modifier
+                .safeContentPadding()
+                .padding(start = 24.dp, end = 24.dp, top = 16.dp),
         )
-        // Centered in the space below the header so the wave reads as the
-        // screen's focal point while the schedule loads.
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentAlignment = Alignment.Center,
-        ) {
-            DotMatrixLoader()
-        }
     }
 }
 
@@ -426,19 +425,22 @@ private fun SuccessContent(
             expandedSection = expandedSection,
             onExpandedSectionChange = { expandedSection = it },
         )
-        // Pinned between the controls and the pager while a debounced filter
-        // refetch is in flight — pairs with each page's own list dim.
-        if (state.refreshingFilters) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, bottom = 4.dp),
-                contentAlignment = Alignment.Center,
+        // The gap between the controls and the pager is the loader's fixed home:
+        // the dots fade in and out inside it while a debounced filter refetch is in
+        // flight (pairing with each page's list dim), so the list never moves.
+        Box(
+            modifier = Modifier.fillMaxWidth().height(FILTER_LOADER_SLOT),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Qualified: inside a Box the enclosing ColumnScope's overload does not compile.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = state.refreshingFilters,
+                enter = fadeIn(tween(Dur.Short)),
+                exit = fadeOut(tween(Dur.Short)),
             ) {
                 DotMatrixLoaderCompact()
             }
         }
-        Spacer(Modifier.height(12.dp))
         // Stage: the day pager, with the filter popover overlaid on top of it and
         // anchored to its top edge (directly under the controls). The pager never
         // moves when a filter opens — the popover floats above it.
@@ -756,11 +758,11 @@ private fun FilterControls(
         }
 
         // ── Chip rail: the active overlay filters as removable bubbles.
-        if (state.scopedBrand != null || state.timeFilter != null || state.selectedModalitySlugs.isNotEmpty()) {
+        if (state.studioChips.isNotEmpty() || state.timeFilter != null || state.selectedModalitySlugs.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             FlowChipRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-                state.scopedBrand?.let { brand ->
-                    FilterChip(label = brand.brandName, onRemove = { viewModel.clearBrandScope() })
+                state.studioChips.forEach { chip ->
+                    FilterChip(label = chip.label, onRemove = { viewModel.removeStudioChip(chip.slug) })
                 }
                 state.timeFilter?.let { tf ->
                     FilterChip(label = tf.label, onRemove = { viewModel.clearTimeFilter() })

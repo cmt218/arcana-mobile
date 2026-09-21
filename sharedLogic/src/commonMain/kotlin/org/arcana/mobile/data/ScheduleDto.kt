@@ -114,6 +114,8 @@ data class LocationBriefDto(
     val longitude: Double? = null,
     // Detail only.
     val brand: ReviewBrandDto? = null,
+    /** Detail only: Discover's map draws a pin here, so "show on the map" can land on it. */
+    @SerialName("on_map") val onMap: Boolean = false,
 )
 
 @Serializable

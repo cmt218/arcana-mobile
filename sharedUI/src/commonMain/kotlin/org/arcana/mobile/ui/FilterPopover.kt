@@ -127,6 +127,7 @@ internal fun FilterPill(
     active: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val fill by animateColorAsState(
@@ -148,9 +149,10 @@ internal fun FilterPill(
             .border(1.dp, border, CircleShape)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leading?.invoke()
         Text(
             text = label,
             modifier = Modifier.opticallyCentredCaps(FILTER_PILL_LABEL_SIZE, FILTER_PILL_LABEL_TRACKING_EM),

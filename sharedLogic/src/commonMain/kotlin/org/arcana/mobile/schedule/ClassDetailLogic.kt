@@ -1,5 +1,7 @@
 package org.arcana.mobile.schedule
 
+import org.arcana.mobile.data.ReviewDto
+
 /** Sessions with <= 2 remaining spots are visually marked as "scarce". */
 private const val SCARCE_THRESHOLD = 2
 
@@ -29,4 +31,44 @@ fun computeDetailCapacity(
         available <= SCARCE_THRESHOLD -> DetailCapacity.Scarce
         else -> DetailCapacity.Open
     }
+}
+
+/** What class detail shows about reviews. */
+enum class ReviewPlacement {
+    None,
+    /** The member's own review of this combination, compact, with a way into editing it. */
+    Summary,
+    /** A class the member attended and has not reviewed: step one of the card. */
+    Prompt,
+}
+
+data class ClassDetailReviews(
+    val review: ReviewPlacement,
+    /** The booking the card reads and writes through; null with [ReviewPlacement.None]. */
+    val bookingId: Int?,
+    /** Whether the reserve control (book, cancel) stays on screen. */
+    val showsReserveControl: Boolean,
+)
+
+/**
+ * `my_review` rides on EVERY session of a reviewed combination, upcoming ones
+ * included, so only a class that has ENDED gives the reserve control's place to
+ * the review. Otherwise a reviewed class could be neither booked nor cancelled.
+ */
+fun classDetailReviewPlacement(
+    myReview: ReviewDto?,
+    promptEligible: Boolean,
+    reviewBookingId: Int?,
+    isPast: Boolean,
+): ClassDetailReviews {
+    val placement = when {
+        myReview != null -> ReviewPlacement.Summary
+        promptEligible && reviewBookingId != null && isPast -> ReviewPlacement.Prompt
+        else -> ReviewPlacement.None
+    }
+    return ClassDetailReviews(
+        review = placement,
+        bookingId = if (placement == ReviewPlacement.None) null else myReview?.bookingId ?: reviewBookingId,
+        showsReserveControl = placement == ReviewPlacement.None || !isPast,
+    )
 }

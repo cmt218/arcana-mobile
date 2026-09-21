@@ -48,6 +48,8 @@ class DiscoverTelemetryTest {
     @Test fun `event names are stable`() {
         assertEquals("discover_opened", Telemetry.Events.DISCOVER_OPENED)
         assertEquals("discover_filter_changed", Telemetry.Events.DISCOVER_FILTER_CHANGED)
+        assertEquals("discover_mode_changed", Telemetry.Events.DISCOVER_MODE_CHANGED)
+        assertEquals("discover_map_pin_tapped", Telemetry.Events.DISCOVER_MAP_PIN_TAPPED)
         assertEquals("studio_page_viewed", Telemetry.Events.STUDIO_PAGE_VIEWED)
         assertEquals("studio_schedule_tapped", Telemetry.Events.STUDIO_SCHEDULE_TAPPED)
         assertEquals("studio_favorite_tapped", Telemetry.Events.STUDIO_FAVORITE_TAPPED)
@@ -66,10 +68,32 @@ class DiscoverTelemetryTest {
         assertEquals(mapOf<String, Any?>("category_count" to 1, "neighborhood_count" to 1), fake.events[2].properties)
     }
 
+    @Test fun `a lens change and a pin tap each fire once`() = runTest {
+        val fake = FakeAnalytics()
+        val api = object : DiscoverApi {
+            override suspend fun fetchDirectory(categories: Set<String>, neighborhoods: Set<String>) = DiscoverDirectoryDto(
+                listOf(
+                    DiscoverStudioDto(
+                        "solidcore", "[solidcore]",
+                        locations = listOf(StudioPageLocationDto(7, "Chelsea", "Chelsea", "", 40.74, -73.99)),
+                    ),
+                ),
+            )
+            override suspend fun fetchStudioPage(brandSlug: String) = StudioPageDto(slug = brandSlug, name = "")
+        }
+        val vm = DiscoverViewModel(api, Telemetry(fake, NoopCrashReporter))
+        vm.setMode(org.arcana.mobile.discover.DiscoverMode.Studios)   // already there: nothing
+        vm.setMode(org.arcana.mobile.discover.DiscoverMode.Map)
+        vm.selectPin(7); vm.selectPin(7)
+        assertEquals(listOf("discover_mode_changed", "discover_map_pin_tapped"), fake.events.map { it.name })
+        assertEquals(mapOf<String, Any?>("mode" to "map"), fake.events[0].properties)
+        assertEquals(mapOf<String, Any?>("brand_slug" to "solidcore", "location_id" to 7), fake.events[1].properties)
+    }
+
     @Test fun `studio page events carry the brand slug`() = runTest {
         val fake = FakeAnalytics()
         val vm = StudioPageViewModel(
-            "solidcore", "directory", FakeApi(), FavoritesRepository(FakeFavorites()), ScheduleScopeRequests(),
+            "solidcore", "directory", null, FakeApi(), FavoritesRepository(FakeFavorites()), ScheduleScopeRequests(),
             Telemetry(fake, NoopCrashReporter),
         )
         vm.requestSchedule()
@@ -81,6 +105,17 @@ class DiscoverTelemetryTest {
         )
         assertEquals(mapOf<String, Any?>("brand_slug" to "solidcore", "source" to "directory"), fake.events[0].properties)
         assertEquals(mapOf<String, Any?>("brand_slug" to "solidcore", "location_count" to 2, "result" to "sheet"), fake.events[2].properties)
+        assertEquals(mapOf<String, Any?>("brand_slug" to "solidcore"), fake.events[1].properties)
         assertEquals(mapOf<String, Any?>("profile_id" to 77, "source" to "studio_page"), fake.events[3].properties)
+    }
+
+    @Test fun `see schedule from a map pin names the location`() = runTest {
+        val fake = FakeAnalytics()
+        val vm = StudioPageViewModel(
+            "solidcore", "map", 2, FakeApi(), FavoritesRepository(FakeFavorites()), ScheduleScopeRequests(),
+            Telemetry(fake, NoopCrashReporter),
+        )
+        vm.requestSchedule()
+        assertEquals(mapOf<String, Any?>("brand_slug" to "solidcore", "location_id" to 2), fake.events.last().properties)
     }
 }

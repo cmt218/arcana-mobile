@@ -32,6 +32,8 @@ import androidx.navigation.toRoute
 import org.arcana.mobile.analytics.AppStartTracker
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.booking.MyBookingsScreen
+import kotlinx.coroutines.flow.drop
+import org.arcana.mobile.discover.DiscoverMapRequests
 import org.arcana.mobile.discover.DiscoverScreen
 import org.arcana.mobile.discover.StudioPageScreen
 import androidx.navigation.NavGraphBuilder
@@ -54,6 +56,7 @@ import org.arcana.mobile.theme.NavTransitions
 import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.koin.compose.koinInject
+import org.koin.mp.KoinPlatform
 import platform.UIKit.UIViewController
 
 /*
@@ -88,6 +91,7 @@ fun HomeTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
                     sessionId = args.id,
                     onClose = { nav.popBackStack() },
                     onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+                    onShowOnMap = ::showOnDiscoverMap,
                 )
             }
             feedbackDestinations(nav)
@@ -147,6 +151,7 @@ fun ScheduleTabViewController(onRootChanged: (Boolean) -> Unit): UIViewControlle
                     sessionId = args.id,
                     onClose = { nav.popBackStack() },
                     onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+                    onShowOnMap = ::showOnDiscoverMap,
                 )
             }
             feedbackDestinations(nav)
@@ -158,11 +163,12 @@ fun ScheduleTabViewController(onRootChanged: (Boolean) -> Unit): UIViewControlle
 
 fun DiscoverTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
     shellHostingController {
-        TabRoot(ArcanaDestination.Discover, onRootChanged) { nav ->
+        TabRoot(ArcanaDestination.Discover, onRootChanged, returnsToRootOnMapRequest = true) { nav ->
             composable<ArcanaDestination.Discover> {
                 DiscoverScreen(
-                    onOpenStudio = { slug -> nav.navigate(ArcanaDestination.StudioPage(slug)) },
-                    onOpenFeedback = { nav.navigate(feedbackRoute(FeedbackScope.All, "discover")) },
+                    onOpenStudio = { slug, source, locationId ->
+                        nav.navigate(ArcanaDestination.StudioPage(slug, source, locationId ?: 0))
+                    },
                 )
             }
             feedbackDestinations(nav)
@@ -189,6 +195,7 @@ fun ProfileTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController
                     sessionId = args.id,
                     onClose = { nav.popBackStack() },
                     onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+                    onShowOnMap = ::showOnDiscoverMap,
                 )
             }
             feedbackDestinations(nav)
@@ -206,7 +213,7 @@ fun ProfileTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController
 
 /** The feed and the studio page, reachable from every tab: class detail links
  *  to a class type's feedback, a feed item opens its studio page. The studio
- *  page stays on the current tab's stack; "See schedule" just shows Book. */
+ *  page stays on the current tab's stack; its Book button just shows the Book tab. */
 private fun NavGraphBuilder.feedbackDestinations(nav: NavHostController) {
     composable<ArcanaDestination.FeedbackFeed> { entry ->
         val args = entry.toRoute<ArcanaDestination.FeedbackFeed>()
@@ -225,14 +232,23 @@ private fun NavGraphBuilder.feedbackDestinations(nav: NavHostController) {
         StudioPageScreen(
             brandSlug = args.brandSlug,
             source = args.source,
+            fromLocationId = args.locationId.takeIf { it > 0 },
             onClose = { nav.popBackStack() },
             onSeeSchedule = { IosShellBridge.requestTab("schedule") },
             onOpenFeedback = { scope, source -> nav.navigate(feedbackRoute(scope, source)) },
+            onShowOnMap = ::showOnDiscoverMap,
         )
     }
 }
 
-/** Reservations inside a tab's own NavHost. "Book a class" pops back to the
+/** A class page's "show on the map": post the location, then ask the native
+ *  shell for the Discover tab, which returns to its root for it. */
+private fun showOnDiscoverMap(locationId: Int) {
+    KoinPlatform.getKoin().get<DiscoverMapRequests>().request(locationId)
+    IosShellBridge.requestTab("discover")
+}
+
+/** Reservations inside a tab's own NavHost. Its Book button pops back to the
  *  tab root, then asks the native shell to select the Book tab. */
 @Composable
 private fun ReservationsRoot(nav: NavHostController, source: String) {
@@ -257,10 +273,19 @@ private fun TabRoot(
     // .tabRootShown on the switch that first shows them — skipping the initial
     // composition emission prevents a double on first visit.
     emitInitialRootScreen: Boolean = false,
+    // Discover only: a "show on the map" request lands on the tab's own screen,
+    // not on whatever studio page was left pushed over it.
+    returnsToRootOnMapRequest: Boolean = false,
     builder: androidx.navigation.NavGraphBuilder.(androidx.navigation.NavHostController) -> Unit,
 ) {
     ArcanaTheme {
         val navController = rememberNavController()
+        if (returnsToRootOnMapRequest) {
+            val mapRequests = koinInject<DiscoverMapRequests>()
+            LaunchedEffect(navController) {
+                mapRequests.count.drop(1).collect { navController.popBackStack(start, inclusive = false) }
+            }
+        }
         val backStackEntry by navController.currentBackStackEntryAsState()
         val telemetry = koinInject<Telemetry>()
 

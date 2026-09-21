@@ -65,6 +65,7 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.google.maps)
             implementation(libs.posthog.android)
             implementation(libs.sentry.android)
         }
