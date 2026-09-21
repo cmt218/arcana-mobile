@@ -311,8 +311,8 @@ _Corrected after run 2026-08-27: the Expected said Burnt Nectar. `SurveyOptionCh
 ## HOME
 
 ### HOME-01 — Cold load shows shimmer, not blank screen
-- **Steps:** Navigate to the Home tab immediately after login/app start, before the `/memberships/me` + `/bookings/me/` calls resolve.
-- **Expected:** `HomeUiState.Loading` renders: static "Good {greeting}," headline with a shimmer box standing in for the name, a "Next up" section rule over a shimmer card, three shimmer rows under "Upcoming", and a shimmer manifesto card. No crash, no empty layout.
+- **Steps:** Navigate to the Home tab immediately after login/app start, before the `/memberships/me` + `/bookings/me/?scope=upcoming` calls resolve. In the dev server's log, check the two requests arrive together.
+- **Expected:** `HomeUiState.Loading` renders: static "Good {greeting}," headline with a shimmer box standing in for the name, a "Next up" section rule over a shimmer card, three shimmer rows under "Upcoming", and a shimmer manifesto card. No crash, no empty layout. The two reads go out side by side, not one after the other (the splash covers this fetch, and in sequence they cost a round trip on every launch; `HomeViewModelTest` "the membership and upcoming reads load side by side"). Either failing fails the load, as before (HOME-06).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 130-183), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`HomeUiState.Loading`)
 - **Platforms:** shared
 

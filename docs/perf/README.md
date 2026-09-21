@@ -222,7 +222,7 @@ Debug build on the simulator (iPhone 17 Pro, iOS 26.4.1, and iPhone 16 Pro, iOS 
 ## Splash length, measured 2026-09-21
 
 The splash is a fixed timer: it does not wait for anything. Home composes under it
-from the first frame and fetches `/memberships/me`, then `/bookings/me?scope=upcoming`,
+from the first frame and fetches `/memberships/me` and `/bookings/me?scope=upcoming`,
 so the splash's only job is to cover that fetch.
 
 **How long Home's data takes after a cold start** (PostHog, 60 days of authenticated
@@ -251,6 +251,9 @@ splash animated out behind the tabs and showed as a one-frame cut. The animation
 timer starts (Compose scene setup after `splashDidAppear`), so the hold plays as ~0.3s.
 A launch whose fetch is slower than the splash shows Home's own shimmer for the
 difference (about 1 in 8 on iOS).
+
+**Home's two reads now go out side by side** (they ran one after the other): one round
+trip less per launch, about 180ms at the iOS median and 440ms at p90 (`my_bookings`).
 
 **Deliberately not done: refreshing an expired token up front.** Most cold starts send
 their first request with an expired access token, get a 401, refresh, and replay (inside

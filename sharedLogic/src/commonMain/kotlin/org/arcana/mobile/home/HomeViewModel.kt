@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -166,11 +168,14 @@ class HomeViewModel(
 
     private suspend fun fetch() {
         try {
-            val me = membershipApi.membershipMe()
-            // The scoped read carries the review prompt; its studio-cancelled
-            // rows are for the Reservations screen, never "Next up". A failure
-            // here fails the fetch: swallowed, it read as "No upcoming classes".
-            val scoped = bookingApi.myUpcoming()
+            // The scoped read carries the review prompt; its studio-cancelled rows are for
+            // Reservations, never "Next up". Either read failing fails the fetch: swallowed,
+            // a failed scoped read looked like "No upcoming classes".
+            val (me, scoped) = coroutineScope {
+                val me = async { membershipApi.membershipMe() }
+                val scoped = async { bookingApi.myUpcoming() }
+                me.await() to scoped.await()
+            }
             _uiState.value = HomeUiState.Success(
                 displayName = me.member.displayName ?: me.member.email.substringBefore("@"),
                 creditsRemaining = me.currentPeriod?.creditsRemaining,
