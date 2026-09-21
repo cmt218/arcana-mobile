@@ -8,12 +8,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.arcana.mobile.analytics.Telemetry
 import org.arcana.mobile.data.StudioPageDto
+import org.arcana.mobile.data.StudioPageLocationDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.networking.DiscoverApi
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.toErrorType
 import org.arcana.mobile.schedule.ScheduleScopeRequest
 import org.arcana.mobile.schedule.ScheduleScopeRequests
+import org.arcana.mobile.ui.studioLocationLabel
 
 sealed interface StudioPageUiState {
     data object Loading : StudioPageUiState
@@ -24,6 +26,9 @@ sealed interface StudioPageUiState {
         val favoriteLocationIds: Set<Int>,
         val savingFavorites: Boolean = false,
         val favoritesError: ErrorType? = null,
+        /** The location the member came from (a map pin), when the brand has
+         *  others too: the page leads with it and the Book button scopes to it. */
+        val fromLocation: StudioPageLocationDto? = null,
     ) : StudioPageUiState {
         val isFavorite: Boolean get() = favoriteLocationIds.isNotEmpty()
     }
@@ -37,6 +42,7 @@ enum class FavoriteTapResult { Added, Sheet, NoOp }
 class StudioPageViewModel(
     val brandSlug: String,
     private val source: String,
+    private val fromLocationId: Int?,
     private val api: DiscoverApi,
     private val favoritesRepository: FavoritesRepository,
     private val scopeRequests: ScheduleScopeRequests,
@@ -69,7 +75,9 @@ class StudioPageViewModel(
     private suspend fun fetch() {
         try {
             val page = api.fetchStudioPage(brandSlug)
-            _uiState.value = StudioPageUiState.Success(page, page.favoriteLocationIds.toSet())
+            // A one-location brand has nothing to narrow: its page is that location's.
+            val from = page.locations.takeIf { it.size > 1 }?.firstOrNull { it.id == fromLocationId }
+            _uiState.value = StudioPageUiState.Success(page, page.favoriteLocationIds.toSet(), fromLocation = from)
             if (!viewed) {
                 viewed = true
                 telemetry.studioPageViewed(brandSlug, source)
@@ -81,12 +89,20 @@ class StudioPageViewModel(
         }
     }
 
-    /** Posts the brand's locations as the Book tab's scope; the screen then
-     *  switches tabs. */
+    /** Posts the Book tab's scope: the location the member came from, or every
+     *  location of the brand. The screen then switches tabs. */
     fun requestSchedule() {
-        val page = (_uiState.value as? StudioPageUiState.Success)?.page ?: return
-        telemetry.studioScheduleTapped(brandSlug)
-        scopeRequests.request(ScheduleScopeRequest(page.slug, page.name, page.locations.map { it.id }))
+        val state = _uiState.value as? StudioPageUiState.Success ?: return
+        val page = state.page
+        val from = state.fromLocation
+        telemetry.studioScheduleTapped(brandSlug, locationId = from?.id)
+        scopeRequests.request(
+            if (from == null) ScheduleScopeRequest(page.slug, page.name, page.locations.map { it.id })
+            else ScheduleScopeRequest(
+                page.slug, page.name, listOf(from.id),
+                label = "${page.name} · ${studioLocationLabel(page.name, from.name)}",
+            ),
+        )
     }
 
     /** One location: favorite it now. Several: the caller opens the picker. */

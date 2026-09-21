@@ -457,8 +457,8 @@ class Telemetry(
     fun reservationsPageLoaded(pageIndex: Int, count: Int) =
         track(Events.RESERVATIONS_PAGE_LOADED, mapOf("page_index" to pageIndex, "count" to count))
 
-    /** [surface]: class_detail | reservation_row | home_next_up | studio_page.
-     *  [app]: apple | google | copy. */
+    /** [surface]: class_detail | studio_page.
+     *  [app]: arcana_map | apple | google | copy. */
     fun addressTapped(surface: String, app: String) =
         track(Events.ADDRESS_TAPPED, mapOf("surface" to surface, "app" to app))
 
@@ -472,12 +472,27 @@ class Telemetry(
             mapOf("category_count" to categoryCount, "neighborhood_count" to neighborhoodCount),
         )
 
-    /** [source]: directory | feed | search. */
+    /** [mode]: studios | map | feedback. Fires on a change, never for the default. */
+    fun discoverModeChanged(mode: String) =
+        track(Events.DISCOVER_MODE_CHANGED, mapOf("mode" to mode))
+
+    fun discoverMapPinTapped(brandSlug: String, locationId: Int) =
+        track(Events.DISCOVER_MAP_PIN_TAPPED, mapOf("brand_slug" to brandSlug, "location_id" to locationId))
+
+    /** [source]: directory | map | feed | search. */
     fun studioPageViewed(brandSlug: String, source: String) =
         track(Events.STUDIO_PAGE_VIEWED, mapOf("brand_slug" to brandSlug, "source" to source))
 
-    fun studioScheduleTapped(brandSlug: String) =
-        track(Events.STUDIO_SCHEDULE_TAPPED, mapOf("brand_slug" to brandSlug))
+    /** [locationId]: set when the schedule opens on one location (the page was
+     *  reached from its map pin), absent for the whole brand. */
+    fun studioScheduleTapped(brandSlug: String, locationId: Int? = null) =
+        track(
+            Events.STUDIO_SCHEDULE_TAPPED,
+            buildMap {
+                put("brand_slug", brandSlug)
+                if (locationId != null) put("location_id", locationId)
+            },
+        )
 
     /** [result]: added | sheet. */
     fun studioFavoriteTapped(brandSlug: String, locationCount: Int, result: String) =
@@ -696,6 +711,8 @@ class Telemetry(
 
         const val DISCOVER_OPENED = "discover_opened"
         const val DISCOVER_FILTER_CHANGED = "discover_filter_changed"
+        const val DISCOVER_MODE_CHANGED = "discover_mode_changed"
+        const val DISCOVER_MAP_PIN_TAPPED = "discover_map_pin_tapped"
         const val STUDIO_PAGE_VIEWED = "studio_page_viewed"
         const val STUDIO_SCHEDULE_TAPPED = "studio_schedule_tapped"
         const val STUDIO_FAVORITE_TAPPED = "studio_favorite_tapped"

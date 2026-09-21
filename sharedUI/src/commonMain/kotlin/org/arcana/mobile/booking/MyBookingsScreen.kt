@@ -26,7 +26,6 @@ import org.arcana.mobile.schedule.JumpToTop
 import org.arcana.mobile.schedule.ScheduleViewModel
 import org.arcana.mobile.schedule.wallClock
 import org.arcana.mobile.theme.*
-import org.arcana.mobile.ui.AddressLink
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
 import org.arcana.mobile.ui.BodyText
@@ -34,8 +33,8 @@ import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.ErrorCopy
 import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.FullScreenError
+import org.arcana.mobile.ui.PrimaryCta
 import org.arcana.mobile.ui.chromeBottom
-import org.arcana.mobile.ui.GhostCta
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.InlineError
@@ -61,7 +60,7 @@ import org.koin.compose.viewmodel.koinViewModel
 private const val EMPTY_UPCOMING_TITLE = "Nothing reserved yet."
 private const val EMPTY_UPCOMING_BODY = "Your week is open."
 private const val EMPTY_PAST = "Your first class will show here."
-private const val BOOK_A_CLASS = "Book a class"
+private const val BOOK = "Book"
 private const val REVIEWED = "Reviewed"
 
 /** Reservations: Upcoming and Past segments. The route is still `MyBookings`. */
@@ -227,7 +226,7 @@ private fun UpcomingList(
                 if (groups.isEmpty()) {
                     item {
                         EmptyState(title = EMPTY_UPCOMING_TITLE, body = EMPTY_UPCOMING_BODY) {
-                            GhostCta(label = BOOK_A_CLASS, onClick = onBookClass)
+                            PrimaryCta(label = BOOK, onClick = onBookClass)
                         }
                     }
                     return@LazyColumn
@@ -244,7 +243,7 @@ private fun UpcomingList(
                 }
                 item(key = "book") {
                     Spacer(Modifier.height(24.dp))
-                    GhostCta(label = BOOK_A_CLASS, onClick = onBookClass)
+                    PrimaryCta(label = BOOK, onClick = onBookClass)
                 }
             }
         }
@@ -432,15 +431,8 @@ private fun ReservationRow(b: BookingDto, onCancel: (() -> Unit)?, onClick: () -
             Spacer(Modifier.height(2.dp))
             Caption("$studioSpot$instructorSuffix", size = 12, color = Charcoal)
             b.session.locationAddress?.takeIf { it.isNotBlank() }?.let { address ->
-                AddressLink(
-                    name = b.session.location?.takeIf { it.isNotBlank() } ?: b.session.studio,
-                    businessName = listOfNotNull(b.session.studio, b.session.location?.takeIf { it.isNotBlank() }).joinToString(" "),
-                    address = address,
-                    latitude = b.session.latitude,
-                    longitude = b.session.longitude,
-                    surface = "reservation_row",
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                Spacer(Modifier.height(2.dp))
+                Caption(address, size = 12, color = Charcoal)
             }
         }
         Spacer(Modifier.width(8.dp))

@@ -3,10 +3,15 @@
 package org.arcana.mobile.schedule
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
@@ -40,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
@@ -133,13 +139,13 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.arcana.mobile.review.FeedbackScope
 import org.arcana.mobile.review.ReviewCard
 import org.arcana.mobile.review.ReviewSubjects
+import org.arcana.mobile.review.ReviewSummaryCard
 import org.arcana.mobile.review.rememberReviewSaveNotice
 import org.arcana.mobile.review.ReviewSaveNoticeHost
-import org.arcana.mobile.review.whatMembersSayLabel
+import org.arcana.mobile.review.MembersSayRow
 import org.arcana.mobile.ui.InstructorSheet
 import org.arcana.mobile.analytics.Telemetry
 import org.koin.compose.koinInject
-import org.arcana.mobile.ui.TextLink
 import org.koin.core.parameter.parametersOf
 
 // ── Constants -----------------------------------------------------------------
@@ -248,6 +254,8 @@ fun ClassDetailScreen(
     modifier: Modifier = Modifier,
     /** Opens the member feedback feed; the string is the telemetry source. */
     onOpenFeedback: (FeedbackScope, String) -> Unit = { _, _ -> },
+    /** Shows a location (by id) on Discover's map; null where there is no way there. */
+    onShowOnMap: ((Int) -> Unit)? = null,
     viewModel: ClassDetailViewModel = koinViewModel { parametersOf(sessionId) },
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -273,6 +281,7 @@ fun ClassDetailScreen(
                 isRefreshing = refreshing,
                 onRefresh = viewModel::refresh,
                 onOpenFeedback = onOpenFeedback,
+                onShowOnMap = onShowOnMap,
             )
         }
     }
@@ -334,6 +343,7 @@ private fun SuccessBlock(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onOpenFeedback: (FeedbackScope, String) -> Unit,
+    onShowOnMap: ((Int) -> Unit)?,
 ) {
     // The studio's clock, not the device's — a traveller must see the same
     // time the schedule list and the studio's own site show.
@@ -435,11 +445,15 @@ private fun SuccessBlock(
     var instructorSheetOpen by remember { mutableStateOf(false) }
     val reviewNotice = rememberReviewSaveNotice()
     val telemetry = koinInject<Telemetry>()
-    // The review card replaces the reserve control on a completed booking
-    // (spec 5.4): the member's own review in edit mode, or step one when the
-    // booking is eligible and unreviewed.
-    val reviewBookingId = session.myReview?.bookingId ?: session.reviewBookingId
-    val showReviewCard = reviewBookingId != null && (session.myReview != null || session.reviewPromptEligible)
+    // A review on the page never means the class is over: see classDetailReviewPlacement.
+    val reviews = classDetailReviewPlacement(
+        myReview = session.myReview,
+        promptEligible = session.reviewPromptEligible,
+        reviewBookingId = session.reviewBookingId,
+        isPast = isPast,
+    )
+    // The member's review lands compact; "Edit" opens the whole card for this visit.
+    var editingReview by rememberSaveable(session.id) { mutableStateOf(false) }
 
     // Route the system back gesture through onClose so it plays the X's
     // push-down (popExit) on both platforms, not the platform interactive-pop.
@@ -536,23 +550,45 @@ private fun SuccessBlock(
                     }
                 }
             }
-            if (showReviewCard) {
+            val reviewBookingId = reviews.bookingId
+            if (reviewBookingId != null) {
                 item("review") {
                     Spacer(Modifier.height(24.dp))
-                    ReviewCard(
-                        bookingId = reviewBookingId!!,
-                        surface = "detail",
-                        initialReview = session.myReview,
-                        subjects = ReviewSubjects(
-                            instructor = session.instructors.firstOrNull()?.name,
-                            classType = session.myReview?.classType?.label ?: session.template.name,
-                            brand = session.location.brand?.name ?: studio.name,
-                        ),
-                        eyebrow = "Your feedback",
-                        onSaveFailed = reviewNotice::show,
-                        onDone = {},
+                    val mine = session.myReview
+                    AnimatedContent(
+                        targetState = mine != null && !editingReview,
+                        // Out, then in: two wells overlaid mid-fade read as a glitch.
+                        transitionSpec = {
+                            (fadeIn(tween(Dur.Short, delayMillis = Dur.Quick)) togetherWith fadeOut(tween(Dur.Quick)))
+                                .using(SizeTransform(clip = false))
+                        },
+                        label = "myReview",
                         modifier = Modifier.padding(horizontal = 24.dp),
-                    )
+                    ) { compact ->
+                        if (compact && mine != null) {
+                            ReviewSummaryCard(
+                                review = mine,
+                                onEdit = {
+                                    haptics.selection()
+                                    editingReview = true
+                                },
+                            )
+                        } else {
+                            ReviewCard(
+                                bookingId = reviewBookingId,
+                                surface = "detail",
+                                initialReview = mine,
+                                subjects = ReviewSubjects(
+                                    instructor = session.instructors.firstOrNull()?.name,
+                                    classType = mine?.classType?.label ?: session.template.name,
+                                    brand = session.location.brand?.name ?: studio.name,
+                                ),
+                                eyebrow = "Your feedback",
+                                onSaveFailed = reviewNotice::show,
+                                onDone = {},
+                            )
+                        }
+                    }
                 }
             }
             if (isCancelled) {
@@ -604,6 +640,7 @@ private fun SuccessBlock(
                     longitude = session.location.longitude,
                     studioColor = sc,
                     modifier = Modifier.padding(horizontal = 24.dp),
+                    onShowOnMap = onShowOnMap?.takeIf { session.location.onMap }?.let { show -> { show(session.location.id) } },
                 )
                 // This location's feedback when it has any; while it has none, the
                 // brand's, so the way in does not vanish while reviews are few.
@@ -620,8 +657,9 @@ private fun SuccessBlock(
             }
         }
         }
-        // The review card stands where the CTA would, so its notice takes the CTA's place.
-        if (showReviewCard) {
+        // Where the review has taken the CTA's place, so does its notice; with the
+        // CTA on screen the notice rides above it (below).
+        if (reviews.review != ReviewPlacement.None && !reviews.showsReserveControl) {
             ReviewSaveNoticeHost(
                 notice = reviewNotice,
                 modifier = Modifier
@@ -634,8 +672,8 @@ private fun SuccessBlock(
         }
         // Sticky reserve CTA — pinned to bottom safe inset. Capped fade above
         // it so scrolling list content feathers out instead of butting hard
-        // against the pill. The review card takes its place on a completed booking.
-        if (!isCancelled && !showReviewCard) {
+        // against the pill. A review takes its place only once the class has ended.
+        if (!isCancelled && reviews.showsReserveControl) {
             val ctaLabel = classDetailCtaLabel(
                 isPast = isPast,
                 justBooked = submit is BookingSubmit.Booked,
@@ -664,13 +702,7 @@ private fun SuccessBlock(
                 visible = membershipLoadFailed,
                 modifier = Modifier
                     .safeHorizontalPadding()
-                    // The CTA opens with a 40dp fade before its pill, so
-                    // sitting flush above it leaves 48dp to the PILL. Drop
-                    // into the fade to match the pill's own bottom gap.
-                    .offset(y = CTA_FADE_HEIGHT + CTA_EDGE_GAP - CTA_PILL_GAP)
-                    // Above the fade: the CTA is a later sibling, so its
-                    // gradient would paint across the bar as a glow.
-                    .zIndex(1f),
+                    .padding(bottom = CTA_EDGE_GAP),
             ) {
                 ErrorSnackbar(
                     text = ErrorCopy.REFRESH_FAILED,
@@ -682,6 +714,14 @@ private fun SuccessBlock(
                         bookingVm.load()
                     },
                     onDismiss = bookingVm::dismissMembershipLoadFailed,
+                )
+            }
+            if (reviews.review != ReviewPlacement.None) {
+                ReviewSaveNoticeHost(
+                    notice = reviewNotice,
+                    modifier = Modifier
+                        .safeHorizontalPadding()
+                        .padding(bottom = CTA_EDGE_GAP),
                 )
             }
             StickyReserveCta(
@@ -1156,13 +1196,7 @@ private fun CapacityPips(
 @Composable
 private fun FeedbackHint(count: Int, topGap: Dp, onClick: () -> Unit) {
     Spacer(Modifier.height(topGap))
-    TextLink(
-        label = whatMembersSayLabel(count),
-        onClick = onClick,
-        color = Moss,
-        underline = false,
-        modifier = Modifier.padding(horizontal = 24.dp),
-    )
+    MembersSayRow(count = count, onClick = onClick, modifier = Modifier.padding(horizontal = 24.dp))
 }
 
 @Composable
@@ -1174,6 +1208,7 @@ private fun LocationRow(
     longitude: Double?,
     studioColor: Color,
     modifier: Modifier = Modifier,
+    onShowOnMap: (() -> Unit)? = null,
 ) {
     AddressRow(
         name = if (locationName.isNotBlank()) locationName else studioName,
@@ -1185,6 +1220,7 @@ private fun LocationRow(
         overline = "LOCATION",
         nameAsDisplay = true,
         modifier = modifier,
+        onShowOnMap = onShowOnMap,
         leading = {
             Box(
                 modifier = Modifier
@@ -1370,17 +1406,9 @@ private fun StickyReserveCta(
     }
 }
 
-/** The CTA's own vertical inset. The refresh snackbar reuses it so the gap
- *  above the CTA matches the gap below it. */
+/** The CTA's own vertical inset. A snackbar stacked above the CTA adds it again,
+ *  which leaves 16dp between the snackbar and the pill. */
 private val CTA_EDGE_GAP = 8.dp
-
-/** The CTA's leading transparent→Stone fade — invisible, but it occupies real
- *  space above the pill, so anything stacked above the CTA must account for it. */
-private val CTA_FADE_HEIGHT = 40.dp
-
-/** Target gap between the refresh snackbar and the visible CTA pill. Matches the
- *  gap the pill leaves against the bottom of the screen. */
-private val CTA_PILL_GAP = 32.dp
 
 // ── Booking error banner -------------------------------------------------------
 

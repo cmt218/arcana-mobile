@@ -10,6 +10,7 @@ import org.arcana.mobile.auth.PasswordResetRequestViewModel
 import org.arcana.mobile.booking.BookingStudioContext
 import org.arcana.mobile.booking.BookingViewModel
 import org.arcana.mobile.booking.MyBookingsViewModel
+import org.arcana.mobile.discover.DiscoverMapRequests
 import org.arcana.mobile.discover.DiscoverViewModel
 import org.arcana.mobile.discover.StudioPageViewModel
 import org.arcana.mobile.schedule.ScheduleScopeRequests
@@ -138,9 +139,13 @@ val appModule = module {
     viewModel { ConciergeRequestViewModel(conciergeApi = get(), telemetry = get()) }
     single { ScheduleScopeRequests() }
     viewModel { ScheduleViewModel(get(), get(), get(), get(), scopeRequests = get()) }
-    viewModel { DiscoverViewModel(api = get(), telemetry = get()) }
-    viewModel { (brandSlug: String, source: String) ->
-        StudioPageViewModel(brandSlug, source, api = get(), favoritesRepository = get(), scopeRequests = get(), telemetry = get())
+    single { DiscoverMapRequests() }
+    viewModel { DiscoverViewModel(api = get(), telemetry = get(), mapRequests = get()) }
+    viewModel { (brandSlug: String, source: String, fromLocationId: Int) ->
+        StudioPageViewModel(
+            brandSlug, source, fromLocationId.takeIf { it > 0 },
+            api = get(), favoritesRepository = get(), scopeRequests = get(), telemetry = get(),
+        )
     }
     single { RecentSearches.backedBy(get()) }
     single { ReviewDrafts.backedBy(get()) }

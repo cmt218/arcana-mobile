@@ -197,3 +197,24 @@ the app; `sample` on the host pid works. A simulator only shows its software
 keyboard (needed to see a flash at all) after
 `xcrun simctl spawn <udid> defaults write com.apple.keyboard.preferences AutomaticMinimizationEnabled -bool NO`
 and a reboot; on iOS 26 the older `com.apple.Preferences` domain does nothing.
+
+## Discover map (iOS), measured 2026-09-20
+
+Debug build on the simulator (iPhone 17 Pro, iOS 26.4.1, and iPhone 16 Pro, iOS 18.5), local server, 80 locations. Absolute numbers are a Mac's; the comparisons are what carry to a phone. Tools: `ps -o cputime` over a window for CPU, `footprint -p <pid>` for memory, `heap <pid>` for live `VKMapView` engines (the 18.5 runtime's process cannot be read by `heap`), `sample <pid>` for stacks.
+
+| Question | Result |
+|---|---|
+| Compose work while the map is on screen, before | 12.6% of a core at idle: the atmosphere steps 30 times a second and every step redraws the whole Compose scene over the native map, on the thread the map's gestures run on |
+| Same, with `Atmosphere(drifting = false)` on the Map lens | 0.8% idle, 0.8% during a nine second drag |
+| What the map costs in memory | about +50 MB while it exists (62 → 113 MB on 26.4) |
+| Is it given back | yes: 68 MB within three seconds of leaving the Map lens, engine count 0 |
+| Does create and destroy leak | no: three rounds of 15 Studios ↔ Map round trips in three seconds each settle at 157, 154, 151 MB |
+| The catch | each round spikes to about 315 MB and takes up to 45 s to drain (malloc returns the pages lazily). Fifteen maps in three seconds is not a member, but it shows a new `MKMapView` per visit is the design's cost |
+| A map left open in a hidden tab (iOS keeps tab compositions) | zero work: no MapKit or VectorKit frame on any thread in a three second sample; it holds its ~50 MB |
+| Releasing it when its tab hides, via the screen's lifecycle | does NOT work: the engine was still alive 40 s after switching tabs, so that gate was removed rather than left as dead code |
+
+**Decisions.** The atmosphere holds still on the Map lens (both platforms). The map lives only while the Map lens is on screen, plus the iOS hidden-tab case; MapKit answers memory warnings itself. Android forwards `onLowMemory` / `onTrimMemory` to Google's `MapView` and skips a marker redraw when a zoom leaves every cluster unchanged. Not built, and the next step if the rebuild after "back from a studio page" feels slow on a device: keep ONE `MKMapView` per session and re-attach it, which removes both the rebuild and the spike at the price of holding ~50 MB until the session ends or a memory warning arrives.
+
+**Scale limits to revisit.** Android redraws every cluster mark (on and off screen) when the clusters change: fine for hundreds of locations, wasteful near a thousand, where marks should be limited to the visible region. The directory ships every location in one response (3.8 KB gzipped for 80): past a few thousand it wants a viewport query.
+
+**A laggy pan under Xcode is mostly Xcode.** A Run from Xcode is a debug Kotlin/Native build with the debugger attached and Metal API Validation on (the scheme default; the project has no shared scheme), and MapKit draws with Metal. Judge map smoothness from the home screen (stop the Xcode session, tap the icon), with Edit Scheme → Run → Diagnostics → Metal API Validation off, or from a Release / TestFlight build.

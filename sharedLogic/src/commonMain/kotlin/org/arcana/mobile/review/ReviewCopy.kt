@@ -60,8 +60,11 @@ fun scopeStatsLine(scope: FeedbackScopeDto): String {
 
 /** The one hint that leads into a feed, wherever it sits: what it is about is
  *  said by where it is placed (under the class, the instructor, the location). */
-fun whatMembersSayLabel(count: Int): String =
-    if (count == 1) "What members say · 1 review" else "What members say · $count reviews"
+fun whatMembersSayLabel(count: Int): String = "$WHAT_MEMBERS_SAY · ${reviewCountLabel(count)}"
+
+const val WHAT_MEMBERS_SAY = "What members say"
+
+fun reviewCountLabel(count: Int): String = if (count == 1) "1 review" else "$count reviews"
 
 /** Whether a feed opens with its averages. One review is its own average, so
  *  it takes two; and the all-studios feed pools every studio, whose averages

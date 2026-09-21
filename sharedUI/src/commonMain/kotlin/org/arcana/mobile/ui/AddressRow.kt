@@ -23,11 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.arcana.mobile.analytics.Telemetry
@@ -42,12 +40,13 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.koin.compose.koinInject
 
 private const val COPIED_HOLD_MS = 700L
+private const val SHOW_ON_MAP = "Show on Arcana map"
 
 /**
  * A location the member can open in a maps app: name, address and a chevron.
  * The whole row is the control. Tapping opens [AddressSheet]. [surface] is the
- * `address_tapped` telemetry surface (class_detail, reservation_row,
- * home_next_up, studio_page).
+ * `address_tapped` telemetry surface (class_detail, studio_page). [onShowOnMap],
+ * when the place has a pin on Discover's map, leads the sheet with the way there.
  */
 @Composable
 fun AddressRow(
@@ -62,6 +61,7 @@ fun AddressRow(
     overline: String? = null,
     nameAsDisplay: Boolean = false,
     leading: (@Composable () -> Unit)? = null,
+    onShowOnMap: (() -> Unit)? = null,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
     val source = remember { MutableInteractionSource() }
@@ -96,42 +96,7 @@ fun AddressRow(
             target = MapTarget(name, address, latitude, longitude, business = businessName ?: name),
             surface = surface,
             onDismiss = { sheetOpen = false },
-        )
-    }
-}
-
-/** One-line variant for dense rows and cards: the address and a small chevron. */
-@Composable
-fun AddressLink(
-    name: String,
-    address: String,
-    latitude: Double?,
-    longitude: Double?,
-    surface: String,
-    modifier: Modifier = Modifier,
-    businessName: String? = null,
-    color: Color = Charcoal,
-) {
-    var sheetOpen by remember { mutableStateOf(false) }
-    val source = remember { MutableInteractionSource() }
-    val label = accessibleLabel(name, address)
-    Row(
-        modifier = modifier
-            .pressable(source, pressedScale = 0.98f)
-            .clickable(interactionSource = source, indication = null, role = Role.Button) { sheetOpen = true }
-            .semantics { contentDescription = label },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Caption(text = address, size = 12, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        // decorative — the row's semantics carry the label.
-        StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 12.dp, tint = color)
-    }
-    if (sheetOpen) {
-        AddressSheet(
-            target = MapTarget(name, address, latitude, longitude, business = businessName ?: name),
-            surface = surface,
-            onDismiss = { sheetOpen = false },
+            onShowOnMap = onShowOnMap,
         )
     }
 }
@@ -141,7 +106,12 @@ private fun accessibleLabel(name: String, address: String): String =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddressSheet(target: MapTarget, surface: String, onDismiss: () -> Unit) {
+private fun AddressSheet(
+    target: MapTarget,
+    surface: String,
+    onDismiss: () -> Unit,
+    onShowOnMap: (() -> Unit)? = null,
+) {
     val telemetry = koinInject<Telemetry>()
     val apps = remember { MapsLauncher.availableApps() }
     var copied by remember { mutableStateOf(false) }
@@ -159,6 +129,13 @@ private fun AddressSheet(target: MapTarget, surface: String, onDismiss: () -> Un
                 Caption(text = target.address, size = 13, color = Ash, maxLines = 2)
             }
             Spacer(Modifier.height(12.dp))
+            if (onShowOnMap != null) {
+                SheetAction(label = SHOW_ON_MAP, icon = ArcanaIcons.ArrowUpRight) {
+                    telemetry.addressTapped(surface = surface, app = "arcana_map")
+                    onDismiss()
+                    onShowOnMap()
+                }
+            }
             apps.forEach { app ->
                 SheetAction(label = app.label, icon = ArcanaIcons.ArrowUpRight) {
                     telemetry.addressTapped(surface = surface, app = app.key)

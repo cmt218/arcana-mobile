@@ -36,6 +36,7 @@ import org.arcana.mobile.booking.bookingCancelCopy
 import org.arcana.mobile.data.StudioClassTypeDto
 import org.arcana.mobile.data.StudioInstructorDto
 import org.arcana.mobile.data.StudioPageDto
+import org.arcana.mobile.data.StudioPageLocationDto
 import org.arcana.mobile.schedule.ScrollJumpChevron
 import org.arcana.mobile.theme.*
 import org.arcana.mobile.ui.AccentText
@@ -44,7 +45,6 @@ import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaSheet
 import org.arcana.mobile.ui.InstructorSheet
 import org.arcana.mobile.review.FeedbackScope
-import org.arcana.mobile.review.whatMembersSayLabel
 import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.Caption
 import org.arcana.mobile.ui.CategoryIcons
@@ -55,7 +55,6 @@ import org.arcana.mobile.ui.Heading3
 import org.arcana.mobile.ui.IconCircle
 import org.arcana.mobile.ui.Overline
 import org.arcana.mobile.ui.PrimaryCta
-import org.arcana.mobile.ui.SectionRule
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioLocationRow
@@ -66,25 +65,45 @@ import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.studioColorFor
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.rotate
+import org.arcana.mobile.review.MembersSayRow
+import org.arcana.mobile.theme.Dur
+import org.arcana.mobile.theme.Mist
+import org.arcana.mobile.theme.MossLight
+import org.arcana.mobile.theme.Surface
+import org.arcana.mobile.ui.FilterPill
+import org.arcana.mobile.ui.cardShadow
+import org.arcana.mobile.ui.opticallyCentredCapsVertical
 
 private const val CLASS_DESCRIPTION_COLLAPSED_LINES = 2
+private const val SECTION_TITLE_SIZE = 18
+private val CARD_GAP = 10.dp
 private const val SECTION_PREVIEW_COUNT = 5
 private const val LOCATION_LIST_HEIGHT_FRACTION = 0.5f
 private val CTA_CLEARANCE = 120.dp
 
 /** A brand's page from Discover: header, about, good to know, classes,
- *  instructors, locations, and a sticky "See schedule". */
+ *  instructors, locations, and a sticky Book button. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StudioPageScreen(
     brandSlug: String,
     source: String,
+    /** The location the member came from (a map pin), if any. */
+    fromLocationId: Int? = null,
     onClose: () -> Unit,
     onSeeSchedule: () -> Unit,
     /** Opens the member feedback feed; the string is the telemetry source. */
     onOpenFeedback: (FeedbackScope, String) -> Unit = { _, _ -> },
+    /** Shows a location (by id) on Discover's map; null where there is no way there. */
+    onShowOnMap: ((Int) -> Unit)? = null,
 ) {
-    val vm = koinViewModel<StudioPageViewModel> { parametersOf(brandSlug, source) }
+    val vm = koinViewModel<StudioPageViewModel> { parametersOf(brandSlug, source, fromLocationId ?: 0) }
     val state by vm.uiState.collectAsState()
     val retrying by vm.retrying.collectAsState()
     val haptics = rememberHaptics()
@@ -126,6 +145,7 @@ fun StudioPageScreen(
                         instructor = picked
                     },
                     onOpenFeedback = onOpenFeedback,
+                    onShowOnMap = onShowOnMap,
                 )
                 // Floats over the list like class detail's CTA: no fade behind it.
                 Box(
@@ -136,7 +156,7 @@ fun StudioPageScreen(
                         .padding(horizontal = 24.dp, vertical = 8.dp),
                 ) {
                     PrimaryCta(
-                        label = "See schedule",
+                        label = "Book",
                         onClick = {
                             haptics.selection()
                             vm.requestSchedule()
@@ -192,6 +212,7 @@ private fun StudioPageContent(
     onFavorite: () -> Unit,
     onInstructor: (StudioInstructorDto) -> Unit,
     onOpenFeedback: (FeedbackScope, String) -> Unit,
+    onShowOnMap: ((Int) -> Unit)?,
 ) {
     val page = state.page
     val color = studioColorFor(page.primaryColor)
@@ -211,13 +232,18 @@ private fun StudioPageContent(
         // Only once someone has said something. No inline averages.
         if (page.reviewCount > 0) {
             item {
-                Spacer(Modifier.height(16.dp))
-                TextLink(
-                    label = whatMembersSayLabel(page.reviewCount),
+                Spacer(Modifier.height(20.dp))
+                MembersSayRow(
+                    count = page.reviewCount,
                     onClick = { onOpenFeedback(FeedbackScope.brand(page.slug, page.name), "studio_page") },
-                    color = Moss,
-                    underline = false,
                 )
+            }
+        }
+        // Reached from a map pin: that location leads, and the Book button opens on it.
+        state.fromLocation?.let { location ->
+            item(key = "from-location") {
+                Section("This location")
+                LocationRow(page = page, location = location, onOpenFeedback = onOpenFeedback, onShowOnMap = onShowOnMap)
             }
         }
         if (page.bio.isNotBlank()) {
@@ -249,7 +275,7 @@ private fun StudioPageContent(
         if (page.classTypes.isNotEmpty()) {
             item { Section("Classes") }
             val shown = if (allClasses) page.classTypes else page.classTypes.take(SECTION_PREVIEW_COUNT)
-            items(shown, key = { "class-${it.key}" }) { ClassTypeRow(it) }
+            items(shown, key = { "class-${it.key}" }) { ClassTypeCard(it) }
             showAllItem("classes", page.classTypes.size, allClasses, onToggleAllClasses)
         }
         if (page.instructors.isNotEmpty()) {
@@ -263,31 +289,41 @@ private fun StudioPageContent(
         if (page.locations.isNotEmpty()) {
             item { Section("Locations") }
             items(page.locations, key = { "location-${it.id}" }) { location ->
-                AddressRow(
-                    name = location.name,
-                    businessName = "${page.name} ${location.name}",
-                    address = location.address,
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    surface = "studio_page",
-                    overline = location.neighborhood.takeIf { it.isNotBlank() },
-                    modifier = Modifier.padding(vertical = 10.dp),
-                )
-                if (location.reviewCount > 0) {
-                    TextLink(
-                        label = whatMembersSayLabel(location.reviewCount),
-                        onClick = {
-                            onOpenFeedback(
-                                FeedbackScope.location(location.id, "${page.name} · ${location.name}"),
-                                "studio_location",
-                            )
-                        },
-                        color = Moss,
-                        underline = false,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
+                LocationRow(page = page, location = location, onOpenFeedback = onOpenFeedback, onShowOnMap = onShowOnMap)
             }
+        }
+    }
+}
+
+@Composable
+private fun LocationRow(
+    page: StudioPageDto,
+    location: StudioPageLocationDto,
+    onOpenFeedback: (FeedbackScope, String) -> Unit,
+    onShowOnMap: ((Int) -> Unit)?,
+) {
+    Column(modifier = Modifier.padding(bottom = CARD_GAP).pageCard().padding(horizontal = 16.dp, vertical = 14.dp)) {
+        AddressRow(
+            name = location.name,
+            businessName = "${page.name} ${location.name}",
+            address = location.address,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            surface = "studio_page",
+            overline = location.neighborhood.takeIf { it.isNotBlank() },
+            onShowOnMap = onShowOnMap?.takeIf { location.onMap }?.let { show -> { show(location.id) } },
+        )
+        if (location.reviewCount > 0) {
+            Spacer(Modifier.height(12.dp))
+            MembersSayRow(
+                count = location.reviewCount,
+                onClick = {
+                    onOpenFeedback(
+                        FeedbackScope.location(location.id, "${page.name} · ${location.name}"),
+                        "studio_location",
+                    )
+                },
+            )
         }
     }
 }
@@ -306,12 +342,30 @@ private fun LazyListScope.showAllItem(noun: String, total: Int, expanded: Boolea
     }
 }
 
+/** A section's name at heading weight, so the page reads as parts and not one run of text. */
 @Composable
 private fun Section(title: String) {
-    Spacer(Modifier.height(28.dp))
-    SectionRule(title)
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(32.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Heading2(
+            text = title,
+            size = SECTION_TITLE_SIZE,
+            color = Wood,
+            modifier = Modifier.opticallyCentredCapsVertical(SECTION_TITLE_SIZE.sp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.weight(1f).height(1.dp).background(MossLight))
+    }
+    Spacer(Modifier.height(16.dp))
 }
+
+/** The lifted card every tappable row on this page sits in. */
+private fun Modifier.pageCard(): Modifier =
+    fillMaxWidth()
+        .cardShadow(ArcanaShapes.Card)
+        .clip(ArcanaShapes.Card)
+        .background(Surface)
+        .border(1.dp, Mist, ArcanaShapes.Card)
 
 @Composable
 private fun Header(page: StudioPageDto, color: Color, state: StudioPageUiState.Success, onFavorite: () -> Unit) {
@@ -362,7 +416,13 @@ private fun Header(page: StudioPageDto, color: Color, state: StudioPageUiState.S
             StrokeIcon(icon = ArcanaIcons.Check, size = 14.dp, tint = Moss)
             Overline(text = "In your favorites", size = 11, color = Moss)
         }
-        else -> TextLink(label = "Add to favorites", onClick = onFavorite, color = Moss, underline = false)
+        else -> FilterPill(
+            label = "ADD TO FAVORITES",
+            active = false,
+            onClick = onFavorite,
+            // decorative — the label names the action.
+            leading = { StrokeIcon(icon = ArcanaIcons.Bookmark, size = 14.dp, tint = Moss) },
+        )
     }
     state.favoritesError?.let {
         Spacer(Modifier.height(6.dp))
@@ -386,25 +446,41 @@ private fun AmenityRow(page: StudioPageDto) {
     }
 }
 
+/** One class the studio runs. The chevron says there is more to read; a tap opens it in place. */
 @Composable
-private fun ClassTypeRow(classType: StudioClassTypeDto) {
-    var expanded by remember(classType.key) { mutableStateOf(false) }
+private fun ClassTypeCard(classType: StudioClassTypeDto) {
+    var expanded by rememberSaveable(classType.key) { mutableStateOf(false) }
     val source = remember { MutableInteractionSource() }
     val expandable = classType.description.isNotBlank()
+    val turn by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(Dur.Short),
+        label = "classCardChevron",
+    )
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .padding(bottom = CARD_GAP)
+            .then(if (expandable) Modifier.pressable(source, pressedScale = 0.99f) else Modifier)
+            .pageCard()
             .then(
-                if (expandable) Modifier
-                    .pressable(source, pressedScale = 0.99f)
-                    .clickable(interactionSource = source, indication = null) { expanded = !expanded }
-                else Modifier
+                if (expandable) Modifier.clickable(
+                    interactionSource = source,
+                    indication = null,
+                    onClickLabel = if (expanded) "Show less" else "Show more",
+                ) { expanded = !expanded } else Modifier
             )
-            .padding(vertical = 10.dp),
+            .animateContentSize(tween(Dur.Short))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        BodyText(text = classType.label, size = 15, color = Ink)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Heading3(text = classType.label, size = 16, color = Ink, modifier = Modifier.weight(1f))
+            if (expandable) {
+                // decorative — the card's click label says what a tap does.
+                StrokeIcon(icon = ArcanaIcons.ChevronDown, size = 16.dp, tint = Moss, modifier = Modifier.rotate(turn))
+            }
+        }
         if (expandable) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             BodyText(
                 text = classType.description,
                 size = 13,
@@ -421,10 +497,11 @@ private fun InstructorRow(person: StudioInstructorDto, color: Color, onClick: ()
     val source = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
-            .fillMaxWidth()
+            .padding(bottom = CARD_GAP)
             .pressable(source, pressedScale = 0.99f)
+            .pageCard()
             .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -434,9 +511,9 @@ private fun InstructorRow(person: StudioInstructorDto, color: Color, onClick: ()
         ) {
             CircleMonogram(text = monogramFor(person.name), fontSize = 14, color = color)
         }
-        BodyText(text = person.name, size = 15, color = Ink, modifier = Modifier.weight(1f))
+        Heading3(text = person.name, size = 16, color = Ink, modifier = Modifier.weight(1f))
         // decorative — the row is the control and the name labels it.
-        StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
+        StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 16.dp, tint = Moss)
     }
 }
 

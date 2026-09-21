@@ -34,9 +34,13 @@ private const val ADVANCE_INTERVAL_MS = 29L
  * while resumed and while the system allows ambient motion. Deliberately no
  * `preferredFrameRate`: that vote reaches the whole scene's display link and would
  * cap scrolling too.
+ *
+ * @param drifting false holds the surface still where it is. For a screen mostly
+ *   covered by a platform view (the Discover map): every drift step redraws the
+ *   whole Compose scene over that view, on the thread its gestures run on.
  */
 @Composable
-fun Atmosphere(modifier: Modifier = Modifier) {
+fun Atmosphere(modifier: Modifier = Modifier, drifting: Boolean = true) {
     val seeds = remember { atmosphereSeeds(Random.Default) }
     val motionAllowed = systemAllowsAmbientMotion()
     var resumed by remember { mutableStateOf(true) }
@@ -46,11 +50,11 @@ fun Atmosphere(modifier: Modifier = Modifier) {
     }
 
     var time by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(motionAllowed, resumed) {
+    LaunchedEffect(motionAllowed, resumed, drifting) {
         // Disallowed motion resets to base positions; a pause just stops advancing,
         // so withFrameNanos never schedules for either.
         if (!motionAllowed) { time = 0f; return@LaunchedEffect }
-        if (!resumed) return@LaunchedEffect
+        if (!resumed || !drifting) return@LaunchedEffect
         var lastNanos = withFrameNanos { it }
         while (true) {
             delay(ADVANCE_INTERVAL_MS)

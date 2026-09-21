@@ -20,6 +20,8 @@ class ReviewCopyTest {
     @Test fun `the feed hint counts its reviews`() {
         assertEquals("What members say · 1 review", whatMembersSayLabel(1))
         assertEquals("What members say · 12 reviews", whatMembersSayLabel(12))
+        assertEquals("1 review", reviewCountLabel(1))
+        assertEquals("12 reviews", reviewCountLabel(12))
     }
 
     @Test fun `class line drops an unknown instructor`() {

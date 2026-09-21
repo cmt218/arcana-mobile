@@ -21,6 +21,7 @@ kotlinx-coroutines = "1.10.1"
 material3 = "1.12.0-alpha03"
 navigationCompose = "2.10.0-alpha02"
 installreferrer = "2.2"
+googleMaps = "20.0.0"
 posthog = "3.49.0"
 sentry = "8.43.1"
 sentryPlugin = "5.8.0"
@@ -63,6 +64,7 @@ androidx-lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:life
 koin-core-viewmodel = { module = "io.insert-koin:koin-core-viewmodel", version.ref = "koin" }
 androidx-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 installreferrer = { module = "com.android.installreferrer:installreferrer", version.ref = "installreferrer" }
+google-maps = { module = "com.google.android.gms:play-services-maps", version.ref = "googleMaps" }
 posthog-android = { module = "com.posthog:posthog-android", version.ref = "posthog" }
 sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 

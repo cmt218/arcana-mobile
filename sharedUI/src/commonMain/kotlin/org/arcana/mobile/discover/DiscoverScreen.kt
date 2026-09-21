@@ -1,6 +1,10 @@
 package org.arcana.mobile.discover
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -17,9 +21,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.data.DiscoverStudioDto
+import org.arcana.mobile.review.FeedbackFeedPanel
+import org.arcana.mobile.review.FeedbackFeedUiState
+import org.arcana.mobile.review.allFeedbackViewModel
 import org.arcana.mobile.theme.*
 import org.arcana.mobile.ui.ArcanaIcons
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
@@ -38,18 +48,18 @@ import org.arcana.mobile.ui.FullScreenError
 import org.arcana.mobile.ui.Heading2
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.Overline
+import org.arcana.mobile.ui.SegmentedControl
 import org.arcana.mobile.ui.ShimmerBox
+import org.arcana.mobile.ui.cardShadow
 import org.arcana.mobile.ui.StrokeIcon
 import org.arcana.mobile.ui.StudioLocationRow
 import org.arcana.mobile.ui.TextLink
-import org.arcana.mobile.data.DiscoverFeedbackDto
 import org.arcana.mobile.ui.TransientSurface
 import org.arcana.mobile.ui.filterPanelEnter
 import org.arcana.mobile.ui.filterPanelExit
 import org.arcana.mobile.schedule.JumpToTop
 import org.arcana.mobile.ui.chromeBottom
 import org.arcana.mobile.ui.pressable
-import org.arcana.mobile.ui.tonalWell
 import org.arcana.mobile.ui.rememberHaptics
 import org.arcana.mobile.ui.safeContentPadding
 import org.arcana.mobile.ui.safeHorizontalPadding
@@ -61,33 +71,74 @@ private const val SECTION_NEIGHBORHOODS = "hood"
 private const val MAX_CARD_CATEGORIES = 3
 private const val MAX_CARD_NEIGHBORHOODS = 3
 private const val POPOVER_HEIGHT_FRACTION = 0.62f
+private val PIN_CARD_GAP = 12.dp
 
-/** The Discover tab: every studio, A to Z, narrowed by modality and neighborhood. */
+/**
+ * The Discover tab: three lenses on the same studios. Studios is the A to Z
+ * list, Map the same studios as pins, Feedback what members said about them.
+ * The modality and neighborhood filters narrow the list and the map together.
+ */
 @Composable
-fun DiscoverScreen(onOpenStudio: (String) -> Unit, onOpenFeedback: () -> Unit = {}) {
+fun DiscoverScreen(onOpenStudio: (slug: String, source: String, locationId: Int?) -> Unit) {
     val vm = koinViewModel<DiscoverViewModel>()
     LaunchedEffect(Unit) { vm.onOpened() }
     val state by vm.uiState.collectAsState()
+    val mode by vm.mode.collectAsState()
+    val selectedPinId by vm.selectedPinId.collectAsState()
     val isRefreshing by vm.isRefreshing.collectAsState()
     val refreshFailed by vm.refreshFailed.collectAsState()
     val retrying by vm.retrying.collectAsState()
     var expandedSection by remember { mutableStateOf("") }
     val haptics = rememberHaptics()
+    // Built on first use: a member who never opens Feedback never pays for its fetch.
+    val feedVm = if (mode == DiscoverMode.Feedback) allFeedbackViewModel(source = "discover") else null
+    val feedState = feedVm?.uiState?.collectAsState()?.value
+    val feedRetrying = feedVm?.retrying?.collectAsState()?.value ?: false
+    val feedRefreshFailed = feedVm?.refreshFailed?.collectAsState()?.value ?: false
 
     var headerBottom by remember { mutableStateOf(0.dp) }
+    // What the selected pin's card covers, so the refresh toast rises clear of it.
+    var pinCardCover by remember { mutableStateOf(0.dp) }
     Box(modifier = Modifier.fillMaxSize()) {
-        Atmosphere()
-        // Under the title, on the whole screen (as on Home and Book): see FullScreenError.
-        (state as? DiscoverUiState.Error)?.let {
-            FullScreenError(type = it.type, onRetry = vm::retry, retrying = retrying, topInset = headerBottom)
+        Atmosphere(drifting = mode != DiscoverMode.Map)
+        // Under the header, on the whole screen (as on Home and Book): see FullScreenError.
+        if (mode == DiscoverMode.Feedback) {
+            (feedState as? FeedbackFeedUiState.Error)?.let {
+                FullScreenError(type = it.type, onRetry = { feedVm?.retry() }, retrying = feedRetrying, topInset = headerBottom)
+            }
+        } else {
+            (state as? DiscoverUiState.Error)?.let {
+                FullScreenError(type = it.type, onRetry = vm::retry, retrying = retrying, topInset = headerBottom)
+            }
         }
         Column(modifier = Modifier.fillMaxSize().safeContentPadding()) {
-            Heading2(
-                "Discover", size = 26, color = Wood,
-                modifier = Modifier.padding(horizontal = 24.dp).padding(top = 16.dp).chromeBottom { headerBottom = it },
-            )
-            Spacer(Modifier.height(16.dp))
-            when (val s = state) {
+            Column(modifier = Modifier.chromeBottom { headerBottom = it }) {
+                Heading2("Discover", size = 26, color = Wood, modifier = Modifier.padding(horizontal = 24.dp).padding(top = 16.dp))
+                Spacer(Modifier.height(14.dp))
+                SegmentedControl(
+                    labels = DiscoverMode.entries.map { it.label },
+                    selectedIndex = mode.ordinal,
+                    onSelect = { index ->
+                        val next = DiscoverMode.entries[index]
+                        if (next != mode) {
+                            haptics.selection()
+                            expandedSection = ""
+                            vm.setMode(next)
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            if (mode == DiscoverMode.Feedback) {
+                feedVm?.let {
+                    FeedbackFeedPanel(
+                        vm = it,
+                        onOpenStudio = { slug -> onOpenStudio(slug, "feed", null) },
+                        bottomPadding = 24.dp + LocalFloatingBarInset.current,
+                    )
+                }
+            } else when (val s = state) {
                 DiscoverUiState.Loading -> SkeletonList()
                 is DiscoverUiState.Error -> Unit // drawn full screen above
                 is DiscoverUiState.Success -> {
@@ -101,17 +152,29 @@ fun DiscoverScreen(onOpenStudio: (String) -> Unit, onOpenFeedback: () -> Unit = 
                     Spacer(Modifier.height(12.dp))
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                         val popoverMaxHeight = maxHeight * POPOVER_HEIGHT_FRACTION
-                        ArcanaPullToRefreshBox(
-                            isRefreshing = isRefreshing,
-                            onRefresh = vm::refresh,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            StudioList(
+                        if (mode == DiscoverMode.Map) {
+                            MapPanel(
                                 state = s,
-                                onOpenStudio = onOpenStudio,
-                                onOpenFeedback = onOpenFeedback,
+                                camera = vm.mapCamera,
+                                selectedPinId = selectedPinId,
+                                onPinTapped = { haptics.selection(); vm.selectPin(it) },
+                                onMapTapped = vm::clearPin,
+                                onOpenStudio = { pin -> onOpenStudio(pin.brandSlug, "map", pin.locationId) },
                                 onClearFilters = vm::clearFilters,
+                                onCardCover = { pinCardCover = it },
                             )
+                        } else {
+                            ArcanaPullToRefreshBox(
+                                isRefreshing = isRefreshing,
+                                onRefresh = vm::refresh,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                StudioList(
+                                    state = s,
+                                    onOpenStudio = { slug -> onOpenStudio(slug, "directory", null) },
+                                    onClearFilters = vm::clearFilters,
+                                )
+                            }
                         }
                         FilterPopover(
                             state = s,
@@ -131,22 +194,142 @@ fun DiscoverScreen(onOpenStudio: (String) -> Unit, onOpenFeedback: () -> Unit = 
                 }
             }
         }
+        val failed = if (mode == DiscoverMode.Feedback) feedRefreshFailed else refreshFailed
         TransientSurface(
-            visible = refreshFailed,
+            visible = failed,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .safeHorizontalPadding()
-                .padding(bottom = 16.dp + LocalFloatingBarInset.current),
+                .padding(bottom = 16.dp + LocalFloatingBarInset.current + if (mode == DiscoverMode.Map) pinCardCover else 0.dp),
         ) {
             ErrorSnackbar(
                 text = ErrorCopy.REFRESH_FAILED,
                 onRetry = {
-                    vm.dismissRefreshFailed()
-                    vm.refresh()
+                    if (mode == DiscoverMode.Feedback) {
+                        feedVm?.dismissRefreshFailed()
+                        feedVm?.refresh()
+                    } else {
+                        vm.dismissRefreshFailed()
+                        vm.refresh()
+                    }
                 },
-                onDismiss = vm::dismissRefreshFailed,
+                onDismiss = { if (mode == DiscoverMode.Feedback) feedVm?.dismissRefreshFailed() else vm.dismissRefreshFailed() },
             )
         }
+    }
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+
+/** The studios as pins, edge to edge under the filters, with the selected pin's card over it. */
+@Composable
+private fun MapPanel(
+    state: DiscoverUiState.Success,
+    camera: MapCameraMemory,
+    selectedPinId: Int?,
+    onPinTapped: (Int) -> Unit,
+    onMapTapped: () -> Unit,
+    onOpenStudio: (DiscoverPin) -> Unit,
+    onClearFilters: () -> Unit,
+    onCardCover: (Dp) -> Unit,
+) {
+    val selected = state.pins.firstOrNull { it.locationId == selectedPinId }
+    // The card outlives the selection by its exit animation, still showing the pin it had.
+    var shown by remember { mutableStateOf(selected) }
+    if (selected != null) shown = selected
+    val barInset = LocalFloatingBarInset.current
+    var cardHeight by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    val cardCover = if (selected != null) cardHeight + PIN_CARD_GAP else 0.dp
+    LaunchedEffect(cardCover) { onCardCover(cardCover) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        StudioMap(
+            pins = state.pins,
+            selectedPinId = selectedPinId,
+            pinsEpoch = state.pinsEpoch,
+            focusEpoch = state.focusEpoch,
+            camera = camera,
+            onPinTapped = onPinTapped,
+            onMapTapped = onMapTapped,
+            modifier = Modifier.fillMaxSize(),
+            bottomInset = barInset + cardCover,
+        )
+        // The map keeps the atmosphere's edge: one rule where the chrome ends.
+        Box(Modifier.fillMaxWidth().height(1.dp).background(MossLight.copy(alpha = 0.42f)))
+        if (state.pins.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .cardShadow(ArcanaShapes.Card)
+                    .clip(ArcanaShapes.Card)
+                    .background(Surface)
+                    .border(1.dp, Mist, ArcanaShapes.Card)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                BodyText(if (state.studios.isEmpty()) "No studios match those filters." else "Nothing to pin for those filters.", size = 14, color = Ink)
+                Spacer(Modifier.height(8.dp))
+                TextLink(label = "Clear filters", onClick = onClearFilters, color = Moss, underline = false)
+            }
+        }
+        AnimatedVisibility(
+            visible = selected != null,
+            enter = slideInVertically(tween(Dur.Medium)) { it / 2 } + fadeIn(tween(Dur.Short)),
+            exit = slideOutVertically(tween(Dur.Short)) { it / 2 } + fadeOut(tween(Dur.Short)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = barInset + PIN_CARD_GAP),
+        ) {
+            shown?.let { pin ->
+                PinCard(
+                    pin = pin,
+                    onClick = { onOpenStudio(pin) },
+                    modifier = Modifier.onSizeChanged { cardHeight = with(density) { it.height.toDp() } },
+                )
+            }
+        }
+    }
+}
+
+/** The selected pin, as the list's studio row on a lifted card: the card is the control. */
+@Composable
+private fun PinCard(pin: DiscoverPin, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val source = remember { MutableInteractionSource() }
+    val color = studioColorFor(pin.primaryColor)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .pressable(source, pressedScale = 0.99f)
+            .cardShadow(ArcanaShapes.Card)
+            .clip(ArcanaShapes.Card)
+            .background(Surface)
+            .border(1.dp, Mist, ArcanaShapes.Card)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.14f))
+                .border(1.5.dp, color.copy(alpha = 0.33f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircleMonogram(text = pin.monogram, fontSize = 15, color = color)
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            BodyText(text = pin.brandName, size = 16, color = Wood, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Caption(text = pinPlaceLine(pin), size = 12, color = Ash, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (pin.address.isNotBlank()) {
+                Caption(text = pin.address, size = 12, color = Ash, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        // decorative — the card is the control and the name labels it.
+        StrokeIcon(icon = ArcanaIcons.ChevronRight, size = 16.dp, tint = Ash2)
     }
 }
 
@@ -265,7 +448,6 @@ private fun BoxScope.FilterPopover(
 private fun StudioList(
     state: DiscoverUiState.Success,
     onOpenStudio: (String) -> Unit,
-    onOpenFeedback: () -> Unit,
     onClearFilters: () -> Unit,
 ) {
     val dim by animateFloatAsState(
@@ -293,50 +475,11 @@ private fun StudioList(
             }
             return@LazyColumn
         }
-        // Once any review exists, the latest comment leads the list
-        // and opens the unscoped feed.
-        if (state.feedback.reviewCount > 0) {
-            item(key = "member-feedback") {
-                MemberFeedbackRow(feedback = state.feedback, onClick = onOpenFeedback)
-            }
-        }
         items(state.studios, key = { it.slug }) { studio ->
             StudioCard(studio = studio, onClick = { onOpenStudio(studio.slug) })
         }
     }
     JumpToTop(listState)
-    }
-}
-
-@Composable
-private fun MemberFeedbackRow(feedback: DiscoverFeedbackDto, onClick: () -> Unit) {
-    val source = remember { MutableInteractionSource() }
-    val latest = feedback.latest
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 8.dp)
-            .pressable(source, pressedScale = 0.99f)
-            .tonalWell()
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Overline(text = "Member feedback", size = 10, color = Moss, modifier = Modifier.weight(1f))
-            Caption(
-                text = if (feedback.reviewCount == 1) "1 review" else "${feedback.reviewCount} reviews",
-                size = 12, color = Charcoal,
-            )
-            Spacer(Modifier.width(8.dp))
-            StrokeIcon(icon = ArcanaIcons.ArrowRight, size = 14.dp, tint = Moss) // decorative
-        }
-        if (latest != null) {
-            Spacer(Modifier.height(8.dp))
-            BodyText(text = latest.comment, size = 14, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Caption(text = "${latest.classType.label} at ${latest.brand.name}", size = 12, color = Charcoal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
     }
 }
 
@@ -415,11 +558,4 @@ internal fun placeLine(studio: DiscoverStudioDto): String {
         else -> "${studio.locationCount} locations"
     }
     return if (hoods.isBlank()) count else "$hoods · $count"
-}
-
-/** Up to two initials from the name's first letters, ignoring punctuation. */
-internal fun monogramFor(name: String): String {
-    val words = name.split(' ').map { w -> w.trimStart { !it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
-    val initials = words.take(2).map { it.first().uppercaseChar() }.joinToString("")
-    return initials.ifEmpty { "?" }
 }
