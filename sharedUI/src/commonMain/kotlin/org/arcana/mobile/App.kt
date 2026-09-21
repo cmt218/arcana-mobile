@@ -339,6 +339,7 @@ private fun MainScaffold() {
                 HomeScreen(
                     onSeeAllBookings = { navController.navigate(ArcanaDestination.MyBookings(source = "home")) },
                     onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
+                    onBookClass = { navController.navigateToTab(ArcanaTab.Schedule) },
                 )
             }
             composable<ArcanaDestination.Schedule>(

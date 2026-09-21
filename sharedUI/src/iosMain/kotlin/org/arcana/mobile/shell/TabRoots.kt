@@ -80,6 +80,7 @@ fun HomeTabViewController(onRootChanged: (Boolean) -> Unit): UIViewController =
                 HomeScreen(
                     onSeeAllBookings = { nav.navigate(ArcanaDestination.MyBookings(source = "home")) },
                     onOpenClass = { id -> nav.navigate(ArcanaDestination.ClassDetail(id)) },
+                    onBookClass = { IosShellBridge.requestTab("schedule") },
                 )
             }
             composable<ArcanaDestination.MyBookings> { entry ->

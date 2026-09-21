@@ -170,7 +170,7 @@ class HomeViewModel(
         try {
             // The scoped read carries the review prompt; its studio-cancelled rows are for
             // Reservations, never "Next up". Either read failing fails the fetch: swallowed,
-            // a failed scoped read looked like "No upcoming classes".
+            // a failed scoped read looked like nothing was reserved.
             val (me, scoped) = coroutineScope {
                 val me = async { membershipApi.membershipMe() }
                 val scoped = async { bookingApi.myUpcoming() }

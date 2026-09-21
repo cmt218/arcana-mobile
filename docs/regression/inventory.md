@@ -318,7 +318,7 @@ _Corrected after run 2026-08-27: the Expected said Burnt Nectar. `SurveyOptionCh
 
 ### HOME-02 — Greeting renders member's first name only
 - **Steps:** Load Home as a member whose account `displayName` is a full name (e.g. "Cole Tomlinson").
-- **Expected:** Headline reads "Good {morning/afternoon/evening}, Cole." — only the first token before the first space is shown, even though the stored display name has two words.
+- **Expected:** Headline reads "Good {morning/afternoon/evening}, Cole." — only the first token before the first space is shown, even though the stored display name has two words. Nothing sits between the greeting and the Next up section: the two-line Cormorant quote ("Show up. Do the work. / The rest takes care of itself.") was removed 2026-09-21 and must not come back.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/FirstName.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (line 119, `firstName(s.displayName)`)
 - **Platforms:** shared
 
@@ -342,7 +342,7 @@ _Corrected after run 2026-08-27: the Expected said Burnt Nectar. `SurveyOptionCh
 
 ### HOME-06 — Error state shows a full-screen error instead of crashing or blanking
 - **Steps:** Force `/memberships/me` to fail (e.g. server unreachable, non-2xx) with no prior successful load cached in this session. Repeat with only `bookings/me/?scope=upcoming` failing (fault injector on that path).
-- **Expected:** **Behavior changed.** Either read failing fails the fetch: a failed reservations read is never swallowed into "No upcoming classes." (it was, until 2026-09-19); cold it is this full-screen error, warm it keeps the reservations already on screen and raises the ERR-21 toast. `HomeUiState.Error(type: ErrorType)` is set; the shared `FullScreenError` replaces the whole tab content (not the static greeting chrome plus a caption) — see ERR-05 for the full CONNECTION/SERVER copy and the working "TRY AGAIN" retry. No crash, no infinite shimmer.
+- **Expected:** **Behavior changed.** Either read failing fails the fetch: a failed reservations read is never swallowed into the nothing-reserved state (HOME-09; it was, until 2026-09-19); cold it is this full-screen error, warm it keeps the reservations already on screen and raises the ERR-21 toast. `HomeUiState.Error(type: ErrorType)` is set; the shared `FullScreenError` replaces the whole tab content (not the static greeting chrome plus a caption) — see ERR-05 for the full CONNECTION/SERVER copy and the working "TRY AGAIN" retry. No crash, no infinite shimmer.
 - **Source:** sharedLogic/src/commonMain/kotlin/org/arcana/mobile/home/HomeViewModel.kt (`fetch`, `retry`, `retrying`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt, sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`FullScreenError`)
 - **Retry feedback (2026-08-18):** the retry control shows the dot-matrix loader in place of its label while the re-fetch is in flight, and the error stays on screen throughout. A retry must NOT drop to the loading state: doing so flashed the skeleton and snapped back to the same error. Repeat taps while one retry is in flight are ignored rather than queueing another fetch.
 - **Platforms:** shared
@@ -359,17 +359,16 @@ _Corrected after run 2026-08-27: the Expected said Burnt Nectar. `SurveyOptionCh
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 514-525), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/booking/BookingNotes.kt (`bookingInfoOrNull`)
 - **Platforms:** shared
 
-### HOME-09 — No-upcoming-classes empty state on the Next Up section
-- **Steps:** Load Home as a member with zero upcoming bookings.
-- **Expected:** The "Next up" section rule still renders, but in place of the hero card an Ash caption reads exactly "No upcoming classes." instead of a broken/empty card. (Further down, the separate upcoming-preview block adds "Nothing booked yet." when there is no hero and no rest — a different caption, not this one.)
-_Corrected after run 2026-08-27: the Expected carried a trailing "— browse the schedule." clause the code has never rendered; `HomeScreen.kt`'s hero-else branch emits the bare "No upcoming classes." only._
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`HomeUiState.Success`, the `hero == null` branch)
+### HOME-09 — Nothing reserved: the Next up card becomes the way into Book
+- **Steps:** Load Home as a member with zero upcoming bookings (a brand-new member sees exactly this on first open). Then tap anywhere on the Moss card.
+- **Expected:** The "Next up" section rule still renders, and the hero card's slot holds the SAME Moss card (shape, shadow, top highlight, press-in) reading "NOTHING RESERVED" (Lime overline), "YOUR MOVE." and "Tap here to start booking.", with the Lime arrow well. No time, no status pill, nothing that could pass for a reservation. The whole card is one tap target and opens the Book tab: on iOS the native bar selects Book (tab telemetry and $screen as for a bar tap), on Android the Book tab as a bar tap would. Replaced the bare "No upcoming classes." caption on 2026-09-21.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (`OpenSlotCard`, `NextUpFrame`, the `hero == null` branch), sharedUI/src/commonMain/kotlin/org/arcana/mobile/App.kt (`onBookClass` on Home), sharedUI/src/iosMain/kotlin/org/arcana/mobile/shell/TabRoots.kt (`HomeTabViewController`, `onBookClass`)
 - **Platforms:** shared
 
-### HOME-10 — Nothing-booked-yet empty state below the hero
+### HOME-10 — Nothing-reserved caption and SEE ALL under the empty card
 - **Steps:** Load Home as a member with zero total upcoming bookings (hero also null).
-- **Expected:** Below the Next Up empty state, a second caption reads "Nothing reserved yet." in place of the upcoming rows list (no "See all" confusion, no empty list flash).
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (lines 246-254)
+- **Expected:** Between the Moss card (HOME-09) and the classes-remaining tile, the caption "Nothing reserved yet." stands in for the upcoming rows, followed by the usual SEE ALL link into Reservations, so past reservations stay one tap from Home. No empty list flash.
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/home/HomeScreen.kt (the `rest.isEmpty() && hero == null` caption and the "See all" `TextLink`)
 - **Platforms:** shared
 
 ### HOME-11 — Upcoming preview list shows up to 4 further bookings, grouped by day

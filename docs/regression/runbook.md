@@ -656,7 +656,7 @@ own (`ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`)`). So:
    backticks, and `test -f` each resulting repo-relative path.
 
 Sanity-check the extractor before trusting its output: on a clean tree it
-should yield **184 unique paths from 771 comma-split tokens across 268 Source
+should yield **184 unique paths from 773 comma-split tokens across 268 Source
 lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-09-20, latest (`feature/discover-map` added
 DISCOVER-08, DISCOVER-09 and DISCOVER-10 and the class page's review placement;
