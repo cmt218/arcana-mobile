@@ -43,6 +43,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -57,7 +58,6 @@ import org.arcana.mobile.theme.Ash2
 import org.arcana.mobile.theme.Atmosphere
 import org.arcana.mobile.theme.Danger
 import org.arcana.mobile.theme.Ink
-import org.arcana.mobile.theme.Lime
 import org.arcana.mobile.theme.Mist
 import org.arcana.mobile.theme.Mist2
 import org.arcana.mobile.theme.Moss
@@ -80,7 +80,7 @@ import org.arcana.mobile.ui.BodyText
 import org.arcana.mobile.ui.CircleMonogram
 import org.arcana.mobile.ui.Display
 import org.arcana.mobile.ui.Overline
-import org.arcana.mobile.ui.SectionRule
+import org.arcana.mobile.ui.SectionHeading
 import org.arcana.mobile.ui.ErrorSnackbar
 import org.arcana.mobile.ui.ShimmerBox
 import org.arcana.mobile.ui.shimmerBrush
@@ -213,18 +213,11 @@ fun ProfileScreen(
         // Profile hero — full-bleed ink that extends behind the status bar.
         item { ProfileHero(state, onOpenSettings = onOpenSettings) }
 
-        // YOUR FAVORITES header
         stoneItem {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 28.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Overline(text = "Your favorites", color = Moss)
-                TextLink(label = "Manage", onClick = onManageStudios, underline = false)
-            }
+            SectionHeading(
+                title = "Your favorites",
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp),
+            )
         }
         stoneItem { Spacer(Modifier.height(16.dp)) }
         val favoriteLabels = favorites?.let(::favoriteRowLabels)
@@ -272,11 +265,20 @@ fun ProfileScreen(
                 }
             }
         }
-        // ACCOUNT section
+        // Under the list, as Home's SEE ALL sits under its rows: the heading's rule
+        // runs to the edge, so the link has no room beside it.
         stoneItem {
-            SectionRule(
-                label = "Account",
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp, bottom = 8.dp),
+            TextLink(
+                label = "Manage",
+                onClick = onManageStudios,
+                underline = false,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 4.dp),
+            )
+        }
+        stoneItem {
+            SectionHeading(
+                title = "Account",
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp),
             )
         }
         itemsIndexed(items = accountItems) { index, item ->
@@ -286,6 +288,7 @@ fun ProfileScreen(
                 AccountRow(
                     item,
                     showDivider = index < accountItems.lastIndex,
+                    topPadding = if (index == 0) ACCOUNT_FIRST_ROW_TOP else ACCOUNT_ROW_PADDING,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
             }
@@ -295,7 +298,7 @@ fun ProfileScreen(
         stoneItem {
             Row(
                 modifier = Modifier
-                    .padding(start = 24.dp, end = 24.dp, top = 8.dp)
+                    .padding(horizontal = 24.dp)
                     .fillMaxWidth()
                     .drawTopRule(MossLight)
                     .clickable { apiClient.logout() }
@@ -459,7 +462,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                         "Member · No. ${success.memberNumber}"
                     else
                         "Member"
-                    Overline(text = memberLabel, size = 10, color = Lime)
+                    Overline(text = memberLabel, size = 10, color = Stone)
                 } else {
                     ShimmerBox(
                         modifier = Modifier
@@ -494,7 +497,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                                 .size(116.dp)
                                 .clip(CircleShape)
                                 .background(MossDeep)
-                                .border(2.dp, Lime, CircleShape),
+                                .border(2.dp, Stone, CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -514,7 +517,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                                         trim = LineHeightStyle.Trim.Both,
                                     ),
                                     letterSpacing = (-0.02).em,
-                                    color = Lime,
+                                    color = Stone,
                                 ),
                             )
                         }
@@ -526,7 +529,7 @@ private fun ProfileHero(state: ProfileUiState, onOpenSettings: () -> Unit) {
                                 .background(Ink)
                                 .padding(4.dp)
                                 .clip(CircleShape)
-                                .background(Lime)
+                                .background(Stone)
                         )
                     }
                 } else {
@@ -619,7 +622,7 @@ private fun StatCell(value: String?, label: String, modifier: Modifier = Modifie
                     fontWeight = FontWeight.Bold,
                     fontSize = 36.sp,
                     letterSpacing = (-0.02).em,
-                    color = Lime,
+                    color = Stone,
                 ),
             )
         } else {
@@ -658,7 +661,7 @@ private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) 
                 .background(Moss),
             contentAlignment = Alignment.Center,
         ) {
-            CircleMonogram(text = idx.toString().padStart(2, '0'), fontSize = 14, color = Lime)
+            CircleMonogram(text = idx.toString().padStart(2, '0'), fontSize = 14, color = Stone)
         }
         Text(
             text = label,
@@ -674,14 +677,25 @@ private fun FavoriteRow(label: String, idx: Int, modifier: Modifier = Modifier) 
     }
 }
 
+private val ACCOUNT_ROW_PADDING = 20.dp
+
+// The first row's band starts at the Account heading's rule, which sits mid-heading,
+// so its top padding gives back the heading's lower half and all three bands match.
+private val ACCOUNT_FIRST_ROW_TOP = 12.dp
+
 @Composable
-private fun AccountRow(item: AccountItem, showDivider: Boolean = true, modifier: Modifier = Modifier) {
+private fun AccountRow(
+    item: AccountItem,
+    showDivider: Boolean = true,
+    topPadding: Dp = ACCOUNT_ROW_PADDING,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .then(if (item.onClick != null) Modifier.clickable(onClick = item.onClick) else Modifier)
             .then(if (showDivider) Modifier.drawBottomRule(MossLight) else Modifier)
-            .padding(vertical = 16.dp),
+            .padding(top = topPadding, bottom = ACCOUNT_ROW_PADDING),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {

@@ -282,7 +282,7 @@ cmd_stall() {
   # shellcheck disable=SC2086
   kill -STOP $pids 2>/dev/null
   ok "server SIGSTOPped -> socket stalls, no bytes flow"
-  note "Expect the CONNECTION state after ~30s (socketTimeoutMillis)."
+  note "Expect the CONNECTION state after ~10s on a read, ~30s on a write (networking/Timeouts.kt)."
   note "If it hangs indefinitely instead, HttpTimeout is not installed correctly."
 }
 

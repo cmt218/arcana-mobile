@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -134,8 +135,8 @@ class ProfileViewModel(
         launchFetch { _isRefreshing.value = false }
     }
 
-    private suspend fun fetch() {
-        fetchFavorites()
+    private suspend fun fetch(): Unit = coroutineScope {
+        launch { fetchFavorites() }
         try {
             val me = api.membershipMe()
             // Identify on the first /me of every authenticated launch. This VM's

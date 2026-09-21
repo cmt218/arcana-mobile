@@ -3,6 +3,7 @@ package org.arcana.mobile
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -272,12 +273,15 @@ fun App(
         AnimatedVisibility(
             visible = splashVisible,
             enter = fadeIn(tween(0)),
-            exit = fadeOut(tween(300)),
+            exit = fadeOut(tween(SPLASH_EXIT_MS, easing = SplashExitEasing)),
         ) {
             SplashScreen()
         }
     }
 }
+
+/** Ease in and out, the same curve as iOS's `.easeInOut`. */
+private val SplashExitEasing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 
 @Composable
 private fun MainScaffold() {
@@ -335,6 +339,7 @@ private fun MainScaffold() {
                 HomeScreen(
                     onSeeAllBookings = { navController.navigate(ArcanaDestination.MyBookings(source = "home")) },
                     onOpenClass = { id -> navController.navigate(ArcanaDestination.ClassDetail(id)) },
+                    onBookClass = { navController.navigateToTab(ArcanaTab.Schedule) },
                 )
             }
             composable<ArcanaDestination.Schedule>(

@@ -3,7 +3,7 @@
 Execution guide for the agent-run full regression suite: an orchestrated set
 of agent shifts that drive the real app — real network calls, real
 simulators/emulator, real taps — through every entry in
-`docs/regression/inventory.md` (267 entries at last count) on all three
+`docs/regression/inventory.md` (268 entries at last count) on all three
 target devices, then triage what they found, fold the lessons back into these
 docs, and file the surviving issues to a tracker. Invoked by the
 `/full-regression` skill; this doc is what that skill follows phase by phase.
@@ -656,7 +656,7 @@ own (`ScheduleViewModel.kt (`selectDay`, `ensureSelectedDayLoaded`)`). So:
    backticks, and `test -f` each resulting repo-relative path.
 
 Sanity-check the extractor before trusting its output: on a clean tree it
-should yield **177 unique paths from 759 comma-split tokens across 267 Source
+should yield **185 unique paths from 774 comma-split tokens across 268 Source
 lines** (one Source line per entry, which is also a free cross-check on the
 entry count) — verified 2026-09-20, latest (`feature/discover-map` added
 DISCOVER-08, DISCOVER-09 and DISCOVER-10 and the class page's review placement;

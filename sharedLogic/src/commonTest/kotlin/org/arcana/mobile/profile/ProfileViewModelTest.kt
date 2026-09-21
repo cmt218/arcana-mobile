@@ -1,6 +1,7 @@
 @file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 package org.arcana.mobile.profile
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.*
@@ -42,6 +43,29 @@ class ProfileViewModelTest {
     private fun serverException(statusCode: Int): Throwable = ApiHttpError(statusCode)
 
     private fun vm(api: MembershipApi) = ProfileViewModel(api, FavoritesRepository(FakeFavoritesApi()))
+
+    /** Holds every favorites fetch open until [gate] completes: a lost connection. */
+    private class StalledFavoritesApi : FavoritesApi {
+        val gate = CompletableDeferred<Unit>()
+        override suspend fun fetchStudios(): List<StudioDto> = emptyList()
+        override suspend fun fetchFavorites(): FavoritesDto { gate.await(); return FavoritesDto() }
+        override suspend fun updateFavorites(studioSlugs: List<String>, locationIds: List<Int>, brandSlugs: List<String>): FavoritesDto =
+            FavoritesDto()
+    }
+
+    /** Waiting for favorites before asking for the membership doubled the time a
+     *  lost connection took to show on this tab. */
+    @Test fun `the membership loads without waiting for favorites`() = runTest {
+        val favApi = StalledFavoritesApi()
+        val vm = ProfileViewModel(FakeApi(meDto), FavoritesRepository(favApi))
+        vm.load()
+        runCurrent()
+
+        assertTrue(vm.uiState.value is ProfileUiState.Success, "the profile must not wait on favorites")
+        favApi.gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(FavoritesDto(), vm.favorites.value)
+    }
 
     /** Fails until [failing] is flipped off, so a retry can be made to succeed. */
     private class FlakyFavoritesApi(var failing: Boolean = true) : FavoritesApi {

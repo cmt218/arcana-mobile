@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -55,7 +56,6 @@ import org.arcana.mobile.theme.Stone
 import org.arcana.mobile.theme.StoneAlpha55
 import org.arcana.mobile.theme.StoneAlpha65
 import org.arcana.mobile.theme.WordmarkLogo
-import org.arcana.mobile.ui.AccentText
 import org.arcana.mobile.ui.ArcanaPullToRefreshBox
 import org.arcana.mobile.ui.LocalFloatingBarInset
 import org.arcana.mobile.ui.ArcanaIcons
@@ -104,6 +104,7 @@ private val UPCOMING_TIME_COL_WIDTH = 64.dp
 fun HomeScreen(
     onSeeAllBookings: () -> Unit,
     onOpenClass: (Int) -> Unit,
+    onBookClass: () -> Unit,
 ) {
     val vm = koinViewModel<HomeViewModel>()
     // Refetch on every return to the foreground, notably an iOS tab switch back
@@ -265,10 +266,8 @@ fun HomeScreen(
                     }
                     item { Spacer(Modifier.height(16.dp)) }
                     item {
-                        Caption(
-                            text = "No upcoming classes.",
-                            size = 13,
-                            color = Charcoal,
+                        OpenSlotCard(
+                            onClick = onBookClass,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
                     }
@@ -479,10 +478,6 @@ private fun HeroHeader(dateLabel: String, greeting: String, displayName: String?
                 )
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            AccentText(text = "Show up. Do the work.", size = 20, color = Charcoal)
-            AccentText(text = "The rest takes care of itself.", size = 20, color = Moss)
-        }
     }
 }
 
@@ -499,9 +494,142 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
     } ?: "--"
     val amPm = local?.let { if (it.hour < 12) "am" else "pm" } ?: ""
     val spotLabel = booking.spot?.label ?: booking.fulfilledSpot?.label ?: booking.requestedSpot?.label
+
+    NextUpFrame(onClick = onClick, modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            val studioLine = if (spotLabel != null) "${session.studio} · $spotLabel" else session.studio
+            Overline(text = studioLine, size = 10, color = Lime)
+            StatusPill(booking.status)
+        }
+        // Time row: baseline-align the large hour digit and the am/pm suffix
+        // so the suffix sits on the digit's baseline rather than floating at
+        // the top of the BodyText line box.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = timeStr,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.alignByBaseline(),
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.display,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 60.sp,
+                    lineHeight = 60.sp,
+                    letterSpacing = (-0.03).em,
+                    color = Stone,
+                ),
+            )
+            Text(
+                text = amPm,
+                maxLines = 1,
+                modifier = Modifier.alignByBaseline(),
+                style = TextStyle(
+                    fontFamily = Arcana.fonts.body,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 18.sp,
+                    lineHeight = 18.sp,
+                    color = StoneAlpha55,
+                ),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Heading2(text = session.name, size = 22, color = Stone)
+                val durationMin = remember(session.startAt, session.endAt) {
+                    try {
+                        val s = Instant.parse(session.startAt)
+                        val e = Instant.parse(session.endAt)
+                        "${(e - s).inWholeMinutes}min"
+                    } catch (_: Exception) { "" }
+                }
+                // STUDIO · LOCATION · DURATION — location only when present.
+                val metaLine = buildString {
+                    append(session.studio)
+                    session.location?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+                    if (durationMin.isNotEmpty()) append(" · ").append(durationMin)
+                }
+                BodyText(
+                    text = metaLine,
+                    size = 12,
+                    color = StoneAlpha65,
+                )
+                session.locationAddress?.takeIf { it.isNotBlank() }?.let { address ->
+                    Caption(text = address, size = 12, color = StoneAlpha65)
+                }
+            }
+            // decorative — the enclosing card is the tap target and is
+            // named by the class/studio text beside this well.
+            IconCircle(
+                icon = ArcanaIcons.ArrowUpRight,
+                diameter = 44,
+                iconSize = 20,
+                background = Lime,
+                contentColor = Ink,
+            )
+        }
+        // Member-facing booking note (e.g. a door code) — only when present.
+        bookingInfoOrNull(booking)?.let { note ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Overline(text = "Booking info", size = 10, color = Lime)
+                BodyText(
+                    text = note,
+                    size = 13,
+                    color = StoneAlpha65,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/** The Next up slot with nothing reserved: the same card, as the way into Book. */
+@Composable
+private fun OpenSlotCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    NextUpFrame(onClick = onClick, modifier = modifier) {
+        Overline(text = "Nothing reserved", size = 10, color = Lime)
+        Display(text = "Your move.", size = 44, color = Stone)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BodyText(
+                text = "Tap here to start booking.",
+                size = 13,
+                color = StoneAlpha65,
+                modifier = Modifier.weight(1f),
+            )
+            // decorative — the enclosing card is the tap target and is named
+            // by the text beside this well.
+            IconCircle(
+                icon = ArcanaIcons.ArrowRight,
+                diameter = 44,
+                iconSize = 20,
+                background = Lime,
+                contentColor = Ink,
+            )
+        }
+    }
+}
+
+/** The Moss card that holds the Next up slot, whether a reservation fills it or not. */
+@Composable
+private fun NextUpFrame(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val cardSource = remember { MutableInteractionSource() }
     val cardShape = RoundedCornerShape(20.dp)
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -515,100 +643,8 @@ private fun NextUpCard(booking: BookingDto, modifier: Modifier = Modifier, onCli
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                val studioLine = if (spotLabel != null) "${session.studio} · $spotLabel" else session.studio
-                Overline(text = studioLine, size = 10, color = Lime)
-                StatusPill(booking.status)
-            }
-            // Time row: baseline-align the large hour digit and the am/pm suffix
-            // so the suffix sits on the digit's baseline rather than floating at
-            // the top of the BodyText line box.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = timeStr,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.alignByBaseline(),
-                    style = TextStyle(
-                        fontFamily = Arcana.fonts.display,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 60.sp,
-                        lineHeight = 60.sp,
-                        letterSpacing = (-0.03).em,
-                        color = Stone,
-                    ),
-                )
-                Text(
-                    text = amPm,
-                    maxLines = 1,
-                    modifier = Modifier.alignByBaseline(),
-                    style = TextStyle(
-                        fontFamily = Arcana.fonts.body,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 18.sp,
-                        lineHeight = 18.sp,
-                        color = StoneAlpha55,
-                    ),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Heading2(text = session.name, size = 22, color = Stone)
-                    val durationMin = remember(session.startAt, session.endAt) {
-                        try {
-                            val s = Instant.parse(session.startAt)
-                            val e = Instant.parse(session.endAt)
-                            "${(e - s).inWholeMinutes}min"
-                        } catch (_: Exception) { "" }
-                    }
-                    // STUDIO · LOCATION · DURATION — location only when present.
-                    val metaLine = buildString {
-                        append(session.studio)
-                        session.location?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
-                        if (durationMin.isNotEmpty()) append(" · ").append(durationMin)
-                    }
-                    BodyText(
-                        text = metaLine,
-                        size = 12,
-                        color = StoneAlpha65,
-                    )
-                    session.locationAddress?.takeIf { it.isNotBlank() }?.let { address ->
-                        Caption(text = address, size = 12, color = StoneAlpha65)
-                    }
-                }
-                // decorative — the enclosing card is the tap target and is
-                // named by the class/studio text beside this well.
-                IconCircle(
-                    icon = ArcanaIcons.ArrowUpRight,
-                    diameter = 44,
-                    iconSize = 20,
-                    background = Lime,
-                    contentColor = Ink,
-                )
-            }
-            // Member-facing booking note (e.g. a door code) — only when present.
-            bookingInfoOrNull(booking)?.let { note ->
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Overline(text = "Booking info", size = 10, color = Lime)
-                    BodyText(
-                        text = note,
-                        size = 13,
-                        color = StoneAlpha65,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
+            content = content,
+        )
     }
 }
 

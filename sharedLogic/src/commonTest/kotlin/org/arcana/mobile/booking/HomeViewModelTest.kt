@@ -87,6 +87,36 @@ class HomeViewModelTest {
         }
     }
 
+    /** Membership held open by [gate]; records whether the upcoming read was
+     *  already asked for while it was. */
+    private class SideBySideApi(private val me: MembershipMeDto) : MembershipApi, BookingApi {
+        val gate = CompletableDeferred<Unit>()
+        var upcomingAskedWhileMembershipOpen = false
+        override suspend fun membershipMe(): MembershipMeDto { gate.await(); return me }
+        override suspend fun myBookings() = MyBookingsDto(emptyList(), emptyList())
+        override suspend fun myUpcoming(): MyUpcomingDto {
+            if (!gate.isCompleted) upcomingAskedWhileMembershipOpen = true
+            return MyUpcomingDto(emptyList())
+        }
+        override suspend fun myPast(cursor: String?, limit: Int): MyPastDto = MyPastDto(emptyList(), null)
+        override suspend fun createBooking(sessionId: Int, requestedSpotId: Int?, studioVisitedBefore: Boolean?, spotPreference: String?) = throw NotImplementedError()
+        override suspend fun cancelBooking(bookingId: Int) = CancelBookingResponse("cancelled", true, false)
+    }
+
+    /** The splash covers Home's first fetch, so its two reads go out together:
+     *  one after the other cost a round trip on every launch. */
+    @Test fun `the membership and upcoming reads load side by side`() = runTest {
+        val api = SideBySideApi(meDto)
+        val vm = HomeViewModel(api, api)
+        vm.load()
+        runCurrent()
+
+        assertTrue(api.upcomingAskedWhileMembershipOpen, "upcoming must not wait for the membership")
+        api.gate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value is HomeUiState.Success)
+    }
+
     /** Counts calls and can hold each one open, so a second load can be started
      *  while the first is still in flight. */
     private class CountingMembershipApi(private val me: MembershipMeDto) : MembershipApi, BookingApi {

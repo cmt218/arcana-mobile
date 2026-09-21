@@ -12,25 +12,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.arcana.mobile.theme.Ink
 import org.arcana.mobile.theme.MossDeep
-import org.arcana.mobile.ui.DANCE_DURATION_MS
-import org.arcana.mobile.ui.DANCE_SETTLE_STAGGER_MS
-import org.arcana.mobile.ui.DancingWordmark
+import org.arcana.mobile.ui.SPLASH_WORDMARK_SETTLED_MS
+import org.arcana.mobile.ui.SplashWordmark
+
+/** Time on the settled wordmark before the fade, so it reads as arrived. */
+private const val SPLASH_HOLD_MS = 450
+
+/** The splash's exit: the settled mark fades, eased in and out, while Home comes up through it. */
+const val SPLASH_EXIT_MS: Int = 550
 
 /**
- * Minimum time the splash stays on screen. Derived from the dance constants
- * so the splash always plays long enough for the last-delayed cell to settle:
- * `settleStagger + duration` is when the most-delayed cell finishes its
- * dance, and we add a 200 ms tail so the breath pulse lights on the wordmark
- * before the 300 ms exit fade starts. App.kt reads this.
+ * How long the splash stays before its exit: the wordmark's redraw, then a
+ * short hold on the settled mark. A fixed timer, sized to cover Home's first fetch
+ * on most launches (docs/perf/README.md "Splash length"). App.kt and the iOS shell read it.
  */
-const val SPLASH_MIN_DISPLAY_MS: Long =
-    (DANCE_SETTLE_STAGGER_MS + DANCE_DURATION_MS + 200).toLong()
+const val SPLASH_MIN_DISPLAY_MS: Long = (SPLASH_WORDMARK_SETTLED_MS + SPLASH_HOLD_MS).toLong()
 
 /**
- * Cold-launch brand moment. A grid of dim stone-colored dots flickers, then
- * settles into the Arcana wordmark on a deep moss field with a soft vignette.
- * See `design_handoff_splash_screen/README.md` in the design handoff bundle
- * for the canonical behavior.
+ * Cold-launch brand moment: on a deep moss field with a soft vignette, the
+ * wordmark redraws row by row ([SplashWordmark]), then breathes.
  */
 @Composable
 fun SplashScreen() {
@@ -58,7 +58,7 @@ fun SplashScreen() {
                 )
             },
     ) {
-        DancingWordmark(
+        SplashWordmark(
             modifier = Modifier.fillMaxSize(),
         )
     }

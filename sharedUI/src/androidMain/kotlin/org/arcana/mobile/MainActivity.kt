@@ -1,14 +1,18 @@
 package org.arcana.mobile
 
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.view.OneShotPreDrawListener
 import org.arcana.mobile.navigation.DeepLinkHandler
+import org.arcana.mobile.theme.Stone
 
 class MainActivity : ComponentActivity() {
 
@@ -34,6 +38,11 @@ class MainActivity : ComponentActivity() {
                     deepLinkConsumed = true
                 },
             )
+        }
+        // The launch theme's moss stays until the splash has drawn over it (a light
+        // window showed between the system launch screen and ours); then Stone, as the app.
+        OneShotPreDrawListener.add(window.decorView) {
+            window.decorView.post { window.setBackgroundDrawable(ColorDrawable(Stone.toArgb())) }
         }
     }
 

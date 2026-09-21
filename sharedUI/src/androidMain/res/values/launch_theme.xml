@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MossDeep in theme/AppColors.kt: the Compose splash sits on it, so the launch
+         window and the splash read as one screen. Keep the two in lockstep. -->
+    <color name="launch_background">#1F2D10</color>
+
+    <style name="Base.Theme.Arcana.Launch" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/launch_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <style name="Theme.Arcana.Launch" parent="Base.Theme.Arcana.Launch" />
+</resources>

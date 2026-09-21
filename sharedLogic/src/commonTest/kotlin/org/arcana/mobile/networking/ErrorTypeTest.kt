@@ -1,9 +1,12 @@
 package org.arcana.mobile.networking
 
+import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
 
@@ -45,6 +48,16 @@ class ErrorTypeTest {
             ErrorType.CONNECTION,
             SocketTimeoutException("timed out").toErrorType(),
         )
+    }
+
+    @Test
+    fun `only a request that waited out a timeout counts as one`() {
+        assertTrue(HttpRequestTimeoutException("https://api.arcana.fit", 20_000L).isTimeout())
+        assertTrue(SocketTimeoutException("timed out").isTimeout())
+        assertTrue(ConnectTimeoutException("connect timed out").isTimeout())
+        assertFalse(Exception("refused").isTimeout())
+        assertFalse(IOException("socket closed").isTimeout())
+        assertFalse(ApiHttpError(504).isTimeout())
     }
 
     // Guard: the UI category and the `api_request` telemetry outcome are

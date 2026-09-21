@@ -106,11 +106,12 @@ final class ShellModel: ObservableObject {
         // Before the timer, so the splash's minimum is measured after the stall.
         KeyboardPrewarm.run()
         let ms = IosShellBridge.shared.splashMinDisplayMs()
+        let exitMs = Int(IosShellBridge.shared.splashExitMs())
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int(ms))) { [weak self] in
-            withAnimation(.easeOut(duration: 0.3)) { self?.splashVisible = false }
-            // Release the Compose splash scene once the fade completes — the
+            withAnimation(.easeInOut(duration: Double(exitMs) / 1000)) { self?.splashVisible = false }
+            // Release the Compose splash scene once the exit completes — the
             // shell never shows it again.
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(350)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(exitMs + 50)) {
                 self?.splashVC = nil
             }
         }
@@ -287,10 +288,14 @@ struct ArcanaShellView: View {
                 ComposeVC(vc: vc).ignoresSafeArea()
             }
 
-            if shell.splashVisible, let splash = shell.splashVC {
+            // The live splash fades in place and is dropped after (splashVC = nil). As a
+            // removal transition in this ZStack it animated out behind the tabs: a one-frame cut.
+            if let splash = shell.splashVC {
                 ComposeVC(vc: splash)
                     .ignoresSafeArea()
-                    .transition(.opacity)
+                    .opacity(shell.splashVisible ? 1 : 0)
+                    .allowsHitTesting(shell.splashVisible)
+                    .zIndex(1)
                     .onAppear { shell.splashDidAppear() }
             }
         }

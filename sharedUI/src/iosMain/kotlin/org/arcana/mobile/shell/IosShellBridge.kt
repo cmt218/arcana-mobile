@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.arcana.mobile.SPLASH_EXIT_MS
 import org.arcana.mobile.SPLASH_MIN_DISPLAY_MS
 import org.arcana.mobile.analytics.Analytics
 import org.arcana.mobile.analytics.AppStartTracker
@@ -131,6 +132,9 @@ object IosShellBridge {
 
     /** Splash minimum display, exposed so Swift owns the overlay timing. */
     fun splashMinDisplayMs(): Long = SPLASH_MIN_DISPLAY_MS
+
+    /** The splash's exit, shared with Android's so both platforms leave it the same way. */
+    fun splashExitMs(): Int = SPLASH_EXIT_MS
 
     /** Native tab bar tap → same telemetry event the Compose bar fired,
      *  including `fromScreen` (the outgoing tab's canonical screen name —
