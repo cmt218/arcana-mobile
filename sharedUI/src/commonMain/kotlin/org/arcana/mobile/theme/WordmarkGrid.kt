@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 /**
  * The arcana wordmark as a dot matrix: [lit] holds the `[col, row]` of every
  * dot that is part of the mark, on a [cols] x [rows] grid. Shared by the
- * static [WordmarkLogo] and the splash's dancing variant.
+ * static [WordmarkLogo] and the splash's [org.arcana.mobile.ui.SplashWordmark].
  */
 @Serializable
 internal data class WordmarkGrid(
@@ -15,7 +15,7 @@ internal data class WordmarkGrid(
     val lit: List<List<Int>>,
 )
 
-/** Parsed once per process. Synchronous, no I/O, so the splash can dance on
+/** Parsed once per process. Synchronous, no I/O, so the splash can draw on
  * the first frame instead of after a coroutine-scheduled file read. */
 internal val wordmarkGrid: WordmarkGrid by lazy(LazyThreadSafetyMode.PUBLICATION) {
     gridJson.decodeFromString(WordmarkGrid.serializer(), WORDMARK_GRID_JSON)

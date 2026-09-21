@@ -218,3 +218,44 @@ Debug build on the simulator (iPhone 17 Pro, iOS 26.4.1, and iPhone 16 Pro, iOS 
 **Scale limits to revisit.** Android redraws every cluster mark (on and off screen) when the clusters change: fine for hundreds of locations, wasteful near a thousand, where marks should be limited to the visible region. The directory ships every location in one response (3.8 KB gzipped for 80): past a few thousand it wants a viewport query.
 
 **A laggy pan under Xcode is mostly Xcode.** A Run from Xcode is a debug Kotlin/Native build with the debugger attached and Metal API Validation on (the scheme default; the project has no shared scheme), and MapKit draws with Metal. Judge map smoothness from the home screen (stop the Xcode session, tap the icon), with Edit Scheme → Run → Diagnostics → Metal API Validation off, or from a Release / TestFlight build.
+
+## Splash length, measured 2026-09-21
+
+The splash is a fixed timer: it does not wait for anything. Home composes under it
+from the first frame and fetches `/memberships/me`, then `/bookings/me?scope=upcoming`,
+so the splash's only job is to cover that fetch.
+
+**How long Home's data takes after a cold start** (PostHog, 60 days of authenticated
+cold starts; time from `AppStartTracker.markStart()` to the later of the first
+successful `membership_me` and `my_bookings` `api_request`):
+
+| | starts | p50 | p75 | p90 | p95 | ready when Home now appears | ready by 3.9s |
+|---|---|---|---|---|---|---|---|
+| iOS | 1153 | 0.82s | 1.11s | 1.90s | 3.33s | ~87% (reveal ≈ 1.7s) | 96% |
+| Android | 50 | 1.89s | 2.87s | 3.26s | 3.79s | ~68% (reveal ≈ 2.5s) | 96% |
+
+Android's clock starts at `Application.onCreate`, before the first frame (`app_start_completed`
+p50 0.92s there vs 0.09s on iOS), so its numbers include process start and its splash starts
+about a second later on that clock. Only 50 Android starts: treat its row as a rough guide. 91% of iOS cold
+starts refresh the access token first (it lives 5 minutes), which is one of the round trips
+in that wait.
+
+**Timing.** Was a 1.3s stagger + 2.4s dance + 0.2s tail = 3.9s, plus the 0.3s fade: the
+last ~1.1s of the dance is ease-out settling nobody sees, and 96% of iOS launches had
+Home's data in hand long before the fade. Squeezing the dance into 1.8s read as panic,
+so the lead-in changed: the wordmark now redraws row by row (`SplashWordmark`, 0.82s)
+and holds 0.45s, **1.27s**, then a 0.55s eased fade, the mark holding still. iOS 18.5 simulator,
+launch screen to Home: **4.35s → 1.95s** (mostly visible; fully in at ~2.1s). The old 0.3s
+fade never actually played on iOS: removed from the shell's `ZStack` without a `zIndex`, the
+splash animated out behind the tabs and showed as a one-frame cut. The animation's first frame lands 120 to 190 ms after the splash
+timer starts (Compose scene setup after `splashDidAppear`), so the hold plays as ~0.3s.
+A launch whose fetch is slower than the splash shows Home's own shimmer for the
+difference (about 1 in 8 on iOS).
+
+**Deliberately not done: refreshing an expired token up front.** Most cold starts send
+their first request with an expired access token, get a 401, refresh, and replay (inside
+the `api_request` timing, which is why 401s barely appear in it). Refreshing first would
+save that one round trip, ~100 to 150ms at the median, but it puts a write (the refresh
+POST, 30s timeout) in front of every launch's reads: with no signal, Home's connection
+error would take 30s+ again instead of 10s. It also touches the refresh path that decides
+forced logouts. Revisit only with a short timeout on that refresh.

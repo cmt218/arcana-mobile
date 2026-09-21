@@ -84,7 +84,6 @@ kotlin {
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.androidx.navigation.compose)
-            // DancingWordmark parses the wordmark grid JSON directly.
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
