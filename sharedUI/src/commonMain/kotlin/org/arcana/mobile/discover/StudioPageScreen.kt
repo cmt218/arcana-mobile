@@ -68,20 +68,17 @@ import org.koin.core.parameter.parametersOf
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.rotate
 import org.arcana.mobile.review.MembersSayRow
 import org.arcana.mobile.theme.Dur
 import org.arcana.mobile.theme.Mist
-import org.arcana.mobile.theme.MossLight
 import org.arcana.mobile.theme.Surface
 import org.arcana.mobile.ui.FilterPill
 import org.arcana.mobile.ui.cardShadow
-import org.arcana.mobile.ui.opticallyCentredCapsVertical
+import org.arcana.mobile.ui.SectionHeading
 
 private const val CLASS_DESCRIPTION_COLLAPSED_LINES = 2
-private const val SECTION_TITLE_SIZE = 18
 private val CARD_GAP = 10.dp
 private const val SECTION_PREVIEW_COUNT = 5
 private const val LOCATION_LIST_HEIGHT_FRACTION = 0.5f
@@ -342,20 +339,10 @@ private fun LazyListScope.showAllItem(noun: String, total: Int, expanded: Boolea
     }
 }
 
-/** A section's name at heading weight, so the page reads as parts and not one run of text. */
 @Composable
 private fun Section(title: String) {
     Spacer(Modifier.height(32.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Heading2(
-            text = title,
-            size = SECTION_TITLE_SIZE,
-            color = Wood,
-            modifier = Modifier.opticallyCentredCapsVertical(SECTION_TITLE_SIZE.sp),
-        )
-        Spacer(Modifier.width(12.dp))
-        Box(Modifier.weight(1f).height(1.dp).background(MossLight))
-    }
+    SectionHeading(title)
     Spacer(Modifier.height(16.dp))
 }
 

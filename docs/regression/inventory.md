@@ -824,13 +824,13 @@ _Corrected after run 2026-08-27: the Expected claimed "Couldn't cancel. Try agai
 
 ### PROFILE-01 — Hero loads member info (name, initials, member number)
 - **Steps:** Sign in and land on the Profile/You tab (or switch to it). Observe the Ink hero while `ProfileViewModel.load()` is in flight, then after it resolves.
-- **Expected:** Hero shimmers (avatar circle, name block, member-number line) while `ProfileUiState` is `Loading`. Once `Success`, it shows the member's full display name (or email if no display name), a Lime-on-Moss avatar circle with `initials`, and `"Member · No. <memberNumber>"` (or plain `"Member"` when `memberNumber` is null).
+- **Expected:** Hero shimmers (avatar circle, name block, member-number line) while `ProfileUiState` is `Loading`. Once `Success`, it shows the member's full display name (or email if no display name), a MossDeep avatar circle with a Stone ring, Stone `initials` and a Stone status dot, and `"Member · No. <memberNumber>"` in Stone (or plain `"Member"` when `memberNumber` is null). Nothing in the hero is Lime (it all was until 2026-09-21).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
 - **Platforms:** shared
 
 ### PROFILE-02 — Stats row: sessions, week streak, credits
 - **Steps:** On Profile, view the three-cell stats row below the avatar/name once loaded. Repeat as a member with no live wallet (lapsed or between cohorts, `creditsRemaining == null`).
-- **Expected:** Each cell shimmers individually while loading, then shows `lifetimeSessions`, `weekStreak`, and `creditsRemaining` as large Lime numeral text with an Overline label underneath. Divider hairlines separate the three cells. With no live wallet the Credits cell resolves to a plain hyphen `-` (never an em dash), NOT a shimmer: null is `StatCell`'s loading placeholder, so leaving it unresolved left that one cell pulsing forever beside two settled numbers and read as a hung screen. A shimmer in the Credits cell after `/me` has answered is a defect.
+- **Expected:** Each cell shimmers individually while loading, then shows `lifetimeSessions`, `weekStreak`, and `creditsRemaining` as large Stone numeral text (Lime until 2026-09-21) with an Overline label underneath. Divider hairlines separate the three cells. With no live wallet the Credits cell resolves to a plain hyphen `-` (never an em dash), NOT a shimmer: null is `StatCell`'s loading placeholder, so leaving it unresolved left that one cell pulsing forever beside two settled numbers and read as a hung screen. A shimmer in the Credits cell after `/me` has answered is a defect.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt, sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt
 - **Platforms:** shared
 
@@ -843,6 +843,7 @@ _Corrected after run 2026-08-27: the Expected claimed "Couldn't cancel. Try agai
 ### PROFILE-04 — Membership row shows tier name or "Inactive"
 - **Steps:** View the Account section's "Membership" row for a member with an active current-period wallet, then for one with none.
 - **Expected:** Active member: row's right-hand text shows the membership tier name (e.g. "Alpha Tester"). Lapsed/no current period (`creditsRemaining == null`): shows "Inactive". The row itself has no `onClick` (not tappable — no chevron rendered).
+- **Expected (2026-09-21 addendum):** the Account section opens with the same `SectionHeading` as Your favorites. Membership, Reservations and Concierge are equal bands (76pt), each row's content centred between the rule above and the rule below it: the Account heading's rule, the two dividers, and Sign out's rule, which sits right on the last band's edge. Measure it rather than eyeballing: the three bands match within 1pt and each icon well sits centred within 0.5pt.
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
 - **Platforms:** shared
 
@@ -867,12 +868,13 @@ _Corrected after run 2026-08-27: the Expected claimed "Couldn't cancel. Try agai
 ### PROFILE-08 — "Your favorites" section: loading, empty, and populated states
 - **Steps:** View the favorites section (a) immediately on load (favorites not yet fetched), (b) for a member with zero favorites, (c) for a member with whole-studio and location-grain favorites, (d) with the favorites fetch failing on a FIRST-EVER load and nothing cached (force `/users/me/favorites/` to error while `/me` stays healthy), then tap its Retry with the endpoint restored, (e) with the fetch failing on a LATER refresh, after favorites have already loaded once.
 - **Expected:** (a) a single shimmer row placeholder. (b) "No favorites yet" body text. (c) a numbered list (01, 02, …) of rows — whole-studio favorites first by name, then location-grain favorites formatted "STUDIO · LOCATION" (middot, not a dash) with the brand prefix stripped from the location name; rows are flat (no chevron/tap affordance). (d) an `InlineError` card in place of the section — the same treatment a failed schedule day gets — reading "THIS DIDN'T LOAD." with a Retry link; the rest of the profile (hero, stats, account rows) stays live, and Retry restores the section in place. (e) NO error: the previously loaded favorites stay on screen, which is why `FavoritesRepository.refresh` swallows failures at all. Superseded 2026-08-23: this entry previously said a failed first fetch shows the (a) shimmer indefinitely and warned testers away from it, which documented the defect as intended behavior and is why the run scored it a pass.
+- **Expected (2026-09-21 addendum):** the section opens with the studio page's heading treatment (`SectionHeading`: "YOUR FAVORITES" in League Spartan beside a MossLight rule, the same component as the studio page's sections), the numbered badges are Moss with Stone numerals (optically centred, under 0.5pt), and MANAGE sits under the list rather than beside the heading.
 - **Expected (2026-09-15 addendum):** "Your favorites" lists brand names (from the favorites response's `brands[]`) rather than site rows when the server groups them; location favorites still read "Studio · Location".
-- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt (`rowLabel`, `favoritesError`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt (`favoritesError`, `retryFavorites`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`, `refreshCatching`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`InlineError`)
+- **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt (`rowLabel`, `favoritesError`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileViewModel.kt (`favoritesError`, `retryFavorites`), sharedLogic/src/commonMain/kotlin/org/arcana/mobile/favorites/FavoritesRepository.kt (`refresh`, `refreshCatching`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/ErrorState.kt (`InlineError`), sharedUI/src/commonMain/kotlin/org/arcana/mobile/ui/SectionHeading.kt
 - **Platforms:** shared
 
 ### PROFILE-09 — "Manage" link opens Studio Selection
-- **Steps:** Tap "Manage" next to the "Your favorites" header.
+- **Steps:** Tap "Manage" under the "Your favorites" list.
 - **Expected:** Navigates to the Studio Selection screen (`onManageStudios` callback) for editing favorites; Profile tab bar disappears (non-tab destination).
 - **Source:** sharedUI/src/commonMain/kotlin/org/arcana/mobile/profile/ProfileScreen.kt
 - **Platforms:** shared
