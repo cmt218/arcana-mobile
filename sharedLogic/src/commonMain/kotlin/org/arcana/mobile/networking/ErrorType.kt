@@ -1,5 +1,8 @@
 package org.arcana.mobile.networking
 
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
 import org.arcana.mobile.analytics.apiRequestOutcome
 
@@ -32,6 +35,10 @@ fun Throwable.toErrorType(): ErrorType = when (this) {
     is ResponseException -> errorTypeForStatus(response.status.value)
     else -> ErrorType.CONNECTION
 }
+
+/** The request waited out a timeout: the connection is gone, not merely refused. */
+fun Throwable.isTimeout(): Boolean =
+    this is HttpRequestTimeoutException || this is SocketTimeoutException || this is ConnectTimeoutException
 
 /** Telemetry reason, keeping the HTTP status when there is one. Recognizes the
  *  same types as [toErrorType] so the two can't disagree. */

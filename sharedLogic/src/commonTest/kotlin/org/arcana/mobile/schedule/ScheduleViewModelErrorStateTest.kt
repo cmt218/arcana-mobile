@@ -13,6 +13,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
 import kotlin.time.Clock
+import io.ktor.client.network.sockets.SocketTimeoutException
 import org.arcana.mobile.data.FavoritesDto
 import org.arcana.mobile.favorites.FavoritesRepository
 import org.arcana.mobile.networking.ErrorType
@@ -58,6 +59,39 @@ class ScheduleViewModelErrorStateTest {
     @Test fun `cold-start 5xx classifies as SERVER`() = runTest {
         val v = vm(FailingScheduleApi(serverException(500)))
         assertEquals(ScheduleUiState.Error(ErrorType.SERVER), v.uiState.value)
+    }
+
+    // ── Lost connection: one timeout, not two ─────────────────────────────
+
+    @Test fun `a favorites fetch that timed out shows the connection error without waiting on the schedule`() = runTest {
+        // On the subway each request waits out the read timeout before failing.
+        // Favorites go first, so trying the schedule after them doubled the wait.
+        val favoritesApi = FakeFavoritesApi(
+            favoritesResult = FavoritesDto(studios = listOf(favStudio(locationIds = listOf(11, 12)))),
+        ).apply {
+            failuresBeforeSuccess = 1
+            failure = { SocketTimeoutException("timed out") }
+        }
+        val scheduleApi = FakeScheduleApi()
+        val v = vm(scheduleApi, favoritesApi)
+
+        assertEquals(ScheduleUiState.Error(ErrorType.CONNECTION), v.uiState.value)
+        assertTrue(scheduleApi.overviewCalls.isEmpty() && scheduleApi.pageCalls.isEmpty(), "the schedule must not be tried")
+
+        // The retry loads both, and the member's scope comes back with them.
+        v.reload()
+        assertEquals(ScopeMode.Favorites, v.success().scope)
+        assertEquals(1, scheduleApi.overviewCalls.size)
+    }
+
+    @Test fun `a favorites failure that is not a timeout still loads the schedule`() = runTest {
+        // A refused or dropped connection fails at once, so trying the schedule costs nothing.
+        val favoritesApi = FakeFavoritesApi().apply { failuresBeforeSuccess = 1 }
+        val scheduleApi = FakeScheduleApi()
+        val v = vm(scheduleApi, favoritesApi)
+
+        assertTrue(v.uiState.value is ScheduleUiState.Success)
+        assertEquals(1, scheduleApi.overviewCalls.size)
     }
 
     // ── 5b: SCHED-02, restore Favorites scope on retry ─────────────────────

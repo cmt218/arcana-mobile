@@ -30,6 +30,7 @@ import org.arcana.mobile.logWarning
 import org.arcana.mobile.networking.BookingApi
 import org.arcana.mobile.networking.ErrorType
 import org.arcana.mobile.networking.ScheduleApi
+import org.arcana.mobile.networking.isTimeout
 import org.arcana.mobile.networking.toErrorType
 import org.arcana.mobile.ui.studioLocationLabel
 
@@ -335,10 +336,7 @@ class ScheduleViewModel(
             if (_uiState.value is ScheduleUiState.Success) publish()
         }
         viewModelScope.launch {
-            // Favorites first — they decide whether the first fetch is scoped
-            // to the member's locations.
-            applyFavoritesScope(favoritesRepository.refresh())
-            refetchForFilters("cold_start")
+            loadFavoritesThenSchedule("cold_start")
             // React to favorites saved/cleared in the manager while this VM is
             // on the back stack. Re-evaluate only when NOT in Custom mode —
             // a member actively building a manual filter must not be disrupted.
@@ -370,13 +368,33 @@ class ScheduleViewModel(
         viewModelScope.launch {
             try {
                 if (favoritesRepository.favorites.value == null) {
-                    applyFavoritesScope(favoritesRepository.refresh())
+                    loadFavoritesThenSchedule("cold_start")
+                } else {
+                    refetchForFilters("cold_start")
                 }
-                refetchForFilters("cold_start")
             } finally {
                 _retrying.value = false
             }
         }
+    }
+
+    /** Favorites decide the first fetch's scope, so they load first. One that
+     *  timed out means the connection is gone: the error shows now, not after
+     *  the schedule times out too. A quick failure still tries the schedule. */
+    private suspend fun loadFavoritesThenSchedule(source: String) {
+        val loadMark = TimeSource.Monotonic.markNow()
+        val fetched = favoritesRepository.refreshCatching()
+        applyFavoritesScope(fetched.getOrNull() ?: favoritesRepository.favorites.value)
+        if (fetched.exceptionOrNull()?.isTimeout() == true) {
+            applyRefetchFailure(ErrorType.CONNECTION, source)
+            telemetry.screenLoadCompleted(
+                screen = Telemetry.Screens.SCHEDULE, source = source,
+                durationMs = loadMark.elapsedNow().inWholeMilliseconds,
+                outcome = "error", sessionCount = null,
+            )
+            return
+        }
+        refetchForFilters(source)
     }
 
     /** Applies a favorites fetch to [scope] + [lastAppliedFavorites]; shared

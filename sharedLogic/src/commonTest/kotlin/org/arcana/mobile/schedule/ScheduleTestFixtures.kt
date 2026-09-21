@@ -236,11 +236,14 @@ internal class FakeFavoritesApi(
      *  site is unaffected. */
     var failuresBeforeSuccess: Int = 0
 
+    /** What each of those failures throws. */
+    var failure: () -> Throwable = { Exception("network failure") }
+
     override suspend fun fetchStudios(): List<StudioDto> = studiosResult
     override suspend fun fetchFavorites(): FavoritesDto {
         if (failuresBeforeSuccess > 0) {
             failuresBeforeSuccess--
-            throw Exception("network failure")
+            throw failure()
         }
         return favoritesResult
     }

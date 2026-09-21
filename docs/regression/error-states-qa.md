@@ -173,10 +173,10 @@ counter moved).
 
 ## ES-17 · Request timeout **(sharpest single check)**
 **Forces:** start a load, then `harness stall` (SIGSTOP — socket stalls, no bytes flow).
-**Expect:** the CONNECTION state, and crucially **not** an endless spinner.
-**Timing differs by platform and that is expected:** Android fails at ~30s (it honours the
-socket timeout); iOS at ~60s (Ktor's Darwin engine ignores it, so only the request timeout
-bounds it). Do not fail the entry on iOS for taking longer. Trello vVs2x4jG.
+**Expect:** the CONNECTION state at about 10s on both platforms, and crucially **not** an
+endless spinner. Reads give up after 10s without a byte; writes (a booking, a cancel) keep 30s,
+so a stalled booking takes longer on purpose. A read near 30s means the rule has regressed
+(inventory ERR-22). Trello vVs2x4jG.
 **Watch for:** before this work, this hung **forever** — no error, no timeout, just a spinner.
 If it still hangs, the timeout is not installed correctly. `harness unstall` to recover.
 **Run on iOS as well as Android** — nothing automated covers the real HTTP client.

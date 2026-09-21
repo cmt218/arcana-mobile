@@ -4,7 +4,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.authProviders
 import io.ktor.client.plugins.auth.providers.BearerAuthProvider
@@ -143,15 +142,7 @@ class ArcanaApiClient(
     private fun v1(path: String) = "${baseUrlProvider.get()}/api/v1/$path"
 
     private val clientConfig: HttpClientConfig<*>.() -> Unit = {
-        // Without this a stalled connection hangs forever. ~9x headroom over the
-        // slowest real call (booking, ~6.5s server-side). A stalled socket is
-        // bounded by socketTimeoutMillis on BOTH engines; measured 30.5s on
-        // Darwin (docs/regression/inventory.md ERR-22).
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 30_000
-            requestTimeoutMillis = 60_000
-        }
+        installTimeouts()
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
